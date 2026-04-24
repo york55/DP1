@@ -5,8 +5,6 @@ const api = axios.create({
 });
 
 export const runALNS = async (data) => {
-  const response = await api.post('/execute', data, {
-      headers: { 'Content-Type': 'application/json' }
-  });
+  const response = await api.post('/execute', data);
   return response.data;
 };

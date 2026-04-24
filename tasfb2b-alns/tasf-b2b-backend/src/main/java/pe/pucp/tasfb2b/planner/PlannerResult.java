@@ -16,7 +16,8 @@ public record PlannerResult(
         int periodoDias,
         String fechaInicioUtc,
         long tiempoEjecucionMs,
-        int numeroIteraciones
+        int numeroIteraciones,
+        double ramPromedioMb
     ) {}
 
     public record ObjectiveFunctionResult(

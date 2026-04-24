@@ -11,8 +11,8 @@ const ENVIOS_DIR = path.join(DATOS_DIR, '_envios_preliminar-20260416T023321Z-3-0
 
 const BASE_DATE = '2026-01-02';
 const PERIOD_DAYS = 3;
-const MAX_ENVIOS_PER_ORIGIN = 200;
-const ORIGIN_AIRPORTS = ['SPIM', 'SKBO', 'SCEL', 'SABE'];
+const MAX_ENVIOS_PER_ORIGIN = 300;
+const ORIGIN_AIRPORTS = ['SPIM', 'SKBO', 'SCEL', 'SABE', 'SBBR', 'SEQM'];
 
 // ── Helper: read UTF-16BE file ──────────────────────────────────────
 function readUTF16BE(filePath) {
@@ -131,7 +131,8 @@ function parseEnvios(airports) {
     const baseDateObj = new Date(BASE_DATE + 'T00:00:00Z');
     const endDate = new Date(baseDateObj);
     endDate.setUTCDate(endDate.getUTCDate() + PERIOD_DAYS);
-    for (const originICAO of ORIGIN_AIRPORTS) {
+    for (const apt of airports) {
+        const originICAO = apt.icao;
         const filePath = path.join(ENVIOS_DIR, `_envios_${originICAO}_.txt`);
         if (!fs.existsSync(filePath)) { console.log(`  [WARN] Not found: ${originICAO}`); continue; }
         const content = fs.readFileSync(filePath, 'utf8');

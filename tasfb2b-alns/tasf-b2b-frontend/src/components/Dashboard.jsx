@@ -111,6 +111,16 @@ export default function Dashboard({ onSimulationComplete }) {
         </Box>
       )}
 
+      {solution?.metadata && (
+        <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Typography variant="h6" color="secondary">Resultados de Ejecución</Typography>
+          <Divider />
+          <Typography><b>Tiempo de Ejecución:</b> {solution.metadata.tiempoEjecucionMs} ms</Typography>
+          <Typography><b>Número de Iteraciones:</b> {solution.metadata.numeroIteraciones}</Typography>
+          <Typography><b>Uso de RAM Promedio:</b> {solution.metadata.ramPromedioMb.toFixed(2)} MB</Typography>
+        </Box>
+      )}
+
       {solution && (
         <>
            <ObjectiveChart history={solution.obj?.history} />

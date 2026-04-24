@@ -25,6 +25,8 @@ public class AlnsPlanner implements Planner {
     @Override
     public PlannerResult plan(Scenario scenario, PlannerParams p) {
         long startTime = System.currentTimeMillis();
+        Runtime rt = Runtime.getRuntime();
+        long memStart = rt.totalMemory() - rt.freeMemory();
         AlnsParams params = p instanceof AlnsParams ? (AlnsParams) p : AlnsParams.defaultConfig();
         log.info("ALNS iniciado: nMax={}, qPct={}, t0={}, alpha={}, k={}", 
                 params.nMax(), params.qPct(), params.t0(), params.alpha(), params.k());
@@ -90,12 +92,15 @@ public class AlnsPlanner implements Planner {
         }
 
         long executionTime = System.currentTimeMillis() - startTime;
-        log.info("ALNS finalizado en {} ms | F_mejor={}", executionTime, String.format("%.6f", bestF));
+        long memEnd = rt.totalMemory() - rt.freeMemory();
+        double ramPromedioMb = (memStart + memEnd) / 2.0 / (1024 * 1024);
+        
+        log.info("ALNS finalizado en {} ms | F_mejor={} | RAM_promedio={} MB", executionTime, String.format("%.6f", bestF), String.format("%.2f", ramPromedioMb));
         
         var objRes = ObjectiveFunction.evaluate(bestSol, scenario);
         var finalObjResult = new PlannerResult.ObjectiveFunctionResult(objRes.valorFinal(), objRes.componentes(), history);
         
-        var metadata = new PlannerResult.Metadata("ALNS", scenario.semillaAleatoria(), scenario.periodoDias(), scenario.fechaInicioUtc().toString(), executionTime, params.nMax());
+        var metadata = new PlannerResult.Metadata("ALNS", scenario.semillaAleatoria(), scenario.periodoDias(), scenario.fechaInicioUtc().toString(), executionTime, params.nMax(), ramPromedioMb);
         var kpis = KpiCalculator.calculate(bestSol, scenario);
         var asignaciones = new ArrayList<>(bestSol.asignaciones().values());
 
