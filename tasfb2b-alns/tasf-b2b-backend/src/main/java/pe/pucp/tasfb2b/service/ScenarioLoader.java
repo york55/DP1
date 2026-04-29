@@ -132,9 +132,50 @@ public class ScenarioLoader {
                     double w2 = p.length > 5 && !p[5].trim().isEmpty() ? Double.parseDouble(p[5].trim()) : 0.2;
                     double w3 = p.length > 6 && !p[6].trim().isEmpty() ? Double.parseDouble(p[6].trim()) : 0.3;
 
+                    int periodoDias = Integer.parseInt(p[0].trim());
+                    Instant fechaInicioUtc = Instant.parse(p[1].trim());
+
+                    record FlightPattern(String iataOrigen, String iataDestino, java.time.LocalTime horaSalida, java.time.LocalTime horaLlegada, int capacidadMaletas) {}
+                    java.util.Set<FlightPattern> patterns = new java.util.HashSet<>();
+                    for (Flight v : vuelos) {
+                        java.time.LocalDateTime ldtSalida = java.time.LocalDateTime.ofInstant(v.horaSalidaUtc(), java.time.ZoneOffset.UTC);
+                        java.time.LocalDateTime ldtLlegada = java.time.LocalDateTime.ofInstant(v.horaLlegadaUtc(), java.time.ZoneOffset.UTC);
+                        patterns.add(new FlightPattern(v.iataOrigen(), v.iataDestino(), ldtSalida.toLocalTime(), ldtLlegada.toLocalTime(), v.capacidadMaletas()));
+                    }
+
+                    List<Flight> projectedVuelos = new java.util.ArrayList<>();
+                    if (vuelos != null && !vuelos.isEmpty()) {
+                        int flightIdCounter = 1;
+                        java.time.LocalDate startLocalDate = java.time.LocalDateTime.ofInstant(fechaInicioUtc, java.time.ZoneOffset.UTC).toLocalDate();
+
+                        for (int day = 0; day < periodoDias; day++) {
+                            java.time.LocalDate currentDay = startLocalDate.plusDays(day);
+                            for (FlightPattern pat : patterns) {
+                                java.time.LocalDateTime ldtSalida = currentDay.atTime(pat.horaSalida());
+                                java.time.LocalDateTime ldtLlegada = currentDay.atTime(pat.horaLlegada());
+                                
+                                if (ldtLlegada.isBefore(ldtSalida)) {
+                                    ldtLlegada = ldtLlegada.plusDays(1);
+                                }
+                                
+                                Instant instantSalida = ldtSalida.toInstant(java.time.ZoneOffset.UTC);
+                                Instant instantLlegada = ldtLlegada.toInstant(java.time.ZoneOffset.UTC);
+                                
+                                projectedVuelos.add(new Flight(
+                                    String.format("V%06d", flightIdCounter++),
+                                    pat.iataOrigen(), pat.iataDestino(),
+                                    instantSalida, instantLlegada,
+                                    pat.capacidadMaletas(), false
+                                ));
+                            }
+                        }
+                    } else {
+                        projectedVuelos = vuelos;
+                    }
+
                     return new Scenario(
-                        aeropuertos, vuelos, envios,
-                        Integer.parseInt(p[0].trim()), Instant.parse(p[1].trim()),
+                        aeropuertos, projectedVuelos, envios,
+                        periodoDias, fechaInicioUtc,
                         Long.parseLong(p[2].trim()), p[3].trim(),
                         w1, w2, w3
                     );
