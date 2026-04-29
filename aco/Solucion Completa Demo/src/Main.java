@@ -90,10 +90,13 @@ public class Main {
                         rutas.add(ruta);
                         if (ruta != null) totalProcesados++;
                         else fallos++;
+                        System.out.println("========================================");
+                        imprimirDetalleRuta(envio, ruta);
+                        System.out.println("========================================");
 
                         if ((totalProcesados + fallos) % 10 == 0) {
                             long duracion = System.currentTimeMillis() - inicioBloque;
-                            System.out.printf("  │  +10 envíos  ✓ %-5d  ✗ %-4d  %4d ms%n",
+                            System.out.printf("  │  +" + lote.size() + " envíos  ✓ %-5d  ✗ %-4d  %4d ms%n",
                                 totalProcesados, fallos, duracion
                             );
                             inicioBloque = System.currentTimeMillis();
