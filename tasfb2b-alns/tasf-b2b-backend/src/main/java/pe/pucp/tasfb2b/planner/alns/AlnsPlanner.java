@@ -12,6 +12,9 @@ import pe.pucp.tasfb2b.planner.PlannerResult;
 import pe.pucp.tasfb2b.planner.alns.operators.*;
 import pe.pucp.tasfb2b.service.KpiCalculator;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -25,6 +28,8 @@ public class AlnsPlanner implements Planner {
     @Override
     public PlannerResult plan(Scenario scenario, PlannerParams p) {
         long startTime = System.currentTimeMillis();
+        ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
+        long cpuStart = threadMXBean.isCurrentThreadCpuTimeSupported() ? threadMXBean.getCurrentThreadCpuTime() : 0;
         Runtime rt = Runtime.getRuntime();
         long memStart = rt.totalMemory() - rt.freeMemory();
         AlnsParams params = p instanceof AlnsParams ? (AlnsParams) p : AlnsParams.defaultConfig();
@@ -92,15 +97,34 @@ public class AlnsPlanner implements Planner {
         }
 
         long executionTime = System.currentTimeMillis() - startTime;
+        long cpuEnd = threadMXBean.isCurrentThreadCpuTimeSupported() ? threadMXBean.getCurrentThreadCpuTime() : 0;
+        double cpuUsagePct = 0.0;
+        if (cpuStart > 0 && cpuEnd > cpuStart && executionTime > 0) {
+            cpuUsagePct = ((cpuEnd - cpuStart) / 1_000_000.0) / executionTime * 100.0;
+        }
+        
         long memEnd = rt.totalMemory() - rt.freeMemory();
         double ramPromedioMb = (memStart + memEnd) / 2.0 / (1024 * 1024);
         
-        log.info("ALNS finalizado en {} ms | F_mejor={} | RAM_promedio={} MB", executionTime, String.format("%.6f", bestF), String.format("%.2f", ramPromedioMb));
+        long totalDeliveryTimeMin = 0;
+        for (var entry : bestSol.asignaciones().entrySet()) {
+            var asig = entry.getValue();
+            if (asig.estado() == pe.pucp.tasfb2b.domain.enums.ShipmentStatus.ASSIGNED) {
+                var shipment = scenario.envios().stream()
+                    .filter(s -> s.idEnvio().equals(asig.idEnvio()))
+                    .findFirst().orElse(null);
+                if (shipment != null && asig.horaEntregaEstimadaUtc() != null) {
+                    totalDeliveryTimeMin += Duration.between(shipment.horaDisponibilidadUtc(), asig.horaEntregaEstimadaUtc()).toMinutes();
+                }
+            }
+        }
+        
+        log.info("ALNS finalizado en {} ms | F_mejor={} | RAM_promedio={} MB | CPU={}%", executionTime, String.format("%.6f", bestF), String.format("%.2f", ramPromedioMb), String.format("%.1f", cpuUsagePct));
         
         var objRes = ObjectiveFunction.evaluate(bestSol, scenario);
         var finalObjResult = new PlannerResult.ObjectiveFunctionResult(objRes.valorFinal(), objRes.componentes(), history);
         
-        var metadata = new PlannerResult.Metadata("ALNS", scenario.semillaAleatoria(), scenario.periodoDias(), scenario.fechaInicioUtc().toString(), executionTime, params.nMax(), ramPromedioMb);
+        var metadata = new PlannerResult.Metadata("ALNS", scenario.semillaAleatoria(), scenario.periodoDias(), scenario.fechaInicioUtc().toString(), executionTime, params.nMax(), ramPromedioMb, cpuUsagePct, totalDeliveryTimeMin);
         var kpis = KpiCalculator.calculate(bestSol, scenario);
         var asignaciones = new ArrayList<>(bestSol.asignaciones().values());
 
