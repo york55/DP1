@@ -76,7 +76,7 @@ public class Main {
                     codigoAero, archivo.getName()
                 );
 
-                LectorEnviosPorLotes lector = new LectorEnviosPorLotes(archivo, aeropuertos, dia);
+                LectorEnviosPorLotes lector = new LectorEnviosPorLotes(archivo, aeropuertos, dia,dia.plusDays(3));
                 List<Envio> lote;
                 List<RutaEnvio> rutas = new ArrayList<>();
                 int totalProcesados = 0;
@@ -90,9 +90,9 @@ public class Main {
                         rutas.add(ruta);
                         if (ruta != null) totalProcesados++;
                         else fallos++;
-                        System.out.println("========================================");
-                        imprimirDetalleRuta(envio, ruta);
-                        System.out.println("========================================");
+                        //System.out.println("========================================");
+                        //imprimirDetalleRuta(envio, ruta);
+                        //System.out.println("========================================");
 
                         if ((totalProcesados + fallos) % 10 == 0) {
                             long duracion = System.currentTimeMillis() - inicioBloque;

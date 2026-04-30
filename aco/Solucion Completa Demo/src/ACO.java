@@ -63,7 +63,7 @@ public class ACO {
         return solucion_global;
     }
 
-    private void imprimirRuta(RutaEnvio ruta) {
+    /*private void imprimirRuta(RutaEnvio ruta) {
         if (ruta == null) return;
 
         for (VueloFecha vuelo : ruta.getVuelos()) {
@@ -76,7 +76,7 @@ public class ACO {
             }
             almacenDestino.imprimir(vuelo.getFechaHoraLlegada().toLocalDate());
         }
-    }
+    }*/
 
     public static void imprimirDetalleRuta(Envio envio, RutaEnvio ruta) {
         System.out.println("Envio ID: " + envio.getId());

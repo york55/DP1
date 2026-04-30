@@ -93,6 +93,7 @@ public class ListaVuelosDia {
     }
 
     public void efectuarRutaEnvio(RutaEnvio ruta){
+        if(ruta == null) return;
         Envio envio = ruta.getEnvio();
         for (VueloFecha vf : ruta.getVuelos()) {
             vf.agregarEnvio(envio);

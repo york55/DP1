@@ -1,0 +1,83 @@
+Hay varios puntos a mejorar. Te los desgloso:
+
+## Problemas actuales
+
+**1. No usas el contexto 3D — el índice `j,j` es incorrecto**
+```java
+double tau = fermonas.get(i, j, j); // ← dos veces j, pierdes toda la info 3D
+```
+Tu matriz es `[origen][intermedio][destino]` — para usarla bien necesitas saber de dónde vienes (el aeropuerto anterior en la ruta):
+
+```java
+// Necesitas pasar el nodo anterior como parámetro
+double tau = feromonas.get(anterior, i, j); // origen→inter→destino
+```
+
+**2. La heurística ignora la espera entre vuelos**
+```java
+double eta = 1.0 / (duracion + 1.0); // solo duración del vuelo
+```
+El `+1` evita división por cero pero distorsiona vuelos cortos. Y no considera el tiempo de espera en conexión, que puede ser enorme.
+
+---
+
+## Versión mejorada
+
+```java
+private List<Double> obtenerProbabilidades(
+        List<VueloDiario> vuelos,
+        int aeropuertoAnteriorId,   // nodo previo para usar la 3D real
+        LocalDateTime tiempoActual  // para calcular espera real
+) {
+    List<Double> probs = new ArrayList<>(vuelos.size());
+    double suma = 0;
+
+    for (VueloDiario v : vuelos) {
+        int i = aeropuertos.get(v.getOrigen().getCodigo()).getId();
+        int j = aeropuertos.get(v.getDestino().getCodigo()).getId();
+
+        // ── Feromona 3D real
+        double tau = feromonas.get(aeropuertoAnteriorId, i, j);
+
+        // ── Heurística compuesta: duración + espera
+        double duracion = v.getDuracionHoras();
+        double espera   = calcularEsperaHoras(tiempoActual, v); // tiempo hasta salida
+        double costoTotal = duracion + espera;
+
+        // epsilon evita división por cero sin distorsionar
+        double eta = 1.0 / (costoTotal + 1e-6);
+
+        double prob = Math.pow(tau, alpha) * Math.pow(eta, beta);
+        probs.add(prob);
+        suma += prob;
+    }
+
+    // Normalizar — si suma == 0 todos equiprobables (fallback)
+    for (int k = 0; k < probs.size(); k++) {
+        double p = suma > 0 ? probs.get(k) / suma : 1.0 / probs.size();
+        probs.set(k, p);
+    }
+
+    return probs;
+}
+
+private double calcularEsperaHoras(LocalDateTime ahora, VueloDiario v) {
+    if (ahora == null) return 0;
+    long minutos = ChronoUnit.MINUTES.between(ahora, v.getSalida());
+    return Math.max(0, minutos / 60.0);
+}
+```
+
+---
+
+## Resumen de cambios
+
+| Aspecto | Antes | Ahora |
+|---|---|---|
+| Índice feromona | `get(i, j, j)` — mal | `get(anterior, i, j)` — usa 3D real |
+| Heurística | Solo duración + 1 | Duración + espera real |
+| División por cero | `+1.0` distorsiona | `+1e-6` neutro |
+| Fallback suma==0 | Devuelve todo en 0 | Equiprobable |
+| Tamaño lista | `new ArrayList<>()` | `new ArrayList<>(vuelos.size())` — preasigna memoria |
+
+El cambio más importante es el primero — sin el `aeropuertoAnteriorId` tu matriz 3D se reduce efectivamente a una 2D y todo el trabajo de `MatrizFeromonas3D` no sirve.

@@ -37,56 +37,46 @@ public class MatrizFeromonas3D {
         this.ultimaIter      = otra.ultimaIter.clone(); // ídem
     }
 
-    public void actualizar(List<RutaEnvio> rutas_envios){
-        for (RutaEnvio ruta : rutas_envios) {
-            double costo = ruta.getTiempoTotal(); // o tu métrica
-            if (costo <= 0) continue;
-            double delta = q / costo;
-            List<VueloFecha> vuelos = ruta.getVuelos();
-            for (int i = 0; i < vuelos.size() - 1; i++) {
-                VueloFecha v1 = vuelos.get(i);
-                VueloFecha v2 = vuelos.get(i + 1);
-                int origen  = v1.getVueloBase().getOrigen().getId();
-                int inter   = v1.getVueloBase().getDestino().getId();
-                int destino = v2.getVueloBase().getDestino().getId();
-                add(origen, inter, destino, delta);
-            }
-        }
-    }
-
-    public void actualizarRuta(RutaEnvio ruta){
-        double costo = ruta.getTiempoTotal(); // o tu métrica
+    public void actualizarRuta(RutaEnvio ruta) {
+        double costo = ruta.getTiempoTotal();
         if (costo <= 0) return;
         double delta = q / costo;
         List<VueloFecha> vuelos = ruta.getVuelos();
-        for (int i = 0; i < vuelos.size() - 1; i++) {
-            VueloFecha v1 = vuelos.get(i);
-            VueloFecha v2 = vuelos.get(i + 1);
-            int origen  = v1.getVueloBase().getOrigen().getId();
-            int inter   = v1.getVueloBase().getDestino().getId();
-            int destino = v2.getVueloBase().getDestino().getId();
+        int size = vuelos.size();
+        // Caso: un solo vuelo → tripla con origen, destino, destino
+        if (size == 1) {
+            VueloFecha v = vuelos.get(0);
+            int origen  = v.getVueloBase().getOrigen().getId();
+            int destino = v.getVueloBase().getDestino().getId();
+            add(origen, destino, destino, delta); // o maneja aparte si prefieres
+            return;
+        }
+        // Caso general: ventana deslizante de 3 nodos consecutivos
+        for (int i = 0; i < size - 1; i++) {
+            VueloFecha vActual = vuelos.get(i);
+            VueloFecha vSig    = vuelos.get(i + 1);
+            int origen  = vActual.getVueloBase().getOrigen().getId();
+            int inter   = vActual.getVueloBase().getDestino().getId();
+            // inter == vSig.getOrigen(), son el mismo aeropuerto
+            int destino = vSig.getVueloBase().getDestino().getId();
             add(origen, inter, destino, delta);
         }
     }
 
-    public void evaporar(double rho, int jFijo) {
+    /*public void evaporar(int jFijo) { // elimina el parámetro rho redundante
+        iteracionActual++;             // avanza la iteración aquí, no externamente
         for (int i = 0; i < n; i++) {
             for (int k = 0; k < n; k++) {
                 int idx = i * n * n + jFijo * n + k;
-
                 int delta = iteracionActual - ultimaIter[idx];
                 if (delta > 0) {
-                    tau[idx] *= Math.pow(1.0 - this.rho, delta);
+                    tau[idx] *= Math.pow(1.0 - rho, delta);
+                    if (tau[idx] < tauMin) tau[idx] = tauMin;
+                    ultimaIter[idx] = iteracionActual;
                 }
-
-                tau[idx] *= (1.0 - rho);
-
-                if (tau[idx] < tauMin) tau[idx] = tauMin;
-
-                ultimaIter[idx] = iteracionActual;
             }
         }
-    }
+    }*/
 
     public double get(int i, int j, int k) {
         int idx   = i * n * n + j * n + k;
@@ -99,11 +89,6 @@ public class MatrizFeromonas3D {
         return tau[idx];
     }
 
-    public void set(int i, int j, int k, double valor) {
-        int idx = i * n * n + j * n + k;
-        tau[idx] = Math.max(valor, tauMin);
-        ultimaIter[idx] = iteracionActual;
-    }
 
     public void add(int i, int j, int k, double incremento) {
         int idx   = i * n * n + j * n + k;
@@ -116,9 +101,4 @@ public class MatrizFeromonas3D {
         tau[idx] += incremento;
     }
 
-    public int getN() { return n; }
-    
-    public void setRho(double rho) { this.rho = rho; }
-
-    public void avanzarIteracion() { iteracionActual++; }
 }
