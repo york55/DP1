@@ -61,6 +61,10 @@ public class AlnsPlanner implements Planner {
         history.add(new PlannerResult.IterationHistory(0, currentF, bestF));
 
         for (int i = 1; i <= params.nMax(); i++) {
+            if (i % 100 == 0) {
+                long elapsed = System.currentTimeMillis() - startTime;
+                log.info("  Iteracion {}/{} completada | elapsed={} ms", i, params.nMax(), elapsed);
+            }
             Solution candidate = cloneSolution(currentSol);
             DestroyOperator selectedDestroy = selector.select();
             
@@ -124,7 +128,8 @@ public class AlnsPlanner implements Planner {
         var objRes = ObjectiveFunction.evaluate(bestSol, scenario);
         var finalObjResult = new PlannerResult.ObjectiveFunctionResult(objRes.valorFinal(), objRes.componentes(), history);
         
-        var metadata = new PlannerResult.Metadata("ALNS", scenario.semillaAleatoria(), scenario.periodoDias(), scenario.fechaInicioUtc().toString(), executionTime, params.nMax(), ramPromedioMb, cpuUsagePct, totalDeliveryTimeMin);
+        int totalPedidos = scenario.envios().size();
+        var metadata = new PlannerResult.Metadata("ALNS", scenario.semillaAleatoria(), scenario.periodoDias(), scenario.fechaInicioUtc().toString(), executionTime, params.nMax(), totalPedidos, ramPromedioMb, cpuUsagePct, totalDeliveryTimeMin);
         var kpis = KpiCalculator.calculate(bestSol, scenario);
         var asignaciones = new ArrayList<>(bestSol.asignaciones().values());
 

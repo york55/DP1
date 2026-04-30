@@ -17,6 +17,7 @@ public record PlannerResult(
         String fechaInicioUtc,
         long tiempoEjecucionMs,
         int numeroIteraciones,
+        int totalPedidosProcesados,
         double ramPromedioMb,
         double cpuUsagePct,
         long totalDeliveryTimeMin
