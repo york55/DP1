@@ -205,7 +205,7 @@ public class Main {
             int aeropuertoNum = 0;
 
             System.out.println("╔══════════════════════════════════════════════════════╗");
-            System.out.println("  Procesando envíos del día: " + dia);
+            System.out.println("  Procesando envíos del día: " + dia + " hasta " +  dia.plusDays(2));
             System.out.println("  Archivos encontrados: " + archivos.length);
             System.out.println("╚══════════════════════════════════════════════════════╝");
 
@@ -218,7 +218,7 @@ public class Main {
                     codigoAero, archivo.getName()
                 );
 
-                LectorEnviosPorLotes lector = new LectorEnviosPorLotes(archivo, aeropuertos, dia,dia.plusDays(3));
+                LectorEnviosPorLotes lector = new LectorEnviosPorLotes(archivo, aeropuertos, dia, dia.plusDays(2));
                 List<Envio> lote;
                 List<RutaEnvio> rutas = new ArrayList<>();
                 List<Envio> enviosFallaron = new ArrayList<>();
