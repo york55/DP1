@@ -12,8 +12,8 @@ import pe.pucp.tasfb2b.planner.PlannerResult;
 import pe.pucp.tasfb2b.planner.alns.operators.*;
 import pe.pucp.tasfb2b.service.KpiCalculator;
 
+import com.sun.management.OperatingSystemMXBean;
 import java.lang.management.ManagementFactory;
-import java.lang.management.ThreadMXBean;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,9 +28,14 @@ public class AlnsPlanner implements Planner {
     @Override
     public PlannerResult plan(Scenario scenario, PlannerParams p) {
         long startTime = System.currentTimeMillis();
-        ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
-        long cpuStart = threadMXBean.isCurrentThreadCpuTimeSupported() ? threadMXBean.getCurrentThreadCpuTime() : 0;
+        OperatingSystemMXBean osBean = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        
+        long cpuStart = osBean.getProcessCpuTime();
+        long wallStart = System.nanoTime();
+        
         Runtime rt = Runtime.getRuntime();
+        rt.gc(); // Unify with ACO approach
         long memStart = rt.totalMemory() - rt.freeMemory();
         AlnsParams params = p instanceof AlnsParams ? (AlnsParams) p : AlnsParams.defaultConfig();
         log.info("ALNS iniciado: nMax={}, qPct={}, t0={}, alpha={}, k={}", 
@@ -100,15 +105,19 @@ public class AlnsPlanner implements Planner {
             }
         }
 
-        long executionTime = System.currentTimeMillis() - startTime;
-        long cpuEnd = threadMXBean.isCurrentThreadCpuTimeSupported() ? threadMXBean.getCurrentThreadCpuTime() : 0;
+        long wallEnd = System.nanoTime();
+        long cpuEnd = osBean.getProcessCpuTime();
         double cpuUsagePct = 0.0;
-        if (cpuStart > 0 && cpuEnd > cpuStart && executionTime > 0) {
-            cpuUsagePct = ((cpuEnd - cpuStart) / 1_000_000.0) / executionTime * 100.0;
+        long wallElapsed = wallEnd - wallStart;
+        long cpuElapsed = cpuEnd - cpuStart;
+        
+        if (wallElapsed > 0) {
+            cpuUsagePct = ((double) cpuElapsed / (double) wallElapsed) * 100.0 / availableProcessors;
         }
         
+        long executionTime = wallElapsed / 1_000_000;
         long memEnd = rt.totalMemory() - rt.freeMemory();
-        double ramPromedioMb = (memStart + memEnd) / 2.0 / (1024 * 1024);
+        double ramPromedioMb = ((memStart + memEnd) / 2.0) / (1024.0 * 1024.0);
         
         long totalDeliveryTimeMin = 0;
         for (var entry : bestSol.asignaciones().entrySet()) {
