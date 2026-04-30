@@ -1,6 +1,148 @@
 package src;
 
 import java.io.File;
+import java.io.FileWriter;
+import java.io.PrintWriter;
+import java.lang.management.ManagementFactory;
+import com.sun.management.OperatingSystemMXBean;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDate;
+import java.util.*;
+
+public class Main {
+
+    public static void main(String[] args) {
+        try {
+
+            int TOTAL_EJECUCIONES = 30;
+
+            // ===== CSV =====
+            String csvPath = "metricas.csv";
+            PrintWriter writer = new PrintWriter(new FileWriter(csvPath));
+            writer.println("Iteracion,Tiempo_Ejecucion,Tiempo_Entrega,Consumo_Memoria,Consumo_CPU");
+
+            Runtime rt = Runtime.getRuntime();
+
+            OperatingSystemMXBean osBean =
+                    (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+
+            for (int iteracionGlobal = 1; iteracionGlobal <= TOTAL_EJECUCIONES; iteracionGlobal++) {
+
+                System.out.println("\n==============================");
+                System.out.println("EJECUCIÓN GLOBAL #" + iteracionGlobal);
+                System.out.println("==============================");
+
+                // ===== MEDICIÓN INICIO =====
+                long startTime = System.currentTimeMillis();
+                long memStart = rt.totalMemory() - rt.freeMemory();
+
+                // Warm-up CPU
+                osBean.getProcessCpuLoad();
+
+                String currentDir = System.getProperty("user.dir");
+                Path basePath = Paths.get(currentDir).resolve("src").resolve("datos");
+
+                Path aeropath = basePath.resolve("aeropuertos.txt");
+                Path vuelospath = basePath.resolve("vuelos.txt");
+                Path enviosdir = basePath.resolve("envios_por_origen");
+
+                if (!Files.exists(aeropath) || !Files.exists(enviosdir) || !Files.exists(vuelospath)) {
+                    System.err.println("ERROR: Archivos no encontrados.");
+                    return;
+                }
+
+                Map<String, Aeropuerto> aeropuertos =
+                        LectorArchivos.leerAeropuertos(aeropath.toString());
+
+                List<VueloDiario> vuelos =
+                        LectorArchivos.leerVuelos(vuelospath.toString(), aeropuertos);
+
+                ACO aco = new ACO(
+                        30, 30, 1.0, 2.0, 0.1, 100, 0.01,
+                        aeropuertos, vuelos
+                );
+
+                File carpeta = enviosdir.toFile();
+                File[] archivos = carpeta.listFiles((dir, name) ->
+                        name.endsWith(".txt") && name.startsWith("_envios_")
+                );
+
+                if (archivos == null || archivos.length == 0) {
+                    System.err.println("No hay archivos de envios.");
+                    return;
+                }
+
+                LocalDate dia = LocalDate.of(2026, 1, 2);
+
+                int totalGlobalProcesados = 0;
+                int totalGlobalFallos = 0;
+
+                for (File archivo : archivos) {
+
+                    LectorEnviosPorLotes lector = new LectorEnviosPorLotes(
+                            archivo, aeropuertos, dia, dia.plusDays(3)
+                    );
+
+                    List<Envio> lote;
+
+                    while ((lote = lector.siguienteLote(10)) != null) {
+                        for (Envio envio : lote) {
+
+                            RutaEnvio ruta = aco.ejecutar(envio);
+
+                            if (ruta != null) {
+                                totalGlobalProcesados++;
+                            } else {
+                                totalGlobalFallos++;
+                            }
+
+                            if (totalGlobalProcesados % 10 == 0) {
+                                System.out.println("Proceso 10");
+                            }
+                        }
+                    }
+                    lector.cerrar();
+                }
+
+                // ===== MEDICIÓN FINAL =====
+                long executionTime = System.currentTimeMillis() - startTime;
+
+                // Espera mínima para estabilizar medición CPU
+                Thread.sleep(200);
+
+                double cpuUsagePct = osBean.getProcessCpuLoad() * 100.0;
+
+                long memEnd = rt.totalMemory() - rt.freeMemory();
+                double ramPromedioMb = (memStart + memEnd) / 2.0 / (1024 * 1024);
+
+                long tiempoEntrega = executionTime;
+
+                // ===== GUARDAR CSV =====
+                writer.println(iteracionGlobal + "," +
+                        executionTime + "," +
+                        tiempoEntrega + "," +
+                        ramPromedioMb + "," +
+                        cpuUsagePct);
+
+                System.out.printf("Iteración %d -> Tiempo: %d ms | CPU: %.2f%% | RAM: %.2f MB%n",
+                        iteracionGlobal, executionTime, cpuUsagePct, ramPromedioMb);
+            }
+
+            writer.close();
+
+            System.out.println("\nCSV generado en: " + Paths.get("metricas.csv").toAbsolutePath());
+            System.out.println("Proceso terminado (" + TOTAL_EJECUCIONES + " ejecuciones).");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+/*package src;
+
+import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -34,8 +176,8 @@ public class Main {
 
             // Inicializar ACO
             ACO aco = new ACO(
-                    30,     // iteraciones
-                    15,     // hormigas
+                    20,     // iteraciones
+                    40,     // hormigas
                     1.0,    // alpha
                     2.0,    // beta
                     0.1,    // rho
@@ -79,27 +221,35 @@ public class Main {
                 LectorEnviosPorLotes lector = new LectorEnviosPorLotes(archivo, aeropuertos, dia,dia.plusDays(3));
                 List<Envio> lote;
                 List<RutaEnvio> rutas = new ArrayList<>();
+                List<Envio> enviosFallaron = new ArrayList<>();
                 int totalProcesados = 0;
                 int fallos = 0;
                 long inicioAero = System.currentTimeMillis();
-                long inicioBloque = inicioAero;
 
                 while ((lote = lector.siguienteLote(10)) != null) {
+                    int fallosLote = 0; int totalProcesadosLotes = 0; long iniciLote = System.currentTimeMillis();
                     for (Envio envio : lote) {
                         RutaEnvio ruta = aco.ejecutar(envio);
                         rutas.add(ruta);
-                        if (ruta != null) totalProcesados++;
-                        else fallos++;
+                        if (ruta != null){
+                            totalProcesados++;
+                            totalProcesadosLotes++;
+                        }
+                        else{
+                            fallos++;
+                            fallosLote++;
+                            enviosFallaron.add(envio);
+                        }
                         //System.out.println("========================================");
                         //imprimirDetalleRuta(envio, ruta);
                         //System.out.println("========================================");
 
                         if ((totalProcesados + fallos) % 10 == 0) {
-                            long duracion = System.currentTimeMillis() - inicioBloque;
+                            long duracion = System.currentTimeMillis() - iniciLote;
                             System.out.printf("  │  +" + lote.size() + " envíos  ✓ %-5d  ✗ %-4d  %4d ms%n",
-                                totalProcesados, fallos, duracion
+                                totalProcesadosLotes, fallosLote, duracion
                             );
-                            inicioBloque = System.currentTimeMillis();
+                            iniciLote = System.currentTimeMillis();
                         }
                     }
                 }

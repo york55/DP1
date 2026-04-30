@@ -12,10 +12,12 @@ import java.util.Map;
 
 public class AlmacenAeropuerto {
     public static class EventoMaletas {
+        int idEnvio;
         LocalTime momento;
         int deltaMaleta;
 
-        EventoMaletas(LocalTime momento,int deltaMaleta){
+        EventoMaletas(int idEnvio,LocalTime momento,int deltaMaleta){
+            this.idEnvio = idEnvio;
             this.momento = momento;
             this.deltaMaleta = deltaMaleta;
         }
@@ -51,23 +53,23 @@ public class AlmacenAeropuerto {
         return (actuales + cantidadMaletas) <= aeropuerto.getCapacidadMaxima();
     }
 
-    /**
-     * Registra la llegada de maletas (entran al almacén).
-     */
-    public void registrarLlegada(int cantidadMaletas, LocalDateTime horaLlegada) {
-        agregarEvento(horaLlegada, +cantidadMaletas);
+    
+    //  Registra la llegada de maletas (entran al almacén).
+    
+    public void registrarLlegada(int idEnvio,int cantidadMaletas, LocalDateTime horaLlegada) {
+        agregarEvento(idEnvio,horaLlegada, +cantidadMaletas);
     }
 
-    /**
-     * Registra la salida de maletas (salen del almacén).
-     */
-    public void registrarSalida(int cantidadMaletas, LocalDateTime horaSalida) {
-        agregarEvento(horaSalida, -cantidadMaletas);
+    
+    //  Registra la salida de maletas (salen del almacén).
+     
+    public void registrarSalida(int idEnvio,int cantidadMaletas, LocalDateTime horaSalida) {
+        agregarEvento(idEnvio,horaSalida, -cantidadMaletas);
     }
 
-    /**
-     * Revierte una llegada (al deshacer una ruta).
-     */
+    
+     // Revierte una llegada (al deshacer una ruta).
+    
     public void revertirLlegada(int cantidadMaletas, LocalDateTime horaLlegada) {
         //agregarEvento(horaLlegada, -cantidadMaletas);
         //No agregar evento
@@ -76,9 +78,9 @@ public class AlmacenAeropuerto {
             .removeLast(); //Esta ultimo lo puesto
     }
 
-    /**
-     * Revierte una salida (al deshacer una ruta).
-     */
+    
+    // Revierte una salida (al deshacer una ruta).
+    
     public void revertirSalida(int cantidadMaletas, LocalDateTime horaSalida) {
         //agregarEvento(horaSalida, +cantidadMaletas);
         eventosPorFecha
@@ -86,10 +88,10 @@ public class AlmacenAeropuerto {
             .removeLast(); //Esta ultimo lo puesto
     }
 
-    private void agregarEvento(LocalDateTime momento, int delta) {
+    private void agregarEvento(int idEnvio,LocalDateTime momento, int delta) {
         eventosPorFecha
             .computeIfAbsent(momento.toLocalDate(), k -> new ArrayList<>())
-            .add(new EventoMaletas(momento.toLocalTime(), delta));
+            .add(new EventoMaletas(idEnvio,momento.toLocalTime(), delta));
     }
 
     public Aeropuerto getAeropuerto() {

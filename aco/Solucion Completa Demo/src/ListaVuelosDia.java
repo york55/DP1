@@ -50,12 +50,14 @@ public class ListaVuelosDia {
         almacenes
             .get(vf.getVueloBase().getOrigen().getCodigo())
             .registrarSalida(
+                envio.getId(),
                 envio.getCantidad_maletas(), 
                 vf.getFechaHoraSalida()
             );
         almacenes
             .get(vf.getVueloBase().getDestino().getCodigo())
             .registrarLlegada(
+                envio.getId(),
                 envio.getCantidad_maletas(), 
                 vf.getFechaHoraLlegada()
             );
@@ -81,9 +83,11 @@ public class ListaVuelosDia {
             LocalDateTime momentoLlegada = vf.getFechaHoraLlegada();
             almacenes
                 .get(vuelo.getOrigen().getCodigo())
+                //.revertirSalida(momentoSalida);
                 .revertirSalida(envio.getCantidad_maletas(), momentoSalida);
             almacenes
                 .get(vuelo.getDestino().getCodigo())
+                //.revertirLlegada(momentoLlegada);
                 .revertirLlegada(envio.getCantidad_maletas(), momentoLlegada);
 
             //almacenOrigen.imprimir(momentoSalida.toLocalDate());
@@ -100,12 +104,14 @@ public class ListaVuelosDia {
             almacenes
             .get(vf.getVueloBase().getOrigen().getCodigo())
             .registrarSalida(
+                envio.getId(),
                 envio.getCantidad_maletas(), 
                 vf.getFechaHoraSalida()
             );
             almacenes
                 .get(vf.getVueloBase().getDestino().getCodigo())
                 .registrarLlegada(
+                    envio.getId(),
                     envio.getCantidad_maletas(), 
                     vf.getFechaHoraLlegada()
                 );

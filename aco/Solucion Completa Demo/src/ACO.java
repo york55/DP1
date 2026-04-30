@@ -26,6 +26,10 @@ public class ACO {
     }
 
     public RutaEnvio ejecutar(Envio envio){
+        /*boolean imprimir=false;
+        //if(envio.getOrigen().getCodigo().equals("LKRP")){
+            imprimir= true;
+        }*/
         RutaEnvio solucion_global = null;
         double mejor_costo_global = Double.POSITIVE_INFINITY;
         for(int i=0;i<nro_iteraciones;i++){
@@ -41,7 +45,13 @@ public class ACO {
                         mejor_costo_iteracion = costo_hormiga;
                         mejor_solucion_iteracion = ruta;
                     }
-                }
+                }/*else if(imprimir){
+                    //Imprimir cada envio
+                    imprimirDetalleRuta(envio, ruta);
+                    System.out.println("=========================");
+                    imprimirRuta(ruta);
+                    System.out.println("=========================");
+                }*/
                 vuelos.deshacerRutaEnvio(ruta);
             }
             if(mejor_solucion_iteracion != null){
@@ -63,7 +73,7 @@ public class ACO {
         return solucion_global;
     }
 
-    /*private void imprimirRuta(RutaEnvio ruta) {
+    private void imprimirRuta(RutaEnvio ruta) {
         if (ruta == null) return;
 
         for (VueloFecha vuelo : ruta.getVuelos()) {
@@ -76,7 +86,7 @@ public class ACO {
             }
             almacenDestino.imprimir(vuelo.getFechaHoraLlegada().toLocalDate());
         }
-    }*/
+    }
 
     public static void imprimirDetalleRuta(Envio envio, RutaEnvio ruta) {
         System.out.println("Envio ID: " + envio.getId());
