@@ -121,7 +121,7 @@ public class Main {
 
             // --- Escribir header del CSV ---
             try (PrintWriter pw = new PrintWriter(new FileWriter(outputFile, false))) {
-                pw.println("Iteracion,Tiempo_Ejecucion,Tiempo_Entrega,Consumo_Memoria,Consumo_CPU");
+                pw.println("Iteracion,Tiempo_Ejecucion,Envios_Total,Envios_Asignados,Envios_Fallidos,Pct_Asignados,Costo_Solucion,Tiempo_Entrega,Consumo_Memoria,Consumo_CPU");
             }
 
             OperatingSystemMXBean osBean = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
@@ -161,6 +161,7 @@ public class Main {
                     int loteSize = 10;
                     int totalConRuta = 0;
                     int totalSinRuta = 0;
+                    double totalCostoSolucion = 0;
                     double totalTiempoEntregaHoras = 0;
                     Map<Integer, Ruta> todasLasRutas = new HashMap<>();
 
@@ -171,6 +172,7 @@ public class Main {
 
                         totalConRuta += (subLista.size() - resultado.getEnviosFallidos());
                         totalSinRuta += resultado.getEnviosFallidos();
+                        totalCostoSolucion += resultado.getCostoTotal();
 
                         // Acumular rutas para calcular tiempo de entrega
                         for (Map.Entry<Integer, Ruta> entry : resultado.getAsignaciones().entrySet()) {
@@ -201,9 +203,15 @@ public class Main {
 
                     // Escribir fila al CSV
                     try (PrintWriter pw = new PrintWriter(new FileWriter(outputFile, true))) {
-                        pw.printf("%d,%d,%.2f,%.2f,%.2f%n",
+                        double pctAsignados = (double) totalConRuta / (totalConRuta + totalSinRuta) * 100.0;
+                        pw.printf("%d,%d,%d,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f%n",
                             iter,
                             tiempoEjecucionMs,
+                            totalConRuta + totalSinRuta,
+                            totalConRuta,
+                            totalSinRuta,
+                            pctAsignados,
+                            totalCostoSolucion,
                             tiempoEntregaMin,
                             ramPromedioMb,
                             cpuPct
@@ -222,7 +230,7 @@ public class Main {
                 } catch (Exception e) {
                     System.err.println("   ✘ ERROR en iteración " + iter + ": " + e.getMessage());
                     try (PrintWriter pw = new PrintWriter(new FileWriter(outputFile, true))) {
-                        pw.println(iter + ",ERROR,ERROR,ERROR,ERROR");
+                        pw.println(iter + ",ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR");
                     } catch (IOException ioEx) {
                         ioEx.printStackTrace();
                     }
