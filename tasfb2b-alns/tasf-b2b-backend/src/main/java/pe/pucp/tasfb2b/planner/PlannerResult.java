@@ -17,7 +17,10 @@ public record PlannerResult(
         String fechaInicioUtc,
         long tiempoEjecucionMs,
         int numeroIteraciones,
-        double ramPromedioMb
+        int totalPedidosProcesados,
+        double ramPromedioMb,
+        double cpuUsagePct,
+        long totalDeliveryTimeMin
     ) {}
 
     public record ObjectiveFunctionResult(

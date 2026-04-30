@@ -1,9 +1,17 @@
 server:
   port: 8080
+  servlet:
+    connection-timeout: 30m
+    async:
+      request-timeout: 30m
 
 spring:
   application:
     name: tasf-b2b-backend
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
 
 logging:
   level:

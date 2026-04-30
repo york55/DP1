@@ -11,7 +11,16 @@ import pe.pucp.tasfb2b.planner.PlannerParams;
 import pe.pucp.tasfb2b.planner.PlannerResult;
 import pe.pucp.tasfb2b.service.ScenarioLoader;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 @RestController
 @RequestMapping("/api/planner")
@@ -19,13 +28,17 @@ import java.util.List;
 public class PlannerController {
 
     private static final Logger log = LoggerFactory.getLogger(PlannerController.class);
+    private static final Path RESULTS_DIR = Paths.get("results");
+    private static final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
     private final ScenarioLoader scenarioLoader;
     private final List<Planner> planners;
+    private final Map<String, ExecutionStatus> executions = new ConcurrentHashMap<>();
 
     public PlannerController(ScenarioLoader scenarioLoader, List<Planner> planners) {
         this.scenarioLoader = scenarioLoader;
         this.planners = planners;
+        try { Files.createDirectories(RESULTS_DIR); } catch (IOException e) { /* ignore */ }
         log.info("PlannerController inicializado con {} algoritmos: {}",
                 planners.size(), planners.stream().map(Planner::name).toList());
     }
@@ -39,13 +52,11 @@ public class PlannerController {
             @RequestParam("algoritmo") String algoritmo,
             @RequestParam(value = "overrides", required = false) String overridesJson
     ) {
-        log.info("========== NUEVA EJECUCION ==========");
+        String execId = java.util.UUID.randomUUID().toString();
+        log.info("========== NUEVA EJECUCION {} ==========", execId);
         log.info("Algoritmo solicitado: {}", algoritmo);
-        log.info("Archivos recibidos: aeropuertos={} ({} bytes), vuelos={} ({} bytes), envios={} ({} bytes), parametros={} ({} bytes)",
-                aeropuertosFile.getOriginalFilename(), aeropuertosFile.getSize(),
-                vuelosFile.getOriginalFilename(), vuelosFile.getSize(),
-                enviosFile.getOriginalFilename(), enviosFile.getSize(),
-                parametrosFile.getOriginalFilename(), parametrosFile.getSize());
+
+        executions.put(execId, new ExecutionStatus(execId, "RUNNING", 0, 0, null));
 
         try {
             log.info("[1/3] Cargando escenario desde CSVs...");
@@ -68,19 +79,70 @@ public class PlannerController {
             PlannerResult result = selectedPlanner.plan(scenario, params);
             long elapsed = System.currentTimeMillis() - t0;
             log.info("[3/3] Planificacion completada en {} ms", elapsed);
-            log.info("  Resultado: F={}, asignaciones={}, kpis.entregasATiempo={}%",
+            log.info("  Resultado: F={}, asignaciones={}, pedidosProcesados={}, kpis.entregasATiempo={}%",
                     result.funcionObjetivo().valorFinal(),
                     result.asignaciones().size(),
+                    result.metadata().totalPedidosProcesados(),
                     String.format("%.1f", result.kpis().pctEntregasATiempo() * 100));
-            log.info("========== FIN EJECUCION (OK) ==========");
 
-            return ResponseEntity.ok(result);
+            Path resultPath = RESULTS_DIR.resolve(execId + ".json");
+            mapper.writeValue(resultPath.toFile(), result);
+
+            executions.put(execId, new ExecutionStatus(execId, "COMPLETED", result.metadata().totalPedidosProcesados(), elapsed, resultPath.toString()));
+            log.info("========== FIN EJECUCION {} (OK) ==========", execId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("execId", execId);
+            response.put("status", "COMPLETED");
+            response.put("pedidosProcesados", result.metadata().totalPedidosProcesados());
+            response.put("asignaciones", result.asignaciones().size());
+            response.put("entregasATiempo", result.kpis().pctEntregasATiempo() * 100);
+            response.put("enviosAsignados", result.kpis().pctEnviosAsignados() * 100);
+            response.put("ocupacionVuelos", result.kpis().ocupacionPromedioVuelos() * 100);
+            response.put("maletasRetrasadas", result.kpis().maletasRetrasadas());
+            response.put("funcionObjetivo", result.funcionObjetivo().valorFinal());
+            response.put("tiempoEjecucionMs", elapsed);
+            response.put("metadata", result.metadata());
+
+            return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            log.error("========== ERROR EN EJECUCION ==========");
+            log.error("========== ERROR EN EJECUCION {} ==========", execId);
             log.error("Mensaje: {}", e.getMessage());
             log.error("Stacktrace completo:", e);
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+            executions.put(execId, new ExecutionStatus(execId, "FAILED", 0, 0, e.getMessage()));
+            return ResponseEntity.badRequest().body(Map.of("execId", execId, "status", "FAILED", "error", e.getMessage()));
         }
     }
+
+    @GetMapping("/result/{execId}")
+    public ResponseEntity<?> getResult(@PathVariable String execId) {
+        ExecutionStatus status = executions.get(execId);
+        if (status == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if ("COMPLETED".equals(status.status())) {
+            try {
+                Path resultPath = Paths.get(status.resultPath());
+                if (Files.exists(resultPath)) {
+                    String json = Files.readString(resultPath);
+                    return ResponseEntity.ok().header("Content-Type", "application/json").body(json);
+                }
+            } catch (IOException e) {
+                return ResponseEntity.internalServerError().body("Error reading result file");
+            }
+        }
+        return ResponseEntity.ok(status);
+    }
+
+    @GetMapping("/status/{execId}")
+    public ResponseEntity<?> getStatus(@PathVariable String execId) {
+        ExecutionStatus status = executions.get(execId);
+        if (status == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(status);
+    }
+
+    public record ExecutionStatus(String execId, String status, int pedidosProcesados, long tiempoMs, String resultPath) {}
 }
