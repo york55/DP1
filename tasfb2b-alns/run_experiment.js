@@ -142,7 +142,7 @@ async function main() {
     console.log('');
 
     // Escribir header del CSV
-    const csvHeader = 'Iteracion,Tiempo_Ejecucion,Tiempo_Entrega,Consumo_Memoria,Consumo_CPU\n';
+    const csvHeader = 'Iteracion,Tiempo_Ejecucion,Envios_Total,Envios_Asignados,Envios_Fallidos,Pct_Asignados,Pct_Entregas_Tiempo,Costo_Solucion,Tiempo_Entrega,Consumo_Memoria,Consumo_CPU\n';
     fs.writeFileSync(opts.output, csvHeader);
 
     const results = [];
@@ -154,15 +154,29 @@ async function main() {
         try {
             const response = await executeAlns(buffer, boundary);
 
-            // Extraer métricas
-            const tiempoEjecucion = response.tiempoEjecucionMs   || response.metadata?.tiempoEjecucionMs   || 0;
-            const tiempoEntrega   = response.metadata?.totalDeliveryTimeMin || 0;
-            const consumoMemoria  = response.metadata?.ramPromedioMb        || 0;
-            const consumoCPU      = response.metadata?.cpuUsagePct          || 0;
+            // Extraer métricas (según estructura de PlannerController.java)
+            const metadata = response.metadata || {};
+
+            const tiempoEjecucion = response.tiempoEjecucionMs || metadata.tiempoEjecucionMs || 0;
+            const enviosTotal     = response.pedidosProcesados || metadata.totalPedidosProcesados || 0;
+            const enviosAsignados = response.asignaciones || 0;
+            const enviosFallidos  = enviosTotal - enviosAsignados;
+            const pctAsignados    = response.enviosAsignados || 0; // Ya viene en % (0..100)
+            const pctATiempo      = response.entregasATiempo || 0; // Ya viene en % (0..100)
+            const costoSolucion   = response.funcionObjetivo || 0;
+            const tiempoEntrega   = metadata.totalDeliveryTimeMin || 0;
+            const consumoMemoria  = metadata.ramPromedioMb || 0;
+            const consumoCPU      = metadata.cpuUsagePct || 0;
 
             const row = {
                 Iteracion: i,
                 Tiempo_Ejecucion: tiempoEjecucion,
+                Envios_Total: enviosTotal,
+                Envios_Asignados: enviosAsignados,
+                Envios_Fallidos: enviosFallidos,
+                Pct_Asignados: parseFloat(pctAsignados.toFixed(2)),
+                Pct_Entregas_Tiempo: parseFloat(pctATiempo.toFixed(2)),
+                Costo_Solucion: parseFloat(costoSolucion.toFixed(6)),
                 Tiempo_Entrega: tiempoEntrega,
                 Consumo_Memoria: parseFloat(consumoMemoria.toFixed(2)),
                 Consumo_CPU: parseFloat(consumoCPU.toFixed(2)),
@@ -171,7 +185,7 @@ async function main() {
             results.push(row);
 
             // Append al CSV
-            const csvLine = `${row.Iteracion},${row.Tiempo_Ejecucion},${row.Tiempo_Entrega},${row.Consumo_Memoria},${row.Consumo_CPU}\n`;
+            const csvLine = `${row.Iteracion},${row.Tiempo_Ejecucion},${row.Envios_Total},${row.Envios_Asignados},${row.Envios_Fallidos},${row.Pct_Asignados},${row.Pct_Entregas_Tiempo},${row.Costo_Solucion},${row.Tiempo_Entrega},${row.Consumo_Memoria},${row.Consumo_CPU}\n`;
             fs.appendFileSync(opts.output, csvLine);
 
             console.log(`   ✔ Tiempo: ${tiempoEjecucion} ms | Entrega: ${tiempoEntrega} min | RAM: ${consumoMemoria.toFixed(2)} MB | CPU: ${consumoCPU.toFixed(1)}%`);
@@ -180,7 +194,7 @@ async function main() {
         } catch (err) {
             console.error(`   ✘ ERROR en iteración ${i}: ${err.message}`);
             // Escribir fila de error en el CSV
-            const csvLine = `${i},ERROR,ERROR,ERROR,ERROR\n`;
+            const csvLine = `${i},ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR\n`;
             fs.appendFileSync(opts.output, csvLine);
             console.log('');
         }
