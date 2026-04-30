@@ -10,30 +10,115 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class AlmacenAeropuerto {
-    public static class EventoMaletas {
-        int idEnvio;
-        String origen;
-        LocalTime momento;
-        int deltaMaleta;
+import src.AlmacenAeropuerto.EventoMaletas;
 
-        EventoMaletas(Envio envio,LocalTime momento,int deltaMaleta){
-            this.idEnvio = envio.getId();
-            this.origen = envio.getOrigen().getCodigo();
+public class AlmacenAeropuertoDos {
+    public class EventoMaletasCliente {
+        Envio envio;
+        LocalTime momento;
+
+        EventoMaletasCliente(Envio envio, LocalTime momento) {
+            this.envio = envio;
             this.momento = momento;
-            this.deltaMaleta = deltaMaleta;
         }
+        public Envio getEnvio() { return this.envio; } 
+    }
+    public class EventoMaletasVuelo {
+        VueloFecha vueloFecha; //referencia al objeto que tiene las maletas que entran o salen
+        boolean es_vuelo_salida;
+        EventoMaletasVuelo(VueloFecha vuelo) {
+            this.vueloFecha = vuelo;
+            String origen_vuelo = vuelo.getVueloBase().getOrigen().getCodigo();
+            if(origen_vuelo.equals(aeropuerto.getCodigo())) this.es_vuelo_salida = true;
+            else this.es_vuelo_salida = false;
+        }
+        public VueloFecha getVueloFecha() { return this.vueloFecha; }
     }
     private final Aeropuerto aeropuerto;
-    private final Map<LocalDate,List<EventoMaletas>> eventosPorFecha;
-    
-    public AlmacenAeropuerto(Aeropuerto aeropuerto){
-        this.aeropuerto = aeropuerto;
-        this.eventosPorFecha = new HashMap<>();
+    private final Map<LocalDate, List<EventoMaletasCliente>> eventosClientes;
+    private final Map<LocalDate, List<EventoMaletasVuelo>> eventosVuelos;
 
+    public AlmacenAeropuertoDos(Aeropuerto aeropuerto){
+        this.aeropuerto = aeropuerto;
+        this.eventosClientes = new HashMap<>();
+        this.eventosVuelos = new HashMap<>();
     }
 
-    public int getMaletasEnMomento(LocalDateTime fechaHora) {
+    public int getMaletasEnMomentoDOS(LocalDateTime fechaHora){
+        int total = 0;
+        LocalDate fecha = fechaHora.toLocalDate();
+        LocalTime hora = fechaHora.toLocalTime();
+        //Envios que dejo cliente en aeropuerto
+        List<EventoMaletasCliente> eventosC = eventosClientes.getOrDefault(
+            fecha, Collections.emptyList()
+        );
+        for (EventoMaletasCliente e : eventosC) {
+            if (!e.momento.isAfter(hora)) {
+                total += e.getEnvio().getCantidad_maletas();
+            }
+        }
+
+        // Vuelos que salen y llegan
+        List<EventoMaletasVuelo> eventosV = eventosVuelos.getOrDefault(
+            fecha, Collections.emptyList()
+        );
+
+        for (EventoMaletasVuelo evento : eventosV) {
+            if(evento.es_vuelo_salida){
+                LocalTime horaSalida = evento.getVueloFecha().getVueloBase().getHoraSalida();
+                if(horaSalida.isBefore(hora)){
+                    total -= ;
+                }
+            }else{
+                LocalTime horaLlegada = evento.getVueloFecha().getVueloBase().getHoraLlegada();
+                if(horaLlegada.isBefore(hora)){
+                    total += ;
+                }
+            }
+        }
+
+        return Math.max(total, 0);
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    /*public int getMaletasEnMomento(LocalDateTime fechaHora) {
         int total = 0;
         LocalTime hora = fechaHora.toLocalTime();
 
@@ -125,5 +210,5 @@ public class AlmacenAeropuerto {
         // Resumen al final
         System.out.println("  ------------------------------------------");
         System.out.println();
-    }
+    }*/
 }

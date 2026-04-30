@@ -1,4 +1,4 @@
-package src;
+/*package src;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -140,7 +140,7 @@ public class Main {
         }
     }
 }
-/*package src;
+*/package src;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -176,8 +176,8 @@ public class Main {
 
             // Inicializar ACO
             ACO aco = new ACO(
-                    20,     // iteraciones
-                    40,     // hormigas
+                    25,     // iteraciones
+                    50,     // hormigas
                     1.0,    // alpha
                     2.0,    // beta
                     0.1,    // rho

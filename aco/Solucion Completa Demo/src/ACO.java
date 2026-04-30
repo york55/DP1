@@ -26,10 +26,6 @@ public class ACO {
     }
 
     public RutaEnvio ejecutar(Envio envio){
-        /*boolean imprimir=false;
-        //if(envio.getOrigen().getCodigo().equals("LKRP")){
-            imprimir= true;
-        }*/
         RutaEnvio solucion_global = null;
         double mejor_costo_global = Double.POSITIVE_INFINITY;
         for(int i=0;i<nro_iteraciones;i++){
@@ -45,13 +41,12 @@ public class ACO {
                         mejor_costo_iteracion = costo_hormiga;
                         mejor_solucion_iteracion = ruta;
                     }
-                }/*else if(imprimir){
-                    //Imprimir cada envio
-                    imprimirDetalleRuta(envio, ruta);
-                    System.out.println("=========================");
-                    imprimirRuta(ruta);
-                    System.out.println("=========================");
-                }*/
+                }
+                //Imprimir cada envio
+                //imprimirDetalleRuta(envio, ruta);
+                //System.out.println("=========================");
+                //imprimirRuta(ruta);
+                //System.out.println("=========================");
                 vuelos.deshacerRutaEnvio(ruta);
             }
             if(mejor_solucion_iteracion != null){

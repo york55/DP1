@@ -128,7 +128,8 @@ public class Hormigo {
             // Feromona (simplificado: origen -> destino)
             int i = aeropuertos.get(v.getOrigen().getCodigo()).getId();
             int j = aeropuertos.get(v.getDestino().getCodigo()).getId();
-            double tau = fermonas.get(i, j, j); // puedes ajustar esto si usas 3D real
+            int k = aeropuertos.get(envio.getDestino().getCodigo()).getId();
+            double tau = fermonas.get(i, j, k); 
             // Heurística: duración (puedes mejorarla luego con espera)
             double duracion = v.getDuracionHoras();
             double eta = 1.0 / (duracion + 1.0);

@@ -50,15 +50,13 @@ public class ListaVuelosDia {
         almacenes
             .get(vf.getVueloBase().getOrigen().getCodigo())
             .registrarSalida(
-                envio.getId(),
-                envio.getCantidad_maletas(), 
+                envio, 
                 vf.getFechaHoraSalida()
             );
         almacenes
             .get(vf.getVueloBase().getDestino().getCodigo())
             .registrarLlegada(
-                envio.getId(),
-                envio.getCantidad_maletas(), 
+                envio,
                 vf.getFechaHoraLlegada()
             );
         //Si es el ultimo destino del envio, entonces poner que sale
@@ -104,15 +102,13 @@ public class ListaVuelosDia {
             almacenes
             .get(vf.getVueloBase().getOrigen().getCodigo())
             .registrarSalida(
-                envio.getId(),
-                envio.getCantidad_maletas(), 
+                envio,
                 vf.getFechaHoraSalida()
             );
             almacenes
                 .get(vf.getVueloBase().getDestino().getCodigo())
                 .registrarLlegada(
-                    envio.getId(),
-                    envio.getCantidad_maletas(), 
+                    envio,
                     vf.getFechaHoraLlegada()
                 );
         }
