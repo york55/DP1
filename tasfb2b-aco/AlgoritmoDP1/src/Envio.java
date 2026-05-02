@@ -2,35 +2,39 @@ import java.time.LocalDateTime;
 
 public class Envio {
     private int id;
-    private String origen;
-    private String destino;
+    private Aeropuerto origen;
+    private Aeropuerto destino;
     private LocalDateTime diaHoraIngreso;
-    private int cantidadMaletas;
+    private int cantidad_maletas;
+    private boolean mismoContinente;
     
-    public Envio(int id, String origen, String destino, 
-                 LocalDateTime diaHoraIngreso, int cantidadMaletas) {
+    public Envio(int id, Aeropuerto origen, Aeropuerto destino, 
+                 LocalDateTime diaHoraIngreso, int cantidad_maletas) {
         this.id = id;
         this.origen = origen;
         this.destino = destino;
         this.diaHoraIngreso = diaHoraIngreso;
-        this.cantidadMaletas = cantidadMaletas;
+        this.cantidad_maletas = cantidad_maletas;
+        this.mismoContinente = origen.getContinente().equals(destino.getContinente());
     }
     
     // Getters
     public int getId() { return id; }
-    public String getOrigen() { return origen; }
-    public String getDestino() { return destino; }
+    public Aeropuerto getOrigen() { return origen; }
+    public Aeropuerto getDestino() { return destino; }
     public LocalDateTime getDiaHoraIngreso() { return diaHoraIngreso; }
-    public int getCantidadMaletas() { return cantidadMaletas; }
+    public int getCantidadMaletas() { return cantidad_maletas; }
+    public int getCantidad_maletas() { return cantidad_maletas; }
+    public boolean getEsMismoContinente() { return mismoContinente; }
 
     @Override
     public String toString() {
-        return "Envio{" +
-                "id=" + id +
-                ", origen='" + origen + '\'' +
-                ", destino='" + destino + '\'' +
-                ", diaHoraIngreso=" + diaHoraIngreso +
-                ", cantidadMaletas=" + cantidadMaletas +
-                '}';
+        return "===== DETALLE ENVÍO =====\n" +
+            "ID: " + id + "\n" +
+            "Origen: " + origen + "\n" +
+            "Destino: " + destino + "\n" +
+            "Fecha ingreso: " + diaHoraIngreso + "\n" +
+            "Cantidad maletas: " + cantidad_maletas + "\n" +
+            "=========================";
     }
 }

@@ -33,36 +33,33 @@ public class Main {
             }
 
             Map<String, Aeropuerto> aeropuertos = LectorArchivos.leerAeropuertos(aeropath.toString());
-            List<Vuelo> vuelos = LectorArchivos.leerVuelos(vuelospath.toString(), aeropuertos);
-            List<Envio> envios = LectorArchivos.leerEnviosDesdeCarpeta(enviosdir.toString());
+            List<VueloDiario> vuelos = LectorArchivos.leerVuelos(vuelospath.toString(), aeropuertos);
+            List<Envio> envios = LectorArchivos.leerEnviosDesdeCarpeta(enviosdir.toString(), aeropuertos);
 
-            ACO_Traslados aco = new ACO_Traslados(20, 8, 10, 1.0, 2.0, 0.1, 1.0, 0.01);
-            MatrizFeromonas3D feromonas = new MatrizFeromonas3D(aeropuertos.size(), 0.01);
-            aco.inicializar(new ArrayList<>(aeropuertos.values()), vuelos, feromonas);
+            // 70 iteraciones, 40 hormigas, alpha=1.0, beta=2.0, rho=0.1, q=1.0, tau0=1.0
+            ACO aco = new ACO(70, 40, 1.0, 2.0, 0.1, 1.0, 1.0, aeropuertos, vuelos);
 
             long inicioBloque1000 = System.nanoTime();
             int nro_envios = 0;
             int totalSinRuta = 0;
             int totalConRuta = 0;
-            int loteSize = 10;
             int totalEnvios = envios.size();
 
-            System.out.println("Procesando " + totalEnvios + " envíos en lotes de " + loteSize + "...");
+            System.out.println("Procesando " + totalEnvios + " envíos uno a uno...");
 
             long inicioGlobal = System.nanoTime();
-            for (int i = 0; i < totalEnvios; i += loteSize) {
-                int fin = Math.min(i + loteSize, totalEnvios);
-                List<Envio> subLista = envios.subList(i, fin);
+            for (Envio envio : envios) {
+                RutaEnvio ruta = aco.ejecutar(envio);
 
-                SolucionLoteACO resultadoLote = aco.ejecutarLote(subLista);
+                if (ruta != null) {
+                    totalConRuta++;
+                } else {
+                    totalSinRuta++;
+                }
+                nro_envios++;
 
-                totalConRuta += (subLista.size() - resultadoLote.getEnviosFallidos());
-                totalSinRuta += resultadoLote.getEnviosFallidos();
-                nro_envios += subLista.size();
-
-                if (nro_envios % 1000 == 0 || nro_envios == totalEnvios) {
+                if (nro_envios % 100 == 0 || nro_envios == totalEnvios) {
                     imprimirProgreso(nro_envios, totalEnvios, totalConRuta, totalSinRuta, inicioGlobal, inicioBloque1000);
-                    resultadoLote.imprimirDetalleLote();
                     inicioBloque1000 = System.nanoTime();
                 }
             }
@@ -119,9 +116,9 @@ public class Main {
                 return;
             }
 
-            // --- Escribir header del CSV ---
+            // --- Escribir header del CSV (Alineado con ALNS) ---
             try (PrintWriter pw = new PrintWriter(new FileWriter(outputFile, false))) {
-                pw.println("Iteracion,Tiempo_Ejecucion,Envios_Total,Envios_Asignados,Envios_Fallidos,Pct_Asignados,Costo_Solucion,Tiempo_Entrega,Consumo_Memoria,Consumo_CPU");
+                pw.println("Iteracion,Tiempo_Ejecucion,Envios_Total,Envios_Asignados,Envios_Fallidos,Pct_Asignados,Pct_Entregas_Tiempo,Costo_Solucion,Tiempo_Entrega,Consumo_Memoria,Consumo_CPU");
             }
 
             OperatingSystemMXBean osBean = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
@@ -139,8 +136,8 @@ public class Main {
                 try {
                     // Recargar datos frescos para cada iteración (ACO modifica capacidades)
                     Map<String, Aeropuerto> aeropuertos = LectorArchivos.leerAeropuertos(aeropath.toString());
-                    List<Vuelo> vuelos = LectorArchivos.leerVuelos(vuelospath.toString(), aeropuertos);
-                    List<Envio> todosEnvios = LectorArchivos.leerEnviosDesdeCarpeta(enviosdir.toString());
+                    List<VueloDiario> vuelos = LectorArchivos.leerVuelos(vuelospath.toString(), aeropuertos);
+                    List<Envio> todosEnvios = LectorArchivos.leerEnviosDesdeCarpeta(enviosdir.toString(), aeropuertos);
 
                     // Filtrar envíos por rango de días
                     List<Envio> envios = filtrarEnviosPorDias(todosEnvios, days);
@@ -154,33 +151,23 @@ public class Main {
                     long ramBefore = rt.totalMemory() - rt.freeMemory();
 
                     // --- Ejecutar ACO ---
-                    ACO_Traslados aco = new ACO_Traslados(20, 8, 10, 1.0, 2.0, 0.1, 1.0, 0.01);
-                    MatrizFeromonas3D feromonas = new MatrizFeromonas3D(aeropuertos.size(), 0.01);
-                    aco.inicializar(new ArrayList<>(aeropuertos.values()), vuelos, feromonas);
+                    // 70 iteraciones, 40 hormigas, alpha=1.0, beta=2.0, rho=0.1, q=1.0, tau0=1.0
+                    ACO aco = new ACO(70, 40, 1.0, 2.0, 0.1, 1.0, 1.0, aeropuertos, vuelos);
 
-                    int loteSize = 10;
                     int totalConRuta = 0;
                     int totalSinRuta = 0;
                     double totalCostoSolucion = 0;
                     double totalTiempoEntregaHoras = 0;
-                    Map<Integer, Ruta> todasLasRutas = new HashMap<>();
 
-                    for (int i = 0; i < envios.size(); i += loteSize) {
-                        int fin = Math.min(i + loteSize, envios.size());
-                        List<Envio> subLista = envios.subList(i, fin);
-                        SolucionLoteACO resultado = aco.ejecutarLote(subLista);
+                    for (Envio envio : envios) {
+                        RutaEnvio ruta = aco.ejecutar(envio);
 
-                        totalConRuta += (subLista.size() - resultado.getEnviosFallidos());
-                        totalSinRuta += resultado.getEnviosFallidos();
-                        totalCostoSolucion += resultado.getCostoTotal();
-
-                        // Acumular rutas para calcular tiempo de entrega
-                        for (Map.Entry<Integer, Ruta> entry : resultado.getAsignaciones().entrySet()) {
-                            Ruta ruta = entry.getValue();
-                            if (ruta != null && !ruta.isEmpty()) {
-                                totalTiempoEntregaHoras += ruta.getTiempoTotal();
-                                todasLasRutas.put(entry.getKey(), ruta);
-                            }
+                        if (ruta != null) {
+                            totalConRuta++;
+                            totalCostoSolucion += ruta.getTiempoTotal();
+                            totalTiempoEntregaHoras += ruta.getTiempoTotal();
+                        } else {
+                            totalSinRuta++;
                         }
                     }
 
@@ -193,6 +180,11 @@ public class Main {
                     long tiempoEjecucionMs = (wallTimeAfter - wallTimeBefore) / 1_000_000;
                     double tiempoEntregaMin = totalTiempoEntregaHoras * 60.0;
                     double ramPromedioMb = ((ramBefore + ramAfter) / 2.0) / (1024.0 * 1024.0);
+                    
+                    int totalProcesados = totalConRuta + totalSinRuta;
+                    double pctAsignados = totalProcesados > 0 ? (double) totalConRuta / totalProcesados * 100.0 : 0;
+                    double pctATiempo = 100.0; // En ACO, si se asigna, se considera exitoso/a tiempo en este modelo
+                    double costoSolucionPromedio = totalConRuta > 0 ? totalCostoSolucion / totalConRuta : 0;
 
                     double cpuPct = 0;
                     long wallElapsed = wallTimeAfter - wallTimeBefore;
@@ -203,15 +195,15 @@ public class Main {
 
                     // Escribir fila al CSV
                     try (PrintWriter pw = new PrintWriter(new FileWriter(outputFile, true))) {
-                        double pctAsignados = (double) totalConRuta / (totalConRuta + totalSinRuta) * 100.0;
-                        pw.printf("%d,%d,%d,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f%n",
+                        pw.printf("%d,%d,%d,%d,%d,%.2f,%.2f,%.6f,%.2f,%.2f,%.2f%n",
                             iter,
                             tiempoEjecucionMs,
-                            totalConRuta + totalSinRuta,
+                            totalProcesados,
                             totalConRuta,
                             totalSinRuta,
                             pctAsignados,
-                            totalCostoSolucion,
+                            pctATiempo,
+                            costoSolucionPromedio,
                             tiempoEntregaMin,
                             ramPromedioMb,
                             cpuPct
@@ -230,7 +222,7 @@ public class Main {
                 } catch (Exception e) {
                     System.err.println("   ✘ ERROR en iteración " + iter + ": " + e.getMessage());
                     try (PrintWriter pw = new PrintWriter(new FileWriter(outputFile, true))) {
-                        pw.println(iter + ",ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR");
+                        pw.println(iter + ",ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR");
                     } catch (IOException ioEx) {
                         ioEx.printStackTrace();
                     }

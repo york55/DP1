@@ -1,16 +1,28 @@
 import java.util.Objects;
 
 public class Aeropuerto {
+    private int id;
     private String codigo;
+    private String pais;
     private String continente;
+    private int gmt;
+    private int capacidadMaxima;
     
-    public Aeropuerto(int idx, String codigo, String continente) {
+    public Aeropuerto(int id, int gmt, String pais, String codigo, String continente, int capacidad) {
+        this.id = id;
         this.codigo = codigo;
+        this.gmt = gmt;
+        this.pais = pais;
         this.continente = continente;
+        this.capacidadMaxima = capacidad;
     }
     
     public String getCodigo() { return codigo; }
     public String getContinente() { return continente; }
+    public int getCapacidadMaxima() { return capacidadMaxima; }
+    public int getId() { return id; }
+    public int getGmt() { return gmt; }
+    public String getPais() { return pais; }
     
     @Override
     public boolean equals(Object o) {
@@ -27,6 +39,6 @@ public class Aeropuerto {
     
     @Override
     public String toString() {
-        return codigo + " (" + continente + ")";
+        return id + " - " + codigo + " (" + continente + ")";
     }
 }
