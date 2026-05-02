@@ -40,3 +40,6 @@ lerna-debug.log*
 out/
 bin/
 *.class
+
+# ALNS execution logs and raw results
+tasfb2b-alns/tasf-b2b-backend/results/*.json
