@@ -25,6 +25,7 @@ function parseArgs() {
             case '--data-dir':    opts.dataDir    = args[++i]; break;
             case '--parametros':  opts.parametros = args[++i]; break;
             case '--iterations':  opts.iterations = parseInt(args[++i], 10); break;
+            case '--maxBags':     opts.maxBags    = parseInt(args[++i], 10); break;
             case '--output':      opts.output     = args[++i]; break;
         }
     }
@@ -36,7 +37,7 @@ function parseArgs() {
 }
 
 // ─── Build multipart body ───────────────────────────────────────────
-function buildMultipartBody(dataDir, parametrosOverride) {
+function buildMultipartBody(dataDir, parametrosOverride, maxBags) {
     const boundary = crypto.randomBytes(16).toString('hex');
     const CRLF = '\r\n';
     const parts = [];
@@ -60,6 +61,10 @@ function buildMultipartBody(dataDir, parametrosOverride) {
 
     const parametrosPath = parametrosOverride || path.join(dataDir, 'parametros.csv');
     addField('parametros', fs.readFileSync(parametrosPath), 'parametros.csv', 'text/csv');
+
+    if (maxBags) {
+        addField('maxBags', maxBags);
+    }
 
     parts.push(`--${boundary}--${CRLF}`);
 
@@ -137,7 +142,7 @@ async function main() {
     }
 
     // Construir el body una sola vez (es el mismo para todas las iteraciones)
-    const { buffer, boundary } = buildMultipartBody(dataDir, opts.parametros);
+    const { buffer, boundary } = buildMultipartBody(dataDir, opts.parametros, opts.maxBags);
     console.log(`Tamaño del request: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
     console.log('');
 

@@ -50,17 +50,19 @@ public class PlannerController {
             @RequestParam("envios") MultipartFile enviosFile,
             @RequestParam("parametros") MultipartFile parametrosFile,
             @RequestParam("algoritmo") String algoritmo,
-            @RequestParam(value = "overrides", required = false) String overridesJson
+            @RequestParam(value = "overrides", required = false) String overridesJson,
+            @RequestParam(value = "maxBags", required = false) Integer maxBags
     ) {
         String execId = java.util.UUID.randomUUID().toString();
         log.info("========== NUEVA EJECUCION {} ==========", execId);
         log.info("Algoritmo solicitado: {}", algoritmo);
+        if (maxBags != null) log.info("Limite de maletas (maxBags): {}", maxBags);
 
         executions.put(execId, new ExecutionStatus(execId, "RUNNING", 0, 0, null));
 
         try {
             log.info("[1/3] Cargando escenario desde CSVs...");
-            Scenario scenario = scenarioLoader.loadScenario(aeropuertosFile, vuelosFile, enviosFile, parametrosFile);
+            Scenario scenario = scenarioLoader.loadScenario(aeropuertosFile, vuelosFile, enviosFile, parametrosFile, maxBags);
             log.info("[1/3] Escenario cargado: {} aeropuertos, {} vuelos, {} envios, periodo={} dias, semilla={}",
                     scenario.aeropuertos().size(), scenario.vuelos().size(), scenario.envios().size(),
                     scenario.periodoDias(), scenario.semillaAleatoria());

@@ -20,7 +20,7 @@ public class ScenarioLoader {
 
     private static final Logger log = LoggerFactory.getLogger(ScenarioLoader.class);
 
-    public Scenario loadScenario(MultipartFile aeropuertosFile, MultipartFile vuelosFile, MultipartFile enviosFile, MultipartFile parametrosFile) throws Exception {
+    public Scenario loadScenario(MultipartFile aeropuertosFile, MultipartFile vuelosFile, MultipartFile enviosFile, MultipartFile parametrosFile, Integer maxBags) throws Exception {
         log.debug("Iniciando carga de escenario...");
 
         Map<String, Airport> aeropuertos = parseAeropuertos(aeropuertosFile);
@@ -29,7 +29,7 @@ public class ScenarioLoader {
         List<Flight> vuelos = parseVuelos(vuelosFile);
         log.info("  Vuelos parseados: {}", vuelos.size());
 
-        List<Shipment> envios = parseEnvios(enviosFile);
+        List<Shipment> envios = parseEnvios(enviosFile, maxBags);
         log.info("  Envios parseados: {}", envios.size());
 
         Scenario scenario = parseParametros(parametrosFile, aeropuertos, vuelos, envios);
@@ -91,22 +91,29 @@ public class ScenarioLoader {
         return list;
     }
 
-    private List<Shipment> parseEnvios(MultipartFile file) throws Exception {
+    private List<Shipment> parseEnvios(MultipartFile file, Integer maxBags) throws Exception {
         List<Shipment> list = new ArrayList<>();
         try (BufferedReader br = new BufferedReader(new InputStreamReader(file.getInputStream()))) {
             String line;
             boolean first = true;
             int lineNum = 0;
             while ((line = br.readLine()) != null) {
+                if (maxBags != null && list.size() >= maxBags) break;
                 lineNum++;
                 if (first) { first = false; log.debug("  [envios] Header: {}", line); continue; }
                 if(line.trim().isEmpty()) continue;
                 try {
                     String[] p = line.split(",");
-                    list.add(new Shipment(
-                        p[0].trim(), p[1].trim(), p[2].trim(), p[3].trim(),
-                        Integer.parseInt(p[4].trim()), Instant.parse(p[5].trim())
-                    ));
+                    int cantidad = Integer.parseInt(p[4].trim());
+                    Instant disponibilidad = Instant.parse(p[5].trim());
+                    String baseId = p[0].trim();
+                    for (int i = 0; i < cantidad; i++) {
+                        if (maxBags != null && list.size() >= maxBags) break;
+                        list.add(new Shipment(
+                            baseId + "_" + i, p[1].trim(), p[2].trim(), p[3].trim(),
+                            1, disponibilidad
+                        ));
+                    }
                 } catch (Exception e) {
                     log.error("  [envios] Error en linea {}: '{}' -> {}", lineNum, line, e.getMessage());
                     throw e;

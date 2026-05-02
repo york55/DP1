@@ -83,12 +83,16 @@ public class Main {
         // --- Parsear argumentos ---
         int days = 3;
         int iterations = 10;
+        Integer maxBags = null;
+        String startDateStr = null;
         String outputFile = "exp_results.csv";
 
         for (int i = 1; i < args.length; i++) {
             switch (args[i]) {
                 case "--days":       days = Integer.parseInt(args[++i]); break;
                 case "--iterations": iterations = Integer.parseInt(args[++i]); break;
+                case "--maxBags":    maxBags = Integer.parseInt(args[++i]); break;
+                case "--startDate":  startDateStr = args[++i]; break;
                 case "--output":     outputFile = args[++i]; break;
             }
         }
@@ -98,6 +102,8 @@ public class Main {
         System.out.println("╠══════════════════════════════════════════════════╣");
         System.out.println("║  Dias          : " + days);
         System.out.println("║  Iteraciones   : " + iterations);
+        if (maxBags != null) System.out.println("║  Max Bags      : " + maxBags);
+        if (startDateStr != null) System.out.println("║  Start Date    : " + startDateStr);
         System.out.println("║  Output        : " + outputFile);
         System.out.println("╚══════════════════════════════════════════════════╝");
         System.out.println();
@@ -140,8 +146,11 @@ public class Main {
                     List<Envio> todosEnvios = LectorArchivos.leerEnviosDesdeCarpeta(enviosdir.toString(), aeropuertos);
 
                     // Filtrar envíos por rango de días
-                    List<Envio> envios = filtrarEnviosPorDias(todosEnvios, days);
-                    System.out.println("   Envios filtrados: " + envios.size() + " de " + todosEnvios.size() + " (periodo: " + days + " dias)");
+                    List<Envio> envios = filtrarEnviosPorDias(todosEnvios, days, startDateStr);
+                    if (maxBags != null && maxBags < envios.size()) {
+                        envios = envios.subList(0, maxBags);
+                    }
+                    System.out.println("   Envios a procesar: " + envios.size() + " de " + todosEnvios.size() + " (periodo: " + days + " dias)");
 
                     // Medir CPU y RAM antes
                     Runtime rt = Runtime.getRuntime();
@@ -252,23 +261,29 @@ public class Main {
     }
 
     // ================================================================
-    // Filtrar envíos por rango de días desde la fecha más temprana
+    // Filtrar envíos por rango de días desde la fecha más temprana (o especificada)
     // ================================================================
-    private static List<Envio> filtrarEnviosPorDias(List<Envio> envios, int dias) {
+    private static List<Envio> filtrarEnviosPorDias(List<Envio> envios, int dias, String startDateStr) {
         if (envios.isEmpty()) return envios;
 
-        // Encontrar la fecha más temprana
-        LocalDateTime fechaMin = envios.stream()
-            .map(Envio::getDiaHoraIngreso)
-            .min(LocalDateTime::compareTo)
-            .orElse(LocalDateTime.now());
+        // Encontrar la fecha de inicio
+        LocalDateTime fechaInicio;
+        if (startDateStr != null) {
+            java.time.LocalDate ld = java.time.LocalDate.parse(startDateStr);
+            fechaInicio = ld.atStartOfDay();
+        } else {
+            LocalDateTime fechaMin = envios.stream()
+                .map(Envio::getDiaHoraIngreso)
+                .min(LocalDateTime::compareTo)
+                .orElse(LocalDateTime.now());
+            fechaInicio = fechaMin.toLocalDate().atStartOfDay();
+        }
 
         // Calcular fecha límite (inicio del día + N días)
-        LocalDateTime fechaInicio = fechaMin.toLocalDate().atStartOfDay();
         LocalDateTime fechaLimite = fechaInicio.plusDays(dias);
 
         List<Envio> filtrados = envios.stream()
-            .filter(e -> e.getDiaHoraIngreso().isBefore(fechaLimite))
+            .filter(e -> !e.getDiaHoraIngreso().isBefore(fechaInicio) && e.getDiaHoraIngreso().isBefore(fechaLimite))
             .collect(Collectors.toList());
 
         System.out.println("   Rango de fechas: " + fechaInicio.toLocalDate() + " a " + fechaLimite.toLocalDate());

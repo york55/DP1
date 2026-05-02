@@ -61,10 +61,15 @@ public class LectorEnviosPorLotes {
                 break;
             }
 
-            Envio e = LectorArchivos.parsearLineaEnvioConOrigen(
+            List<Envio> enviosLinea = LectorArchivos.parsearLineaEnvioConOrigen(
                 linea, origen, aeropuertoOrigen, aeropuertos
             );
-            if (e != null) lote.add(e);
+            if (enviosLinea != null) {
+                for (Envio e : enviosLinea) {
+                    lote.add(e);
+                    if (lote.size() == tamaño) break;
+                }
+            }
             if (lote.size() == tamaño) break;
         }
 

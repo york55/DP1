@@ -125,9 +125,9 @@ public class LectorArchivos {
             for (String linea : lineas) {
                 if (linea.trim().isEmpty() || linea.startsWith("#")) continue;
                 Aeropuerto aeropuerto = aeropuertos.get(origen);
-                Envio envio = parsearLineaEnvioConOrigen(linea, origen, aeropuerto, aeropuertos);
-                if (envio != null) {
-                    todosEnvios.add(envio);
+                List<Envio> envios = parsearLineaEnvioConOrigen(linea, origen, aeropuerto, aeropuertos);
+                if (envios != null) {
+                    todosEnvios.addAll(envios);
                 }
             }
         }
@@ -155,7 +155,7 @@ public class LectorArchivos {
         return nombre;
     }
 
-    public static Envio parsearLineaEnvioConOrigen(String linea, String origen, Aeropuerto aeropuertoOrigen,
+    public static List<Envio> parsearLineaEnvioConOrigen(String linea, String origen, Aeropuerto aeropuertoOrigen,
         Map<String,Aeropuerto> aeropuertos
     ) {
         try {
@@ -181,7 +181,14 @@ public class LectorArchivos {
                 fechaHora = fechaHora.plusHours(aeropuertoOrigen.getGmt());
             }
             
-            return new Envio(idEnvio, aeropuertoOrigen, aeropuertoDestino, fechaHora, cantidadMaletas);
+            List<Envio> list = new ArrayList<>();
+            for(int i=0; i<cantidadMaletas; i++) {
+                int newId = idEnvio * 1000 + i;
+                if (newId < 0) newId = Math.abs(newId);
+                list.add(new Envio(newId, aeropuertoOrigen, aeropuertoDestino, fechaHora, 1));
+            }
+            
+            return list;
             
         } catch (Exception e) {
             return null;
