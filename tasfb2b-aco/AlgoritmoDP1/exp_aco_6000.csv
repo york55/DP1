@@ -1,1 +1,2 @@
 Iteracion,Tiempo_Ejecucion,Envios_Total,Envios_Asignados,Envios_Fallidos,Pct_Asignados,Pct_Entregas_Tiempo,Costo_Solucion,Tiempo_Entrega,Consumo_Memoria,Consumo_CPU
+1,10300482,6000,6000,0,100.00,100.00,7.519667,2707080.00,2410.56,4.84
