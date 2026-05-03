@@ -176,8 +176,8 @@ public class Main {
 
             // Inicializar ACO
             ACO aco = new ACO(
-                    25,     // iteraciones
-                    50,     // hormigas
+                    40,     // iteraciones
+                    25,     // hormigas
                     1.0,    // alpha
                     2.0,    // beta
                     0.1,    // rho
