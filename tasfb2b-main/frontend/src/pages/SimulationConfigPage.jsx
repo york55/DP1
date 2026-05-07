@@ -90,8 +90,8 @@ export default function SimulationConfigPage() {
   const [startDate, setStartDate] = useState(new Date())
   const [flightsExpanded, setFlightsExpanded] = useState(false)
 
-  const handleStart = () => {
-    startSimulation({ period: parseInt(period, 10), startDate })
+  const handleStart = async () => {
+    await startSimulation({ period: parseInt(period, 10), startDate })
     navigate('/simulation/running')
   }
 
