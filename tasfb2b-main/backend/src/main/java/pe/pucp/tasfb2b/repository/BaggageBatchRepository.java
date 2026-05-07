@@ -1,0 +1,23 @@
+package pe.pucp.tasfb2b.repository;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import pe.pucp.tasfb2b.domain.BaggageBatch;
+import pe.pucp.tasfb2b.domain.enums.BatchStatus;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+public interface BaggageBatchRepository extends JpaRepository<BaggageBatch, Long> {
+
+    List<BaggageBatch> findByStatus(BatchStatus status);
+
+    @Query("SELECT b FROM BaggageBatch b " +
+           "JOIN FETCH b.originAirport JOIN FETCH b.destinationAirport JOIN FETCH b.airline " +
+           "WHERE b.status IN ('IN_ORIGIN', 'DELAYED') AND b.availableFrom <= :simNow")
+    List<BaggageBatch> findPendingBatches(@Param("simNow") LocalDateTime simNow);
+
+    @Query("SELECT b FROM BaggageBatch b JOIN FETCH b.originAirport JOIN FETCH b.destinationAirport")
+    List<BaggageBatch> findAllWithAirports();
+}

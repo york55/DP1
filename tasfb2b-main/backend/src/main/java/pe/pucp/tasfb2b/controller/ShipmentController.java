@@ -1,0 +1,50 @@
+package pe.pucp.tasfb2b.controller;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import pe.pucp.tasfb2b.domain.enums.ShipmentStatus;
+import pe.pucp.tasfb2b.dto.response.ShipmentDto;
+import pe.pucp.tasfb2b.service.ShipmentService;
+
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api")
+@RequiredArgsConstructor
+public class ShipmentController {
+
+    private final ShipmentService shipmentService;
+
+    @GetMapping("/shipments")
+    public ResponseEntity<?> findShipments(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Long simulationId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+
+        if (status != null) {
+            Pageable pageable = PageRequest.of(page, size);
+            Page<ShipmentDto> result = shipmentService.findByStatus(
+                    ShipmentStatus.valueOf(status), pageable);
+            return ResponseEntity.ok(result);
+        }
+        return ResponseEntity.ok(shipmentService.findAll());
+    }
+
+    @GetMapping("/shipments/{id}/status")
+    public ResponseEntity<ShipmentDto> getStatus(@PathVariable Long id) {
+        return ResponseEntity.ok(shipmentService.findById(id));
+    }
+
+    @PostMapping("/batches/upload")
+    public ResponseEntity<Map<String, Object>> uploadBatches(
+            @RequestParam("file") MultipartFile file) {
+        return ResponseEntity.status(201).body(shipmentService.uploadBatches(file));
+    }
+}

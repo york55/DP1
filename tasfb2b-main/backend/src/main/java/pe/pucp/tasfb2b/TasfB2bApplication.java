@@ -1,0 +1,14 @@
+package pe.pucp.tasfb2b;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
+
+@SpringBootApplication
+@EnableScheduling
+public class TasfB2bApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(TasfB2bApplication.class, args);
+    }
+}
