@@ -50,13 +50,13 @@ public class Simulation {
     @Column(name = "algorithm", nullable = false, length = 20)
     private String algorithm = "ALNS";
 
-    @Column(name = "t0", precision = 10, scale = 4)
+    @Column(name = "t0")
     private Double t0;
 
-    @Column(name = "alpha_sa", precision = 6, scale = 5)
+    @Column(name = "alpha_sa")
     private Double alphaSa;
 
-    @Column(name = "q_pct", precision = 5, scale = 3)
+    @Column(name = "q_pct")
     private Double qPct;
 
     @Column(name = "max_iterations")
