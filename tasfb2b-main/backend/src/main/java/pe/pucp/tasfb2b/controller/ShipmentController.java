@@ -45,6 +45,13 @@ public class ShipmentController {
     @PostMapping("/batches/upload")
     public ResponseEntity<Map<String, Object>> uploadBatches(
             @RequestParam("file") MultipartFile file) {
-        return ResponseEntity.status(201).body(shipmentService.uploadBatches(file));
+        try {
+            byte[] fileBytes = file.getBytes();
+            String filename = file.getOriginalFilename();
+            shipmentService.uploadBatchesAsync(fileBytes, filename);
+            return ResponseEntity.status(202).body(Map.of("message", "Carga asíncrona iniciada"));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
     }
 }

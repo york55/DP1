@@ -16,7 +16,7 @@ class ShipmentServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ShipmentService(null, null, null, null, null);
+        service = new ShipmentService(null, null, null, null, null, null);
     }
 
     @Test
