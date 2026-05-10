@@ -1,5 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import axios from 'axios'
+import apiClient from '../api/client'
 import Box from '@mui/material/Box'
 import AppBar from '@mui/material/AppBar'
 import Toolbar from '@mui/material/Toolbar'
@@ -20,24 +22,27 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import LuggageIcon from '@mui/icons-material/Luggage'
+import CloudUploadIcon from '@mui/icons-material/CloudUpload'
+import CircularProgress from '@mui/material/CircularProgress'
+import LinearProgress from '@mui/material/LinearProgress'
+import SockJS from 'sockjs-client'
+import { Client } from '@stomp/stompjs'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import WorldMap from '../components/map/WorldMap'
 import { useSimulationContext } from '../context/SimulationContext'
-import { AIRPORTS } from '../data/mockAirports'
-import { FLIGHTS } from '../data/mockFlights'
 import { useClock } from '../hooks/useClock'
 import DataTable from '../components/common/DataTable'
 import { formatFlightTime } from '../utils/timeUtils'
 
 const flightColumns = [
   { field: 'id', headerName: 'ID', width: 110, renderCell: (p) => <span style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{p.value}</span> },
-  { field: 'airline', headerName: 'Aerolínea', width: 90 },
-  { field: 'origin', headerName: 'Origen', width: 80 },
-  { field: 'destination', headerName: 'Destino', width: 90 },
-  { field: 'departureUTC', headerName: 'Salida UTC', width: 105, renderCell: (p) => formatFlightTime(p.value) },
-  { field: 'arrivalUTC', headerName: 'Llegada UTC', width: 105, renderCell: (p) => formatFlightTime(p.value) },
+  { field: 'airline', headerName: 'Aerolínea', width: 90, renderCell: () => 'TASF' },
+  { field: 'originIata', headerName: 'Origen', width: 80 },
+  { field: 'destinationIata', headerName: 'Destino', width: 90 },
+  { field: 'departureTime', headerName: 'Salida UTC', width: 105, renderCell: (p) => formatFlightTime(p.value) },
+  { field: 'arrivalTime', headerName: 'Llegada UTC', width: 105, renderCell: (p) => formatFlightTime(p.value) },
   {
-    field: 'capacity',
+    field: 'baggageCapacity',
     headerName: 'Cap.',
     width: 65,
     type: 'number',
@@ -89,8 +94,100 @@ export default function SimulationConfigPage() {
   const [period, setPeriod] = useState('3')
   const [startDate, setStartDate] = useState(new Date())
   const [flightsExpanded, setFlightsExpanded] = useState(false)
+  const [airports, setAirports] = useState([])
+  const [flights, setFlights] = useState([])
+  const [loadingData, setLoadingData] = useState(true)
+  const [shipmentsCount, setShipmentsCount] = useState(0)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState({ processed: 0, total: 0, status: '', message: '' })
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [airportsRes, flightsRes] = await Promise.all([
+          apiClient.get('/airports'),
+          apiClient.get('/flights')
+        ])
+        
+        // Map backend Airport fields to what WorldMap expects if needed
+        const mappedAirports = airportsRes.data.map(a => ({
+          ...a,
+          lat: a.latitude,
+          lon: a.longitude,
+          maxCapacity: a.warehouseCapacity,
+          occupancy: a.currentOccupancy
+        }))
+        
+        const mappedFlights = flightsRes.data.map(f => ({
+          ...f,
+          originIata: f.originAirport?.iataCode,
+          destinationIata: f.destinationAirport?.iataCode
+        }))
+        
+        setAirports(mappedAirports)
+        setFlights(mappedFlights)
+      } catch (err) {
+        console.error('Error fetching simulation data:', err)
+      } finally {
+        setLoadingData(false)
+      }
+    }
+    fetchData()
+  }, [])
+
+  useEffect(() => {
+    const wsUrl = import.meta.env.VITE_WS_URL || '/ws'
+    const socket = new SockJS(wsUrl)
+    const stompClient = new Client({
+      webSocketFactory: () => socket,
+      debug: (str) => { console.log(str) },
+      onConnect: () => {
+        console.log('STOMP connected')
+        stompClient.subscribe('/topic/shipments/progress', (message) => {
+          const progress = JSON.parse(message.body)
+          setUploadProgress(progress)
+          if (progress.status === 'COMPLETED') {
+            setShipmentsCount(progress.total)
+            setUploading(false)
+          } else if (progress.status === 'ERROR') {
+            setUploading(false)
+            alert("Error en la carga: " + progress.message)
+          }
+        })
+      },
+      onStompError: (frame) => {
+        console.error('STOMP error', frame.headers['message'])
+      }
+    })
+    stompClient.activate()
+    return () => stompClient.deactivate()
+  }, [])
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      setUploading(true)
+      setUploadProgress({ processed: 0, total: 0, status: 'IN_PROGRESS', message: 'Iniciando carga...' })
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      try {
+        await apiClient.post('/batches/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        })
+      } catch (err) {
+        console.error("Error al subir archivo", err)
+        setUploading(false)
+        alert("Fallo al iniciar subida masiva.")
+      }
+    }
+  }
 
   const handleStart = async () => {
+    if (shipmentsCount === 0) {
+      alert("Por favor, cargue el archivo de envíos antes de iniciar.")
+      return
+    }
     await startSimulation({ period: parseInt(period, 10), startDate })
     navigate('/simulation/running')
   }
@@ -128,7 +225,13 @@ export default function SimulationConfigPage() {
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Left: Map (70%) */}
         <Box sx={{ flex: '0 0 70%', position: 'relative' }}>
-          <WorldMap airports={AIRPORTS} flights={FLIGHTS} simulatedTime={null} />
+          {loadingData ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <WorldMap airports={airports} flights={flights} simulatedTime={null} />
+          )}
         </Box>
 
         {/* Right: Config Panel (30%) */}
@@ -206,6 +309,40 @@ export default function SimulationConfigPage() {
               />
             </FormControl>
 
+            {/* Shipments Upload */}
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="caption" sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}>
+                Datos de Envíos (TXT)
+              </Typography>
+              <Button
+                component="label"
+                variant="outlined"
+                fullWidth
+                disabled={uploading}
+                startIcon={<CloudUploadIcon />}
+                sx={{ py: 1, borderColor: '#2E75B6', color: '#2E75B6' }}
+              >
+                Cargar Archivo de Envíos
+                <input
+                  type="file"
+                  accept=".txt"
+                  hidden
+                  onChange={handleFileUpload}
+                />
+              </Button>
+              {uploading && (
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="caption" sx={{ display: 'block', mb: 0.5, color: '#1F3864' }}>
+                    {uploadProgress.message} ({uploadProgress.processed} / {uploadProgress.total || '?'})
+                  </Typography>
+                  <LinearProgress 
+                    variant={uploadProgress.total > 0 ? "determinate" : "indeterminate"} 
+                    value={uploadProgress.total > 0 ? (uploadProgress.processed / uploadProgress.total) * 100 : 0} 
+                  />
+                </Box>
+              )}
+            </Box>
+
             {/* Summary cards */}
             <Box sx={{ mb: 2.5 }}>
               <Typography
@@ -215,9 +352,9 @@ export default function SimulationConfigPage() {
                 Resumen del escenario
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                <SummaryCard label="Aeropuertos" value={AIRPORTS.length} color="#1F3864" />
-                <SummaryCard label="Vuelos" value={FLIGHTS.length} color="#2E75B6" />
-                <SummaryCard label="Envíos" value={30} color="#2E7D32" />
+                <SummaryCard label="Aeropuertos" value={airports.length} color="#1F3864" />
+                <SummaryCard label="Vuelos" value={flights.length} color="#2E75B6" />
+                <SummaryCard label="Envíos" value={shipmentsCount} color="#2E7D32" />
               </Box>
             </Box>
 
@@ -250,11 +387,11 @@ export default function SimulationConfigPage() {
                 onClick={() => setFlightsExpanded(v => !v)}
                 sx={{ justifyContent: 'space-between', color: '#1F3864', fontWeight: 600, fontSize: '0.78rem', px: 0 }}
               >
-                Vuelos del Escenario ({FLIGHTS.length})
+                Vuelos del Escenario ({flights.length})
               </Button>
               <Collapse in={flightsExpanded}>
                 <Box sx={{ mt: 1 }}>
-                  <DataTable rows={FLIGHTS} columns={flightColumns} />
+                  <DataTable rows={flights} columns={flightColumns} />
                 </Box>
               </Collapse>
             </Box>

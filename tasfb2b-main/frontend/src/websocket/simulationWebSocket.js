@@ -7,9 +7,10 @@ export function connectSimulationWebSocket(simulationId, onTick, onAlert) {
   if (stompClient && stompClient.connected) {
     stompClient.deactivate()
   }
+  const wsUrl = import.meta.env.VITE_WS_URL || '/ws';
 
   stompClient = new Client({
-    webSocketFactory: () => new SockJS('/ws'),
+    webSocketFactory: () => new SockJS(wsUrl),
     reconnectDelay: 3000,
     onConnect: () => {
       console.log('[WS] Conectado al WebSocket STOMP')
