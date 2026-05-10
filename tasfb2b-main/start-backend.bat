@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  TASF.B2B — Backend Only
+REM  TASF.B2B - Backend Only
 REM  Builds and starts Spring Boot on port 8080 (H2 embedded DB)
 REM ============================================================
 
@@ -21,7 +21,7 @@ set BACKEND_LOG=%LOGS_DIR%\backend_%DATESTAMP%_%TIMESTAMP%.log
 
 echo.
 echo ============================================================
-echo   TASF.B2B — Backend Dev Server
+echo   TASF.B2B - Backend Dev Server
 echo ============================================================
 echo.
 

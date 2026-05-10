@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  TASF.B2B — Frontend Only
+REM  TASF.B2B - Frontend Only
 REM  Starts the Vite dev server on port 5173
 REM ============================================================
 
@@ -18,7 +18,7 @@ set FRONTEND_LOG=%LOGS_DIR%\frontend_%DATESTAMP%_%TIMESTAMP%.log
 
 echo.
 echo ============================================================
-echo   TASF.B2B — Frontend Dev Server
+echo   TASF.B2B - Frontend Dev Server
 echo ============================================================
 echo.
 

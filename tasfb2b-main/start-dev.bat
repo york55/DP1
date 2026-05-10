@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  TASF.B2B — Full Dev Environment (backend + frontend)
+REM  TASF.B2B - Full Dev Environment (backend + frontend)
 REM  Backend launches in a separate window; frontend runs here.
 REM ============================================================
 

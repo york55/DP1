@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  Backend runner helper — logs all output to file AND console
+REM  Backend runner helper - logs all output to file AND console
 REM  Usage: _run-backend.bat <backend_dir> <log_file>
 REM ============================================================
 
