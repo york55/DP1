@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS airlines (
 
 CREATE TABLE IF NOT EXISTS airports (
     id                  BIGINT  NOT NULL AUTO_INCREMENT,
-    iata_code           CHAR(3)          NOT NULL,
+    iata_code           VARCHAR(4)       NOT NULL,
     city                VARCHAR(120)     NOT NULL,
     country             VARCHAR(80)      NOT NULL,
     continent           VARCHAR(20)      NOT NULL,
