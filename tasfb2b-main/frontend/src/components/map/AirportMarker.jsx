@@ -7,7 +7,7 @@ import AirportPopup from './AirportPopup'
  * AirportMarker — renders a colored CircleMarker for an airport on the map.
  * Color is derived from the airport's current occupancy via semaphore levels.
  */
-export default function AirportMarker({ airport, flights = [] }) {
+function AirportMarker({ airport, flights = [] }) {
   const { lat, lon, occupancy, iata } = airport
   const color = getSemaphoreColor(occupancy)
 
@@ -39,3 +39,5 @@ export default function AirportMarker({ airport, flights = [] }) {
     </CircleMarker>
   )
 }
+
+export default React.memo(AirportMarker)

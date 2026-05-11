@@ -48,8 +48,16 @@ export default function SimulationRunningPage() {
     }
   }, [status, navigate])
 
-  const delayedCount = shipments.filter(s => s.status === 'DELAYED').length
-  const activeNotifications = notifications.filter(n => !n.dismissed).length
+  const delayedCount = React.useMemo(() => 
+    shipments.filter(s => s.status === 'DELAYED').length,
+    [shipments]
+  )
+  
+  const activeNotifications = React.useMemo(() => 
+    notifications.filter(n => !n.dismissed).length,
+    [notifications]
+  )
+  
   const statusInfo = STATUS_LABELS[status] || STATUS_LABELS.idle
 
   return (

@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { MapContainer, TileLayer } from 'react-leaflet'
 import Box from '@mui/material/Box'
 import AirportMarker from './AirportMarker'
@@ -11,10 +11,12 @@ import MapLegend from './MapLegend'
  * @param {Array} flights - array of flight objects
  * @param {Date|null} simulatedTime - current simulated time for progress calculation
  */
-export default function WorldMap({ airports = [], flights = [], simulatedTime = null }) {
-  // Only show SCHEDULED and IN_FLIGHT routes to avoid clutter
-  const visibleFlights = flights.filter(
-    f => f.status === 'SCHEDULED' || f.status === 'IN_FLIGHT'
+function WorldMap({ airports = [], flights = [], simulatedTime = null }) {
+  // OPTIMIZATION: Only show IN_FLIGHT routes to avoid massive lag with 800+ polylines.
+  // Rendering all scheduled flights makes Leaflet extremely slow.
+  const visibleFlights = useMemo(() => 
+    flights.filter(f => f.status === 'IN_FLIGHT'),
+    [flights]
   )
 
   return (
@@ -31,11 +33,12 @@ export default function WorldMap({ airports = [], flights = [], simulatedTime = 
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
 
-        {/* Flight routes */}
+        {/* Flight routes and Planes */}
         {visibleFlights.map(flight => (
           <FlightRoute
             key={flight.id}
             flight={flight}
+            airports={airports}
             simulatedTime={simulatedTime}
           />
         ))}
@@ -55,3 +58,5 @@ export default function WorldMap({ airports = [], flights = [], simulatedTime = 
     </Box>
   )
 }
+
+export default React.memo(WorldMap)

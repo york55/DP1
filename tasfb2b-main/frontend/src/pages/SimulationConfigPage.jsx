@@ -25,6 +25,7 @@ import LuggageIcon from '@mui/icons-material/Luggage'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import CircularProgress from '@mui/material/CircularProgress'
 import LinearProgress from '@mui/material/LinearProgress'
+import Backdrop from '@mui/material/Backdrop'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
@@ -98,6 +99,7 @@ export default function SimulationConfigPage() {
   const [flights, setFlights] = useState([])
   const [loadingData, setLoadingData] = useState(true)
   const [shipmentsCount, setShipmentsCount] = useState(0)
+  const [starting, setStarting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({ processed: 0, total: 0, status: '', message: '' })
 
@@ -188,8 +190,17 @@ export default function SimulationConfigPage() {
       alert("Por favor, cargue el archivo de envíos antes de iniciar.")
       return
     }
-    await startSimulation({ period: parseInt(period, 10), startDate })
-    navigate('/simulation/running')
+    
+    setStarting(true)
+    try {
+      await startSimulation({ period: parseInt(period, 10), startDate })
+      navigate('/simulation/running')
+    } catch (err) {
+      console.error("Error al iniciar simulación", err)
+      alert("No se pudo iniciar la simulación. Verifique los logs del servidor.")
+    } finally {
+      setStarting(false)
+    }
   }
 
   return (
@@ -365,6 +376,7 @@ export default function SimulationConfigPage() {
               size="large"
               startIcon={<PlayArrowIcon />}
               onClick={handleStart}
+              disabled={starting}
               sx={{
                 backgroundColor: '#1F3864',
                 fontWeight: 700,
@@ -373,7 +385,7 @@ export default function SimulationConfigPage() {
                 '&:hover': { backgroundColor: '#162D4F' },
               }}
             >
-              INICIAR SIMULACIÓN
+              {starting ? 'INICIANDO...' : 'INICIAR SIMULACIÓN'}
             </Button>
 
             <Divider sx={{ my: 2 }} />
@@ -398,6 +410,29 @@ export default function SimulationConfigPage() {
           </Box>
         </Box>
       </Box>
+      {/* Backdrop for simulation start */}
+      <Backdrop
+        sx={{ 
+          color: '#fff', 
+          zIndex: (theme) => theme.zIndex.drawer + 1,
+          flexDirection: 'column',
+          gap: 2,
+          textAlign: 'center',
+          backgroundColor: 'rgba(31, 56, 100, 0.9)'
+        }}
+        open={starting}
+      >
+        <CircularProgress color="inherit" size={60} />
+        <Box>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+            Inicializando Simulación
+          </Typography>
+          <Typography variant="body2" sx={{ opacity: 0.8, maxWidth: 300 }}>
+            Estamos procesando los envíos y optimizando las rutas iniciales. 
+            Esto puede tomar un momento...
+          </Typography>
+        </Box>
+      </Backdrop>
     </Box>
   )
 }
