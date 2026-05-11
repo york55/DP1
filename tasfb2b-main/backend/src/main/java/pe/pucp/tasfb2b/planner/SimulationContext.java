@@ -8,6 +8,7 @@ import pe.pucp.tasfb2b.planner.alns.AlnsParams;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.function.Consumer;
 
 @Getter
 public class SimulationContext {
@@ -17,6 +18,7 @@ public class SimulationContext {
     private final List<BaggageBatch> pendingBatches;
     private final LocalDateTime simulatedNow;
     private final AlnsParams alnsParams;
+    private final Consumer<PlanProgressSnapshot> progressCallback;
 
     private SimulationContext(Builder builder) {
         this.airports = builder.airports;
@@ -24,6 +26,7 @@ public class SimulationContext {
         this.pendingBatches = builder.pendingBatches;
         this.simulatedNow = builder.simulatedNow;
         this.alnsParams = builder.alnsParams;
+        this.progressCallback = builder.progressCallback;
     }
 
     public static Builder builder() {
@@ -36,6 +39,7 @@ public class SimulationContext {
         private List<BaggageBatch> pendingBatches;
         private LocalDateTime simulatedNow;
         private AlnsParams alnsParams = AlnsParams.defaults();
+        private Consumer<PlanProgressSnapshot> progressCallback = null;
 
         public Builder airports(List<Airport> airports) {
             this.airports = airports;
@@ -62,6 +66,10 @@ public class SimulationContext {
             return this;
         }
 
+        public Builder progressCallback(Consumer<PlanProgressSnapshot> progressCallback) {
+            this.progressCallback = progressCallback;
+            return this;
+        }
 
         public SimulationContext build() {
             return new SimulationContext(this);
