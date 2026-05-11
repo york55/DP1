@@ -10,8 +10,9 @@ import SemaphoreChip from '../common/SemaphoreChip'
  * Must be MUI-styled but works inside Leaflet's DOM.
  */
 export default function AirportPopup({ airport, incomingCount = 0, outgoingCount = 0 }) {
-  const { iata, city, country, maxCapacity, occupancy } = airport
-  const currentBags = Math.round((occupancy / 100) * maxCapacity)
+  const { iata, city, country, warehouseCapacity, currentOccupancy, occupancy } = airport
+  const maxCapacity = warehouseCapacity ?? 0
+  const currentBags = currentOccupancy ?? Math.round((occupancy / 100) * maxCapacity)
 
   return (
     <Box sx={{ minWidth: 200, fontFamily: '"Roboto", sans-serif' }}>
@@ -39,7 +40,7 @@ export default function AirportPopup({ airport, incomingCount = 0, outgoingCount
         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.25 }}>
           <Typography sx={{ fontSize: 11, color: '#6B7280' }}>Capacidad</Typography>
           <Typography sx={{ fontSize: 11, fontWeight: 600 }}>
-            {currentBags} / {maxCapacity} maletas
+            {currentBags} / {maxCapacity > 0 ? maxCapacity : '—'} maletas
           </Typography>
         </Box>
         <LinearProgress
