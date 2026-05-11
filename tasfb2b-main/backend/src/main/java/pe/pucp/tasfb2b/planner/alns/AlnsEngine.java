@@ -18,11 +18,14 @@ import pe.pucp.tasfb2b.planner.alns.destroy.WorstRemoval;
 import pe.pucp.tasfb2b.planner.alns.repair.RegretKInsertion;
 import pe.pucp.tasfb2b.planner.alns.repair.RepairOperator;
 
+import pe.pucp.tasfb2b.planner.PlanProgressSnapshot;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 @Component
@@ -45,11 +48,19 @@ public class AlnsEngine implements RouteOptimizer {
                     Duration.ZERO, 0.0);
         }
 
+        Consumer<PlanProgressSnapshot> callback = context.getProgressCallback();
+
         AlnsSolution current = buildGreedyInit(batches, flights, p);
         AlnsSolution best = current.deepCopy();
         double bestObj = evaluate(best, p);
         double currentObj = bestObj;
         double T = p.t0();
+
+        if (callback != null) {
+            callback.accept(new PlanProgressSnapshot(
+                    "GREEDY_INIT", 0, p.maxIterations(),
+                    best.getAssignments().size(), batches.size(), bestObj));
+        }
 
         List<DestroyOperator> destroyOps = List.of(
                 new RouteRemoval(),
@@ -104,7 +115,19 @@ public class AlnsEngine implements RouteOptimizer {
                 updateWeights(dWeights, dScores, dUses, p.rho());
                 Arrays.fill(dScores, 0.0);
                 Arrays.fill(dUses, 0);
+
+                if (callback != null) {
+                    callback.accept(new PlanProgressSnapshot(
+                            "OPTIMIZING", iter + 1, p.maxIterations(),
+                            best.getAssignments().size(), batches.size(), bestObj));
+                }
             }
+        }
+
+        if (callback != null) {
+            callback.accept(new PlanProgressSnapshot(
+                    "COMPLETE", p.maxIterations(), p.maxIterations(),
+                    best.getAssignments().size(), batches.size(), bestObj));
         }
 
         Duration elapsed = Duration.between(start, Instant.now());
