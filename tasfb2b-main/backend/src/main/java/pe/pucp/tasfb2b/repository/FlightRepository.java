@@ -35,6 +35,11 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
     List<Flight> findScheduledBetween(@Param("from") LocalDateTime from,
                                       @Param("to") LocalDateTime to);
 
+    @Query("SELECT f FROM Flight f JOIN FETCH f.originAirport JOIN FETCH f.destinationAirport " +
+           "WHERE f.departureTime BETWEEN :from AND :to")
+    List<Flight> findAllBetween(@Param("from") LocalDateTime from,
+                                @Param("to") LocalDateTime to);
+
     @Query("SELECT f FROM Flight f JOIN FETCH f.originAirport JOIN FETCH f.destinationAirport")
     List<Flight> findAllWithAirports();
 }

@@ -213,53 +213,66 @@ public class SimulationEngine {
 
         List<Flight> scheduled = flightRepo.findByStatus(FlightStatus.SCHEDULED);
         for (Flight flight : scheduled) {
-            if (rng.nextDouble() >= rate) continue;
+            try {
+                if (rng.nextDouble() >= rate) continue;
 
-            flight.setStatus(FlightStatus.CANCELLED);
-            flightRepo.save(flight);
+                flight.setStatus(FlightStatus.CANCELLED);
+                flightRepo.save(flight);
 
-            FlightCancellation cancellation = new FlightCancellation(flight, simNow,
-                    "Cancelación automática por simulación");
-            cancellationRepo.save(cancellation);
-
-            log.info("Vuelo {} cancelado durante simulación {}", flight.getId(), simulationId);
-
-            // Trigger replanning for affected batches
-            List<RouteLeg> affectedLegs = routeLegRepo
-                    .findByFlightIdAndStatus(flight.getId(), RouteLegStatus.PENDING);
-
-            if (!affectedLegs.isEmpty()) {
-                List<BaggageBatch> affectedBatches = affectedLegs.stream()
-                        .map(leg -> leg.getRoute().getShipment().getBaggageBatch())
-                        .collect(Collectors.toList());
-
-                for (RouteLeg leg : affectedLegs) {
-                    leg.setStatus(RouteLegStatus.CANCELLED);
-                    routeLegRepo.save(leg);
+                if (cancellationRepo.existsByFlightId(flight.getId())) {
+                    log.debug("Vuelo {} ya tiene cancelación registrada, omitiendo", flight.getId());
+                } else {
+                    FlightCancellation cancellation = new FlightCancellation(flight, simNow,
+                            "Cancelación automática por simulación");
+                    cancellationRepo.save(cancellation);
                 }
 
-                try {
-                    List<Flight> availableFlights = flightRepo.findByStatus(FlightStatus.SCHEDULED);
-                    List<Airport> airports = airportRepo.findAll();
+                log.info("Vuelo {} cancelado durante simulación {}", flight.getId(), simulationId);
 
-                    SimulationContext ctx = SimulationContext.builder()
-                            .airports(airports)
-                            .flights(availableFlights)
-                            .pendingBatches(affectedBatches)
-                            .simulatedNow(simNow)
-                            .build();
-
-                    plannerService.replan(affectedBatches, ctx, sim.getAlgorithm());
-
-                    eventPublisher.publishAlert(simulationId,
-                            new WebSocketEventPublisher.AlertEvent(
-                                    "CANCELLATION", null, flight.getId(), null,
-                                    "Vuelo cancelado. Replanificando " + affectedBatches.size() + " lotes.",
-                                    simNow.format(TIME_FMT)
-                            ));
-                } catch (Exception e) {
-                    log.error("Error en replanificación tras cancelación: {}", e.getMessage(), e);
+                // Trigger replanning for affected batches
+                if (flight.getId() == null) {
+                    log.error("Vuelo {} cancelado no tiene ID persistido. Saltando replanificación.", flight);
+                    continue;
                 }
+
+                List<RouteLeg> affectedLegs = routeLegRepo
+                        .findByFlightIdAndStatus(flight.getId(), RouteLegStatus.PENDING);
+
+                if (!affectedLegs.isEmpty()) {
+                    List<BaggageBatch> affectedBatches = affectedLegs.stream()
+                            .map(leg -> leg.getRoute().getShipment().getBaggageBatch())
+                            .collect(Collectors.toList());
+
+                    for (RouteLeg leg : affectedLegs) {
+                        leg.setStatus(RouteLegStatus.CANCELLED);
+                        routeLegRepo.save(leg);
+                    }
+
+                    try {
+                        List<Flight> availableFlights = flightRepo.findByStatus(FlightStatus.SCHEDULED);
+                        List<Airport> airports = airportRepo.findAll();
+
+                        SimulationContext ctx = SimulationContext.builder()
+                                .airports(airports)
+                                .flights(availableFlights)
+                                .pendingBatches(affectedBatches)
+                                .simulatedNow(simNow)
+                                .build();
+
+                        plannerService.replan(affectedBatches, ctx, sim.getAlgorithm());
+
+                        eventPublisher.publishAlert(simulationId,
+                                new WebSocketEventPublisher.AlertEvent(
+                                        "CANCELLATION", null, flight.getId(), null,
+                                        "Vuelo cancelado. Replanificando " + affectedBatches.size() + " lotes.",
+                                        simNow.format(TIME_FMT)
+                                ));
+                    } catch (Exception e) {
+                        log.error("Error en replanificación tras cancelación de vuelo {}: {}", flight.getId(), e.getMessage());
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Error crítico al procesar cancelación del vuelo {}: {}", flight.getId(), e.getMessage());
             }
         }
     }

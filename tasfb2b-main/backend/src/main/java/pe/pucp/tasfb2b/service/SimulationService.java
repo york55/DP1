@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import pe.pucp.tasfb2b.domain.*;
 import pe.pucp.tasfb2b.domain.enums.FlightStatus;
 import pe.pucp.tasfb2b.domain.enums.ScenarioType;
@@ -40,6 +42,7 @@ public class SimulationService {
     private final FlightRepository flightRepo;
     private final BaggageBatchRepository batchRepo;
     private final AirportRepository airportRepo;
+    private final FlightCancellationRepository cancellationRepo;
     private final SimulationEngine simulationEngine;
     private final PlannerService plannerService;
     private final KpiService kpiService;
@@ -91,19 +94,36 @@ public class SimulationService {
             throw new IllegalArgumentException("La simulación no puede iniciarse en estado: " + sim.getStatus());
         }
 
-        // Reset flights for a fresh simulation start
-        if (sim.getStatus() == SimulationStatus.CONFIGURED) {
+        final boolean needsPlanning = sim.getStatus() == SimulationStatus.CONFIGURED;
+        if (needsPlanning) {
             resetFlightsForSimulation(sim);
-            runInitialPlanning(sim);
         }
 
         sim.setStatus(SimulationStatus.RUNNING);
         simulationRepo.save(sim);
-
         simulationEngine.initSimulation(id);
-        scheduleSimulation(id);
 
-        log.info("Simulación {} iniciada", id);
+        // Run initial planning in background after this transaction commits to avoid HTTP timeout
+        if (needsPlanning) {
+            final Simulation simSnapshot = sim;
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    scheduler.submit(() -> {
+                        try {
+                            runInitialPlanning(simSnapshot);
+                        } catch (Exception e) {
+                            log.error("Error en planificación inicial async para simulación {}: {}", id, e.getMessage(), e);
+                        }
+                        scheduleSimulation(id);
+                    });
+                }
+            });
+        } else {
+            scheduleSimulation(id);
+        }
+
+        log.info("Simulación {} iniciada (planificación en background)", id);
         return simulationMapper.toDto(sim, null);
     }
 
@@ -177,7 +197,11 @@ public class SimulationService {
     private void resetFlightsForSimulation(Simulation sim) {
         LocalDateTime start = sim.getStartDate().atStartOfDay();
         LocalDateTime end = start.plusDays(sim.getPeriodDays() != null ? sim.getPeriodDays() : 7);
-        List<Flight> flights = flightRepo.findScheduledBetween(start, end);
+        List<Flight> flights = flightRepo.findAllBetween(start, end);
+        List<Long> flightIds = flights.stream().map(Flight::getId).toList();
+        if (!flightIds.isEmpty()) {
+            cancellationRepo.deleteByFlightIdIn(flightIds);
+        }
         for (Flight f : flights) {
             f.setStatus(FlightStatus.SCHEDULED);
             f.setCurrentLoad(0);
@@ -188,6 +212,7 @@ public class SimulationService {
 
     private void runInitialPlanning(Simulation sim) {
         try {
+            long startTime = System.currentTimeMillis();
             LocalDateTime simNow = sim.getStartDate().atStartOfDay();
             List<BaggageBatch> pending = batchRepo.findPendingBatches(simNow.plusDays(
                     sim.getPeriodDays() != null ? sim.getPeriodDays() : 7));
@@ -199,6 +224,8 @@ public class SimulationService {
                 return;
             }
 
+            log.info("Simulación {}: Iniciando planificación inicial de {} lotes...", sim.getId(), pending.size());
+            
             AlnsParams alnsParams = buildAlnsParams(sim);
             SimulationContext context = SimulationContext.builder()
                     .airports(airports)
@@ -208,9 +235,13 @@ public class SimulationService {
                     .alnsParams(alnsParams)
                     .build();
 
+            long planStart = System.currentTimeMillis();
             plannerService.plan(context, sim.getAlgorithm());
-            log.info("Planificación inicial completada para simulación {}: {} lotes",
-                    sim.getId(), pending.size());
+            long planEnd = System.currentTimeMillis();
+            
+            long totalTime = planEnd - startTime;
+            log.info("Planificación inicial completada para simulación {}: {} lotes en {}ms (Planificación: {}ms)",
+                    sim.getId(), pending.size(), totalTime, (planEnd - planStart));
 
         } catch (Exception e) {
             log.error("Error en planificación inicial de simulación {}: {}",
