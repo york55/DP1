@@ -12,6 +12,15 @@ import FlightsTab from './FlightsTab'
 import BagsTab from './BagsTab'
 import KpiPanel from './KpiPanel'
 
+function TabLabel({ icon, text }) {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+      {icon}
+      <span>{text}</span>
+    </Box>
+  )
+}
+
 function TabPanel({ children, value, index }) {
   return (
     <Box
@@ -57,9 +66,10 @@ export default function SimulationPanel() {
             fontSize: '0.72rem',
             minHeight: 44,
             py: 0.5,
+            textTransform: 'none',
           },
-          '& .Mui-selected': {
-            color: '#FFFFFF',
+          '& .MuiTab-root.Mui-selected': {
+            color: '#FFFFFF !important',
             fontWeight: 700,
           },
           '& .MuiTabs-indicator': {
@@ -68,10 +78,10 @@ export default function SimulationPanel() {
           },
         }}
       >
-        <Tab icon={<LocalShippingIcon sx={{ fontSize: 16 }} />} iconPosition="start" label="Envíos" />
-        <Tab icon={<FlightIcon sx={{ fontSize: 16 }} />} iconPosition="start" label="Vuelos" />
-        <Tab icon={<LuggageIcon sx={{ fontSize: 16 }} />} iconPosition="start" label="Maletas" />
-        <Tab icon={<BarChartIcon sx={{ fontSize: 16 }} />} iconPosition="start" label="KPIs" />
+        <Tab label={<TabLabel icon={<LocalShippingIcon sx={{ fontSize: 16 }} />} text="Envíos" />} />
+        <Tab label={<TabLabel icon={<FlightIcon sx={{ fontSize: 16 }} />} text="Vuelos" />} />
+        <Tab label={<TabLabel icon={<LuggageIcon sx={{ fontSize: 16 }} />} text="Maletas" />} />
+        <Tab label={<TabLabel icon={<BarChartIcon sx={{ fontSize: 16 }} />} text="KPIs" />} />
       </Tabs>
 
       <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>

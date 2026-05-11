@@ -22,8 +22,8 @@ export default function StatusBar() {
 
   const total = shipments.length
   const delivered = shipments.filter(s => s.status === 'DELIVERED').length
-  const inFlight = shipments.filter(s => s.status === 'IN_FLIGHT').length
-  const inOrigin = shipments.filter(s => s.status === 'IN_ORIGIN').length
+  const inTransit = shipments.filter(s => s.status === 'IN_TRANSIT').length
+  const planned = shipments.filter(s => s.status === 'PLANNED').length
   const delayed = shipments.filter(s => s.status === 'DELAYED').length
 
   return (
@@ -50,9 +50,9 @@ export default function StatusBar() {
       <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.5 }} />
       <StatItem label="Entregados" value={delivered} color="#66BB6A" />
       <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.5 }} />
-      <StatItem label="En Tránsito" value={inFlight} color="#FB8C00" />
+      <StatItem label="En Tránsito" value={inTransit} color="#FB8C00" />
       <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.5 }} />
-      <StatItem label="En Espera" value={inOrigin} color="#90CAF9" />
+      <StatItem label="En Espera" value={planned} color="#90CAF9" />
       <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.5 }} />
       <StatItem label="Retrasados" value={delayed} color="#EF9A9A" />
     </Box>

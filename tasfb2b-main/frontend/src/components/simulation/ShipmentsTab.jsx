@@ -4,8 +4,8 @@ import DataTable from '../common/DataTable'
 import { useSimulationContext } from '../../context/SimulationContext'
 
 const STATUS_STYLES = {
-  IN_ORIGIN: { label: 'En Origen', color: '#1565C0', bg: '#E3F2FD' },
-  IN_FLIGHT: { label: 'En Vuelo', color: '#E65100', bg: '#FFF3E0' },
+  PLANNED: { label: 'En Origen', color: '#1565C0', bg: '#E3F2FD' },
+  IN_TRANSIT: { label: 'En Tránsito', color: '#E65100', bg: '#FFF3E0' },
   DELIVERED: { label: 'Entregado', color: '#2E7D32', bg: '#E8F5E9' },
   DELAYED: { label: 'Retrasado', color: '#C62828', bg: '#FFEBEE' },
 }
