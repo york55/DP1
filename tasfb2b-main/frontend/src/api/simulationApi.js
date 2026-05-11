@@ -30,3 +30,7 @@ export const shipmentApi = {
   },
   getById: (id) => client.get(`/shipments/${id}/status`).then(r => r.data),
 }
+
+export const logApi = {
+  send: (log) => client.post('/logs', log).then(r => r.data),
+}

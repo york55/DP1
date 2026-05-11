@@ -75,7 +75,9 @@ echo ============================================================
 echo.
 
 REM Uses npx to run "serve" on the dist folder
-call npx serve -s dist -p 3000 2>&1
+set FRONTEND_SERVER_LOG=%LOGS_DIR%\frontend_server_%LOG_SUFFIX%.log
+echo       Frontend server log: %FRONTEND_SERVER_LOG%
+call npx serve -s dist -p 3000 > "%FRONTEND_SERVER_LOG%" 2>&1
 
 popd
 endlocal

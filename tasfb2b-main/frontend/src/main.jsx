@@ -13,6 +13,15 @@ L.Icon.Default.mergeOptions({
   iconRetinaUrl: iconUrl,
 })
 
+// Global Error Logging
+import { logger } from './utils/logger'
+window.addEventListener('error', (event) => {
+  logger.error('Global Error:', event.message, { filename: event.filename, lineno: event.lineno })
+})
+window.addEventListener('unhandledrejection', (event) => {
+  logger.error('Unhandled Promise Rejection:', event.reason)
+})
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <App />
