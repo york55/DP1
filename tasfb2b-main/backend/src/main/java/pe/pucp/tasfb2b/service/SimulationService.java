@@ -20,6 +20,7 @@ import pe.pucp.tasfb2b.planner.SimulationContext;
 import pe.pucp.tasfb2b.planner.alns.AlnsParams;
 import pe.pucp.tasfb2b.repository.*;
 import pe.pucp.tasfb2b.simulation.SimulationEngine;
+import pe.pucp.tasfb2b.websocket.WebSocketEventPublisher;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -47,6 +48,7 @@ public class SimulationService {
     private final PlannerService plannerService;
     private final KpiService kpiService;
     private final SimulationMapper simulationMapper;
+    private final WebSocketEventPublisher webSocketPublisher;
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(10);
     private final ConcurrentHashMap<Long, ScheduledFuture<?>> runningSimulations = new ConcurrentHashMap<>();
@@ -97,9 +99,11 @@ public class SimulationService {
         final boolean needsPlanning = sim.getStatus() == SimulationStatus.CONFIGURED;
         if (needsPlanning) {
             resetFlightsForSimulation(sim);
+            sim.setStatus(SimulationStatus.PLANNING);
+        } else {
+            sim.setStatus(SimulationStatus.RUNNING);
         }
 
-        sim.setStatus(SimulationStatus.RUNNING);
         simulationRepo.save(sim);
         simulationEngine.initSimulation(id);
 
@@ -115,6 +119,11 @@ public class SimulationService {
                         } catch (Exception e) {
                             log.error("Error en planificación inicial async para simulación {}: {}", id, e.getMessage(), e);
                         }
+                        // Transition to RUNNING once planning is done
+                        simulationRepo.findById(id).ifPresent(s -> {
+                            s.setStatus(SimulationStatus.RUNNING);
+                            simulationRepo.save(s);
+                        });
                         scheduleSimulation(id);
                     });
                 }
@@ -227,12 +236,14 @@ public class SimulationService {
             log.info("Simulación {}: Iniciando planificación inicial de {} lotes...", sim.getId(), pending.size());
             
             AlnsParams alnsParams = buildAlnsParams(sim);
+            final Long simId = sim.getId();
             SimulationContext context = SimulationContext.builder()
                     .airports(airports)
                     .flights(flights)
                     .pendingBatches(pending)
                     .simulatedNow(simNow)
                     .alnsParams(alnsParams)
+                    .progressCallback(snap -> webSocketPublisher.publishPlanProgress(simId, snap))
                     .build();
 
             long planStart = System.currentTimeMillis();

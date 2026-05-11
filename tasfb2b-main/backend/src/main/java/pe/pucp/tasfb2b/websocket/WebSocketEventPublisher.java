@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import pe.pucp.tasfb2b.dto.response.SimulationTickEvent;
+import pe.pucp.tasfb2b.planner.PlanProgressSnapshot;
 
 @Component
 @RequiredArgsConstructor
@@ -17,6 +18,11 @@ public class WebSocketEventPublisher {
         String destination = "/topic/simulation/" + simulationId + "/tick";
         log.debug("Publicando tick para simulación {} en {}", simulationId, destination);
         messagingTemplate.convertAndSend(destination, event);
+    }
+
+    public void publishPlanProgress(Long simulationId, PlanProgressSnapshot snapshot) {
+        String destination = "/topic/simulation/" + simulationId + "/plan-progress";
+        messagingTemplate.convertAndSend(destination, snapshot);
     }
 
     public void publishAlert(Long simulationId, AlertEvent event) {
