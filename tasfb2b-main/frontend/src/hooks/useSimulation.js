@@ -45,11 +45,33 @@ export function useSimulation() {
   const simTimeRef = useRef(null)
   const statusRef = useRef('idle')
   const simIdRef = useRef(null)
+  const shipmentPollRef = useRef(null)
 
   useEffect(() => {
     simTimeRef.current = simulationState.simulatedTime
     statusRef.current = simulationState.status
   }, [simulationState.simulatedTime, simulationState.status])
+
+  const loadShipments = useCallback(async () => {
+    try {
+      const sms = await shipmentApi.getAll()
+      if (Array.isArray(sms)) {
+        setSimulationData(prev => ({
+          ...prev,
+          shipments: sms.map(s => ({
+            id: s.id,
+            status: s.status,
+            origin: s.originIata || '—',
+            destination: s.destinationIata || '—',
+            totalBags: s.quantity || 0,
+            deliveredBags: s.status === 'DELIVERED' ? (s.quantity || 0) : 0,
+            client: s.airline || '—',
+            currentFlight: null,
+          })),
+        }))
+      }
+    } catch (e) { /* silent */ }
+  }, [])
 
   const addNotification = useCallback((message, type = 'info', persistent = false) => {
     setNotifications(prev => [...prev, makeNotification(message, type, persistent)])
@@ -208,7 +230,11 @@ export function useSimulation() {
         simulationId: simDto.id,
       })
 
-      addNotification(`Simulación backend iniciada (id=${simDto.id})`, 'success')
+      addNotification('Planificando rutas en segundo plano, la simulación iniciará en breve...', 'info', true)
+
+      await loadShipments()
+      if (shipmentPollRef.current) clearInterval(shipmentPollRef.current)
+      shipmentPollRef.current = setInterval(loadShipments, 5000)
     } catch (err) {
       simLogger.error('Error al iniciar simulación:', err.message)
       console.warn('[useSimulation] Backend no disponible:', err.message)
@@ -216,7 +242,7 @@ export function useSimulation() {
       statusRef.current = 'idle'
       setSimulationState(prev => ({ ...prev, status: 'idle' }))
     }
-  }, [handleTickEvent, handleAlert, addNotification])
+  }, [handleTickEvent, handleAlert, addNotification, loadShipments])
 
   const pauseSimulation = useCallback(async () => {
     const id = simIdRef.current
@@ -242,9 +268,81 @@ export function useSimulation() {
     addNotification('Simulación reanudada.', 'info')
   }, [handleTickEvent, handleAlert, addNotification])
 
+  // On mount: reconnect to any active simulation (handles F5 and new clients)
+  useEffect(() => {
+    async function reconnect() {
+      try {
+        const sims = await simulationApi.getAll()
+        const actives = sims.filter(s => s.status === 'RUNNING' || s.status === 'PAUSED')
+        if (!actives.length) return
+        const active = actives[actives.length - 1]
+
+        simIdRef.current = active.id
+        const simTime = active.simulatedTime
+          ? new Date(active.simulatedTime)
+          : new Date(active.startDate)
+        simTimeRef.current = simTime
+        const frontendStatus = active.status === 'RUNNING' ? 'running' : 'paused'
+        statusRef.current = frontendStatus
+
+        const [realAirports, realFlights] = await Promise.allSettled([
+          airportApi.getAll(),
+          flightApi.getAll(),
+        ])
+
+        const nextAirports = realAirports.status === 'fulfilled'
+          ? realAirports.value.map(a => ({
+              ...a,
+              iata: a.iata || a.iataCode,
+              iataCode: a.iata || a.iataCode,
+              lat: a.latitude,
+              lon: a.longitude,
+              occupancy: a.occupancyPct || 0,
+            }))
+          : []
+
+        const nextFlights = realFlights.status === 'fulfilled'
+          ? realFlights.value.map(f => ({
+              ...f,
+              origin: f.originIata,
+              destination: f.destinationIata,
+              departureUTC: f.departureTime,
+              arrivalUTC: f.arrivalTime,
+              capacity: f.baggageCapacity,
+              bagsAboard: f.currentLoad,
+              backendId: f.id,
+            }))
+          : []
+
+        setSimulationData(prev => ({ ...prev, airports: nextAirports, flights: nextFlights }))
+        setSimulationState({
+          status: frontendStatus,
+          simulatedTime: simTime,
+          elapsedSeconds: 0,
+          config: { period: active.periodDays, startDate: new Date(active.startDate) },
+          simulationId: active.id,
+        })
+
+        await loadShipments()
+        if (shipmentPollRef.current) clearInterval(shipmentPollRef.current)
+        shipmentPollRef.current = setInterval(loadShipments, 5000)
+
+        if (active.status === 'RUNNING') {
+          connectSimulationWebSocket(active.id, handleTickEvent, handleAlert)
+        }
+
+        simLogger.info(`Reconectado a simulación activa ID=${active.id}, estado=${active.status}`)
+      } catch (e) {
+        // No active simulation found or backend unavailable — stay idle
+      }
+    }
+    reconnect()
+  }, [handleTickEvent, handleAlert, loadShipments]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     return () => {
       disconnectSimulationWebSocket()
+      if (shipmentPollRef.current) clearInterval(shipmentPollRef.current)
     }
   }, [])
 
