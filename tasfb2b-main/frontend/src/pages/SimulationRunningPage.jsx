@@ -22,6 +22,7 @@ import { useSimulationContext } from '../context/SimulationContext'
 import { formatUTCFull, formatElapsed } from '../utils/timeUtils'
 
 const STATUS_LABELS = {
+  planning: { label: 'Planificando', color: '#1565C0', bg: '#E3F2FD' },
   running: { label: 'En Ejecución', color: '#2E7D32', bg: '#E8F5E9' },
   paused: { label: 'Pausada', color: '#E65100', bg: '#FFF3E0' },
   finished: { label: 'Completada', color: '#1F3864', bg: '#E8EEF7' },

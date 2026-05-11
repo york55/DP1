@@ -42,6 +42,15 @@ export function useSimulation() {
 
   const [notifications, setNotifications] = useState([])
 
+  const [planningProgress, setPlanningProgress] = useState({
+    phase: '',
+    iteration: 0,
+    maxIterations: 1000,
+    assignedBatches: 0,
+    totalBatches: 0,
+    currentObjective: 0,
+  })
+
   const simTimeRef = useRef(null)
   const statusRef = useRef('idle')
   const simIdRef = useRef(null)
@@ -142,6 +151,20 @@ export function useSimulation() {
     })
   }, [])
 
+  const handlePlanProgress = useCallback((snap) => {
+    setPlanningProgress({
+      phase: snap.phase,
+      iteration: snap.iteration,
+      maxIterations: snap.maxIterations,
+      assignedBatches: snap.assignedBatches,
+      totalBatches: snap.totalBatches,
+      currentObjective: snap.currentObjective,
+    })
+    if (snap.phase === 'COMPLETE') {
+      setSimulationState(prev => ({ ...prev, status: 'running' }))
+    }
+  }, [])
+
   const handleAlert = useCallback((alert) => {
     const typeMap = { DELAY: 'warning', CRITICAL_OCCUPANCY: 'error', CANCELLATION: 'error' }
     addNotification(alert.message, typeMap[alert.type] || 'info',
@@ -220,10 +243,10 @@ export function useSimulation() {
       }))
 
       await simulationApi.start(simDto.id)
-      connectSimulationWebSocket(simDto.id, handleTickEvent, handleAlert)
+      connectSimulationWebSocket(simDto.id, handleTickEvent, handleAlert, handlePlanProgress)
 
       setSimulationState({
-        status: 'running',
+        status: 'planning',
         simulatedTime: simStart,
         elapsedSeconds: 0,
         config: { period: config.period, startDate: simStart },
@@ -273,7 +296,7 @@ export function useSimulation() {
     async function reconnect() {
       try {
         const sims = await simulationApi.getAll()
-        const actives = sims.filter(s => s.status === 'RUNNING' || s.status === 'PAUSED')
+        const actives = sims.filter(s => s.status === 'RUNNING' || s.status === 'PAUSED' || s.status === 'PLANNING')
         if (!actives.length) return
         const active = actives[actives.length - 1]
 
@@ -282,7 +305,9 @@ export function useSimulation() {
           ? new Date(active.simulatedTime)
           : new Date(active.startDate)
         simTimeRef.current = simTime
-        const frontendStatus = active.status === 'RUNNING' ? 'running' : 'paused'
+        const frontendStatus = active.status === 'RUNNING' ? 'running'
+          : active.status === 'PLANNING' ? 'planning'
+          : 'paused'
         statusRef.current = frontendStatus
 
         const [realAirports, realFlights] = await Promise.allSettled([
@@ -327,8 +352,8 @@ export function useSimulation() {
         if (shipmentPollRef.current) clearInterval(shipmentPollRef.current)
         shipmentPollRef.current = setInterval(loadShipments, 5000)
 
-        if (active.status === 'RUNNING') {
-          connectSimulationWebSocket(active.id, handleTickEvent, handleAlert)
+        if (active.status === 'RUNNING' || active.status === 'PLANNING') {
+          connectSimulationWebSocket(active.id, handleTickEvent, handleAlert, handlePlanProgress)
         }
 
         simLogger.info(`Reconectado a simulación activa ID=${active.id}, estado=${active.status}`)
@@ -350,6 +375,7 @@ export function useSimulation() {
     simulationState,
     ...simulationData,
     notifications,
+    planningProgress,
     startSimulation,
     pauseSimulation,
     resumeSimulation,

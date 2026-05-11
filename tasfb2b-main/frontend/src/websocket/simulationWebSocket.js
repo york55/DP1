@@ -3,7 +3,7 @@ import SockJS from 'sockjs-client'
 
 let stompClient = null
 
-export function connectSimulationWebSocket(simulationId, onTick, onAlert) {
+export function connectSimulationWebSocket(simulationId, onTick, onAlert, onPlanProgress) {
   if (stompClient && stompClient.connected) {
     stompClient.deactivate()
   }
@@ -21,6 +21,15 @@ export function connectSimulationWebSocket(simulationId, onTick, onAlert) {
           onTick(event)
         } catch (e) {
           console.error('[WS] Error parsing tick event', e)
+        }
+      })
+
+      stompClient.subscribe(`/topic/simulation/${simulationId}/plan-progress`, (msg) => {
+        try {
+          const snap = JSON.parse(msg.body)
+          if (onPlanProgress) onPlanProgress(snap)
+        } catch (e) {
+          console.error('[WS] Error parsing plan-progress event', e)
         }
       })
 
