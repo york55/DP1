@@ -16,6 +16,7 @@ import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
 import Collapse from '@mui/material/Collapse'
 import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
@@ -23,6 +24,9 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import LuggageIcon from '@mui/icons-material/Luggage'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined'
 import CircularProgress from '@mui/material/CircularProgress'
 import LinearProgress from '@mui/material/LinearProgress'
 import Backdrop from '@mui/material/Backdrop'
@@ -102,6 +106,8 @@ export default function SimulationConfigPage() {
   const [starting, setStarting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({ processed: 0, total: 0, status: '', message: '' })
+  const [loadedFileName, setLoadedFileName] = useState(null)
+  const pendingFileName = React.useRef(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -150,8 +156,10 @@ export default function SimulationConfigPage() {
           setUploadProgress(progress)
           if (progress.status === 'COMPLETED') {
             setShipmentsCount(progress.total)
+            setLoadedFileName(pendingFileName.current)
             setUploading(false)
           } else if (progress.status === 'ERROR') {
+            pendingFileName.current = null
             setUploading(false)
             alert("Error en la carga: " + progress.message)
           }
@@ -165,9 +173,19 @@ export default function SimulationConfigPage() {
     return () => stompClient.deactivate()
   }, [])
 
+  const handleClearFile = () => {
+    setLoadedFileName(null)
+    setShipmentsCount(0)
+    pendingFileName.current = null
+    setUploadProgress({ processed: 0, total: 0, status: '', message: '' })
+  }
+
   const handleFileUpload = async (e) => {
     const file = e.target.files[0]
+    // Reset input so the same file can be re-selected after clearing
+    e.target.value = ''
     if (file) {
+      pendingFileName.current = file.name
       setUploading(true)
       setUploadProgress({ processed: 0, total: 0, status: 'IN_PROGRESS', message: 'Iniciando carga...' })
       const formData = new FormData()
@@ -325,13 +343,42 @@ export default function SimulationConfigPage() {
               <Typography variant="caption" sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}>
                 Datos de Envíos (TXT)
               </Typography>
+
+              {/* Loaded file indicator — shown after successful upload */}
+              {loadedFileName && !uploading && (
+                <Box sx={{
+                  display: 'flex', alignItems: 'center', gap: 1,
+                  px: 1.5, py: 1,
+                  mb: 1,
+                  borderRadius: 1,
+                  border: '1px solid #A5D6A7',
+                  backgroundColor: '#F1FBF3',
+                }}>
+                  <CheckCircleIcon sx={{ fontSize: 18, color: '#2E7D32', flexShrink: 0 }} />
+                  <InsertDriveFileOutlinedIcon sx={{ fontSize: 16, color: '#4CAF50', flexShrink: 0 }} />
+                  <Typography variant="caption" sx={{ flex: 1, color: '#1B5E20', fontWeight: 600, fontSize: '0.75rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {loadedFileName}
+                  </Typography>
+                  <Tooltip title="Quitar archivo cargado">
+                    <IconButton size="small" onClick={handleClearFile} sx={{ color: '#C62828', p: 0.25 }}>
+                      <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              )}
+
               <Button
                 component="label"
                 variant="outlined"
                 fullWidth
-                disabled={uploading}
+                disabled={uploading || !!loadedFileName}
                 startIcon={<CloudUploadIcon />}
-                sx={{ py: 1, borderColor: '#2E75B6', color: '#2E75B6' }}
+                sx={{
+                  py: 1,
+                  borderColor: loadedFileName ? '#A5D6A7' : '#2E75B6',
+                  color: loadedFileName ? '#A5D6A7' : '#2E75B6',
+                  cursor: loadedFileName ? 'not-allowed' : 'pointer',
+                }}
               >
                 Cargar Archivo de Envíos
                 <input
@@ -341,14 +388,19 @@ export default function SimulationConfigPage() {
                   onChange={handleFileUpload}
                 />
               </Button>
+              {loadedFileName && !uploading && (
+                <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: '#6B7280', fontSize: '0.7rem', textAlign: 'center' }}>
+                  Para cargar otro archivo, primero elimine el actual.
+                </Typography>
+              )}
               {uploading && (
                 <Box sx={{ mt: 2 }}>
                   <Typography variant="caption" sx={{ display: 'block', mb: 0.5, color: '#1F3864' }}>
                     {uploadProgress.message} ({uploadProgress.processed} / {uploadProgress.total || '?'})
                   </Typography>
-                  <LinearProgress 
-                    variant={uploadProgress.total > 0 ? "determinate" : "indeterminate"} 
-                    value={uploadProgress.total > 0 ? (uploadProgress.processed / uploadProgress.total) * 100 : 0} 
+                  <LinearProgress
+                    variant={uploadProgress.total > 0 ? 'determinate' : 'indeterminate'}
+                    value={uploadProgress.total > 0 ? (uploadProgress.processed / uploadProgress.total) * 100 : 0}
                   />
                 </Box>
               )}
