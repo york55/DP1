@@ -6,7 +6,6 @@ import Typography from '@mui/material/Typography'
 import Divider from '@mui/material/Divider'
 import FlightTakeoffIcon from '@mui/icons-material/FlightTakeoff'
 import LuggageIcon from '@mui/icons-material/Luggage'
-import { getFlightProgress } from '../../utils/timeUtils'
 
 function lerp(a, b, t) {
   return a + (b - a) * t
@@ -31,8 +30,8 @@ function FlightRoute({ flight, airports = [], simulatedTime }) {
 
   const progress = useMemo(() => {
     if (!isInFlight) return 0
-    return getFlightProgress(flight.departureUTC, flight.arrivalUTC, simulatedTime)
-  }, [isInFlight, flight.departureUTC, flight.arrivalUTC, simulatedTime])
+    return flight.progress || 0
+  }, [isInFlight, flight.progress])
 
   const { progressPosition, angle } = useMemo(() => {
     if (!originAirport || !destAirport) return { progressPosition: null, angle: 0 }

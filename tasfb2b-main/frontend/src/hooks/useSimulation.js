@@ -108,8 +108,9 @@ export function useSimulation() {
     setSimulationData(prev => {
       let nextAirports = prev.airports
       if (event.airports) {
+        const airportUpdateMap = new Map(event.airports.map(x => [x.iata, x]))
         nextAirports = prev.airports.map(a => {
-          const update = event.airports.find(x => x.iata === a.iata || x.iata === a.iataCode)
+          const update = airportUpdateMap.get(a.iata) || airportUpdateMap.get(a.iataCode)
           if (!update) return a
           return {
             ...a,
@@ -122,8 +123,9 @@ export function useSimulation() {
 
       let nextFlights = prev.flights
       if (event.flights) {
+        const flightUpdateMap = new Map(event.flights.map(x => [x.flightId, x]))
         nextFlights = prev.flights.map(f => {
-          const update = event.flights.find(x => x.flightId === f.id || x.flightId === f.backendId)
+          const update = flightUpdateMap.get(f.id) || flightUpdateMap.get(f.backendId)
           if (!update) return f
           return {
             ...f,
@@ -307,7 +309,7 @@ export function useSimulation() {
         simTimeRef.current = simTime
         const frontendStatus = active.status === 'RUNNING' ? 'running'
           : active.status === 'PLANNING' ? 'planning'
-          : 'paused'
+            : 'paused'
         statusRef.current = frontendStatus
 
         const [realAirports, realFlights] = await Promise.allSettled([
@@ -317,26 +319,26 @@ export function useSimulation() {
 
         const nextAirports = realAirports.status === 'fulfilled'
           ? realAirports.value.map(a => ({
-              ...a,
-              iata: a.iata || a.iataCode,
-              iataCode: a.iata || a.iataCode,
-              lat: a.latitude,
-              lon: a.longitude,
-              occupancy: a.occupancyPct || 0,
-            }))
+            ...a,
+            iata: a.iata || a.iataCode,
+            iataCode: a.iata || a.iataCode,
+            lat: a.latitude,
+            lon: a.longitude,
+            occupancy: a.occupancyPct || 0,
+          }))
           : []
 
         const nextFlights = realFlights.status === 'fulfilled'
           ? realFlights.value.map(f => ({
-              ...f,
-              origin: f.originIata,
-              destination: f.destinationIata,
-              departureUTC: f.departureTime,
-              arrivalUTC: f.arrivalTime,
-              capacity: f.baggageCapacity,
-              bagsAboard: f.currentLoad,
-              backendId: f.id,
-            }))
+            ...f,
+            origin: f.originIata,
+            destination: f.destinationIata,
+            departureUTC: f.departureTime,
+            arrivalUTC: f.arrivalTime,
+            capacity: f.baggageCapacity,
+            bagsAboard: f.currentLoad,
+            backendId: f.id,
+          }))
           : []
 
         setSimulationData(prev => ({ ...prev, airports: nextAirports, flights: nextFlights }))
