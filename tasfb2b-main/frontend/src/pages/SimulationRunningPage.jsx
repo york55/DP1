@@ -148,7 +148,7 @@ export default function SimulationRunningPage() {
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden', mb: '32px' }}>
         {/* Map — fills remaining space */}
         <Box sx={{ flex: 1, position: 'relative', minWidth: 0 }}>
-          <WorldMap airports={airports} flights={flights} simulatedTime={simulatedTime} />
+          <WorldMap airports={airports} flights={flights} simulatedTime={simulatedTime} resizeTrigger={collapsed ? 'collapsed' : panelWidth} />
         </Box>
 
         {/* Drag handle + collapse toggle button */}
