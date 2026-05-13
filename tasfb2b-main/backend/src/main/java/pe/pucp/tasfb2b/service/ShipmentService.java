@@ -65,117 +65,206 @@ public class ShipmentService {
 
     @Async
     @Transactional
-    public void uploadBatchesAsync(byte[] fileBytes, String filename) {
+    public void uploadBatchesAsync(
+            byte[] fileBytes,
+            String filename,
+            int periodo,
+            LocalDateTime startDate) {
+
+        LocalDateTime endDate = startDate.plusDays(periodo);
+
         log.info("Iniciando carga asíncrona para archivo: {}", filename);
-        messagingTemplate.convertAndSend("/topic/shipments/progress", 
-            new UploadProgressDto(0, 0, "IN_PROGRESS", "Calculando total de líneas..."));
+        log.info("Rango de fechas: {} -> {}", startDate, endDate);
+
+        messagingTemplate.convertAndSend("/topic/shipments/progress",
+                new UploadProgressDto(
+                        0,
+                        0,
+                        "IN_PROGRESS",
+                        "Procesando envíos entre " + startDate + " y " + endDate));
 
         String originIata = extractOriginFromFilename(filename);
+
         if (originIata == null) {
-            log.warn("No se pudo extraer el aeropuerto de origen del nombre del archivo: {}. Usando SKBO por defecto.", filename);
-            originIata = "SKBO"; // Fallback to SKBO
+            log.warn("No se pudo extraer aeropuerto del archivo {}. Usando SKBO.", filename);
+            originIata = "SKBO";
         }
 
         try {
-            // Check if origin exists
+
             Airport origin = airportRepo.findByIataCode(originIata).orElse(null);
+
             if (origin == null) {
-                sendError("Aeropuerto de origen no encontrado en BD: " + originIata);
+                sendError("Aeropuerto de origen no encontrado: " + originIata);
                 return;
             }
 
-            // Fallback airline
             Airline airline = airlineRepo.findAll().stream().findFirst().orElse(null);
+
             if (airline == null) {
-                sendError("No hay aerolíneas registradas en la BD.");
+                sendError("No hay aerolíneas registradas.");
                 return;
             }
 
-            // First pass to count lines
+            // contar líneas
             int totalLines = 0;
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                    new ByteArrayInputStream(fileBytes), StandardCharsets.UTF_8))) {
+
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(
+                            new ByteArrayInputStream(fileBytes),
+                            StandardCharsets.UTF_8))) {
+
                 while (reader.readLine() != null) {
                     totalLines++;
                 }
             }
 
-            // Second pass to process
             int processed = 0;
+            int inserted = 0;
+
             int batchSize = 1000;
+
             List<BaggageBatch> batchList = new ArrayList<>(batchSize);
+
             Map<String, Airport> destCache = new HashMap<>();
 
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                    new ByteArrayInputStream(fileBytes), StandardCharsets.UTF_8))) {
-                
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    line = line.trim();
-                    if (line.isEmpty()) continue;
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(
+                            new ByteArrayInputStream(fileBytes),
+                            StandardCharsets.UTF_8))) {
 
-                    // Format: 000000001-20260102-00-47-SUAA-002-0032535
+                String line;
+
+                while ((line = reader.readLine()) != null) {
+
+                    line = line.trim();
+
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+
+                    // 000000001-20260102-00-47-SUAA-002-0032535
                     String[] parts = line.split("-");
+
                     if (parts.length >= 6) {
+
                         try {
-                            String dateStr = parts[1]; // 20260102
-                            String hourStr = parts[2]; // 00
-                            String minStr = parts[3];  // 47
-                            String destIata = parts[4]; // SUAA
+
+                            String dateStr = parts[1];
+                            String hourStr = parts[2];
+                            String minStr = parts[3];
+                            String destIata = parts[4];
+
                             int qty = Integer.parseInt(parts[5]);
 
-                            // parse date
                             int year = Integer.parseInt(dateStr.substring(0, 4));
                             int month = Integer.parseInt(dateStr.substring(4, 6));
                             int day = Integer.parseInt(dateStr.substring(6, 8));
+
                             int hour = Integer.parseInt(hourStr);
                             int min = Integer.parseInt(minStr);
-                            
-                            LocalDateTime availableFrom = LocalDateTime.of(year, month, day, hour, min);
 
-                            Airport dest = destCache.computeIfAbsent(destIata, k -> airportRepo.findByIataCode(k).orElse(null));
-                            
+                            LocalDateTime availableFrom =
+                                    LocalDateTime.of(year, month, day, hour, min);
+
+                            /*
+                            * Como el archivo está ordenado por fecha:
+                            * - si aún no llegamos al rango -> continuar
+                            * - si ya pasamos el rango -> detener procesamiento
+                            */
+
+                            if (availableFrom.isBefore(startDate)) {
+                                processed++;
+                                continue;
+                            }
+
+                            if (availableFrom.isAfter(endDate)) {
+
+                                log.info(
+                                        "Se alcanzó fecha fuera del rango en {}. Deteniendo lectura.",
+                                        availableFrom);
+
+                                break;
+                            }
+
+                            Airport dest = destCache.computeIfAbsent(
+                                    destIata,
+                                    k -> airportRepo.findByIataCode(k).orElse(null));
+
                             if (dest != null) {
+
                                 BaggageBatch batch = new BaggageBatch();
+
                                 batch.setAirline(airline);
                                 batch.setOriginAirport(origin);
                                 batch.setDestinationAirport(dest);
+
                                 batch.setQuantity(qty);
+
                                 batch.setAvailableFrom(availableFrom);
+
                                 batch.setStatus(BatchStatus.IN_ORIGIN);
+
                                 batchList.add(batch);
+
+                                inserted++;
                             }
+
                         } catch (Exception e) {
-                            log.debug("Error procesando línea {}: {}", line, e.getMessage());
+
+                            log.debug(
+                                    "Error procesando línea {}: {}",
+                                    line,
+                                    e.getMessage());
                         }
                     }
 
                     processed++;
-                    
+
                     if (batchList.size() >= batchSize) {
+
                         batchRepo.saveAll(batchList);
+
                         batchList.clear();
-                        messagingTemplate.convertAndSend("/topic/shipments/progress", 
-                            new UploadProgressDto(processed, totalLines, "IN_PROGRESS", "Procesando..."));
+
+                        messagingTemplate.convertAndSend(
+                                "/topic/shipments/progress",
+                                new UploadProgressDto(
+                                        processed,
+                                        totalLines,
+                                        "IN_PROGRESS",
+                                        "Procesando envíos..."));
                     }
                 }
 
-                // Save remaining
+                // guardar restantes
                 if (!batchList.isEmpty()) {
                     batchRepo.saveAll(batchList);
                 }
             }
 
-            messagingTemplate.convertAndSend("/topic/shipments/progress", 
-                new UploadProgressDto(totalLines, totalLines, "COMPLETED", "Carga finalizada con éxito."));
-            log.info("Carga asíncrona completada. Total insertados: {}", totalLines);
+            messagingTemplate.convertAndSend(
+                    "/topic/shipments/progress",
+                    new UploadProgressDto(
+                            processed,
+                            totalLines,
+                            "COMPLETED",
+                            "Carga finalizada. Insertados: " + inserted));
+
+            log.info(
+                    "Carga completada. Procesados: {}, Insertados: {}",
+                    processed,
+                    inserted);
 
         } catch (Exception e) {
+
             log.error("Error crítico en carga asíncrona", e);
+
             sendError("Error interno: " + e.getMessage());
         }
     }
-
+    
+   
     private void sendError(String message) {
         messagingTemplate.convertAndSend("/topic/shipments/progress", 
             new UploadProgressDto(0, 0, "ERROR", message));

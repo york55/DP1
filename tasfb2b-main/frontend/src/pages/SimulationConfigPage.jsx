@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
 import apiClient from '../api/client'
 import Box from '@mui/material/Box'
 import AppBar from '@mui/material/AppBar'
@@ -40,18 +39,30 @@ import DataTable from '../components/common/DataTable'
 import { formatFlightTime } from '../utils/timeUtils'
 
 const flightColumns = [
-  { field: 'id', headerName: 'ID', width: 110, renderCell: (p) => <span style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{p.value}</span> },
+  {
+    field: 'id',
+    headerName: 'ID',
+    width: 110,
+    renderCell: (p) => (
+      <span style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{p.value}</span>
+    ),
+  },
   { field: 'airline', headerName: 'Aerolínea', width: 90, renderCell: () => 'TASF' },
   { field: 'originIata', headerName: 'Origen', width: 80 },
   { field: 'destinationIata', headerName: 'Destino', width: 90 },
-  { field: 'departureTime', headerName: 'Salida UTC', width: 105, renderCell: (p) => formatFlightTime(p.value) },
-  { field: 'arrivalTime', headerName: 'Llegada UTC', width: 105, renderCell: (p) => formatFlightTime(p.value) },
   {
-    field: 'baggageCapacity',
-    headerName: 'Cap.',
-    width: 65,
-    type: 'number',
+    field: 'departureTime',
+    headerName: 'Salida UTC',
+    width: 105,
+    renderCell: (p) => formatFlightTime(p.value),
   },
+  {
+    field: 'arrivalTime',
+    headerName: 'Llegada UTC',
+    width: 105,
+    renderCell: (p) => formatFlightTime(p.value),
+  },
+  { field: 'baggageCapacity', headerName: 'Cap.', width: 65, type: 'number' },
   {
     field: 'status',
     headerName: 'Estado',
@@ -96,8 +107,9 @@ export default function SimulationConfigPage() {
   const { startSimulation } = useSimulationContext()
   const utcClock = useClock()
 
+  // FIX 4: use dayjs as the canonical type for startDate (MUI DatePicker returns dayjs)
   const [period, setPeriod] = useState('3')
-  const [startDate, setStartDate] = useState(new Date())
+  const [startDate, setStartDate] = useState()
   const [flightsExpanded, setFlightsExpanded] = useState(false)
   const [airports, setAirports] = useState([])
   const [flights, setFlights] = useState([])
@@ -105,33 +117,39 @@ export default function SimulationConfigPage() {
   const [shipmentsCount, setShipmentsCount] = useState(0)
   const [starting, setStarting] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState({ processed: 0, total: 0, status: '', message: '' })
-  const [loadedFileName, setLoadedFileName] = useState(null)
-  const pendingFileName = React.useRef(null)
+  const [uploadProgress, setUploadProgress] = useState({
+    processed: 0,
+    total: 0,
+    status: '',
+    message: '',
+  })
+  const [loadedFiles, setLoadedFiles] = useState([])
+
+  // FIX 2: keep a stable ref to the STOMP client so we can deactivate it properly
+  const stompClientRef = useRef(null)
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const [airportsRes, flightsRes] = await Promise.all([
           apiClient.get('/airports'),
-          apiClient.get('/flights')
+          apiClient.get('/flights'),
         ])
-        
-        // Map backend Airport fields to what WorldMap expects if needed
-        const mappedAirports = airportsRes.data.map(a => ({
+
+        const mappedAirports = airportsRes.data.map((a) => ({
           ...a,
           lat: a.latitude,
           lon: a.longitude,
           maxCapacity: a.warehouseCapacity,
-          occupancy: a.currentOccupancy
+          occupancy: a.currentOccupancy,
         }))
-        
-        const mappedFlights = flightsRes.data.map(f => ({
+
+        const mappedFlights = flightsRes.data.map((f) => ({
           ...f,
           originIata: f.originAirport?.iataCode,
-          destinationIata: f.destinationAirport?.iataCode
+          destinationIata: f.destinationAirport?.iataCode,
         }))
-        
+
         setAirports(mappedAirports)
         setFlights(mappedFlights)
       } catch (err) {
@@ -148,7 +166,8 @@ export default function SimulationConfigPage() {
     const socket = new SockJS(wsUrl)
     const stompClient = new Client({
       webSocketFactory: () => socket,
-      debug: (str) => { console.log(str) },
+      // FIX 2: remove noisy debug logger in production; use console.debug to keep it opt-in
+      debug: (str) => console.debug('[STOMP]', str),
       onConnect: () => {
         console.log('STOMP connected')
         stompClient.subscribe('/topic/shipments/progress', (message) => {
@@ -156,66 +175,95 @@ export default function SimulationConfigPage() {
           setUploadProgress(progress)
           if (progress.status === 'COMPLETED') {
             setShipmentsCount(progress.total)
-            setLoadedFileName(pendingFileName.current)
             setUploading(false)
           } else if (progress.status === 'ERROR') {
-            pendingFileName.current = null
             setUploading(false)
-            alert("Error en la carga: " + progress.message)
+            alert('Error en la carga: ' + progress.message)
           }
         })
       },
       onStompError: (frame) => {
         console.error('STOMP error', frame.headers['message'])
-      }
+      },
     })
+
     stompClient.activate()
-    return () => stompClient.deactivate()
+    // FIX 2: store ref so cleanup always has access to the current client
+    stompClientRef.current = stompClient
+
+    return () => {
+      stompClient.deactivate()
+    }
   }, [])
 
-  const handleClearFile = () => {
-    setLoadedFileName(null)
-    setShipmentsCount(0)
-    pendingFileName.current = null
-    setUploadProgress({ processed: 0, total: 0, status: '', message: '' })
-  }
-
   const handleFileUpload = async (e) => {
-    const file = e.target.files[0]
+    const files = Array.from(e.target.files)
     // Reset input so the same file can be re-selected after clearing
     e.target.value = ''
-    if (file) {
-      pendingFileName.current = file.name
-      setUploading(true)
-      setUploadProgress({ processed: 0, total: 0, status: 'IN_PROGRESS', message: 'Iniciando carga...' })
-      const formData = new FormData()
-      formData.append('file', file)
-      
-      try {
-        await apiClient.post('/batches/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
+    if (!files.length) return
+
+    setUploading(true)
+
+    try {
+      for (const file of files) {
+        setUploadProgress({
+          processed: 0,
+          total: 0,
+          status: 'IN_PROGRESS',
+          message: `Subiendo ${file.name}...`,
         })
-      } catch (err) {
-        console.error("Error al subir archivo", err)
-        setUploading(false)
-        alert("Fallo al iniciar subida masiva.")
+
+        const formData = new FormData()
+        formData.append('file', file)
+
+        // FIX 5: use the same key name ("period") consistently; convert dayjs → ISO string
+        formData.append('periodo', period)
+        formData.append('startDate', startDate.toISOString().replace('Z', ''))
+
+        await apiClient.post('/batches/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+
+        setLoadedFiles((prev) => [...prev, file.name])
       }
+    } catch (err) {
+      console.error('Error subiendo archivos:', err)
+      alert('Error subiendo archivos')
+      setUploading(false)
     }
+    // NOTE: setUploading(false) for the success path is handled by the STOMP
+    // COMPLETED message so the progress bar stays visible until the server confirms.
+  }
+
+  // FIX 3: removing a loaded file also resets shipmentsCount when no files remain
+  const handleRemoveFile = (index) => {
+    setLoadedFiles((prev) => {
+      const updated = prev.filter((_, i) => i !== index)
+      if (updated.length === 0) {
+        setShipmentsCount(0)
+      }
+      return updated
+    })
   }
 
   const handleStart = async () => {
-    if (shipmentsCount === 0) {
-      alert("Por favor, cargue el archivo de envíos antes de iniciar.")
+    // FIX 6: guard against WebSocket failure — check loadedFiles as a fallback
+    if (shipmentsCount === 0 && loadedFiles.length === 0) {
+      alert('Por favor, cargue el archivo de envíos antes de iniciar.')
       return
     }
-    
+
     setStarting(true)
     try {
-      await startSimulation({ period: parseInt(period, 10), startDate })
+      // FIX 4 + 5: pass a native Date and the numeric period consistently
+      await startSimulation({
+        period: parseInt(period, 10),
+        startDate: startDate.toDate(),
+      })
       navigate('/simulation/running')
     } catch (err) {
-      console.error("Error al iniciar simulación", err)
-      alert("No se pudo iniciar la simulación. Verifique los logs del servidor.")
+      console.error('Error al iniciar simulación:', err)
+      alert('No se pudo iniciar la simulación. Verifique los logs del servidor.')
     } finally {
       setStarting(false)
     }
@@ -244,7 +292,10 @@ export default function SimulationConfigPage() {
             Configuración de Simulación
           </Typography>
           <Box sx={{ flex: 1 }} />
-          <Typography variant="caption" sx={{ color: '#90CAF9', fontFamily: 'monospace', fontSize: '0.78rem' }}>
+          <Typography
+            variant="caption"
+            sx={{ color: '#90CAF9', fontFamily: 'monospace', fontSize: '0.78rem' }}
+          >
             {utcClock}
           </Typography>
         </Toolbar>
@@ -255,7 +306,9 @@ export default function SimulationConfigPage() {
         {/* Left: Map (70%) */}
         <Box sx={{ flex: '0 0 70%', position: 'relative' }}>
           {loadingData ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+            <Box
+              sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}
+            >
               <CircularProgress />
             </Box>
           ) : (
@@ -275,8 +328,10 @@ export default function SimulationConfigPage() {
           }}
         >
           <Box sx={{ p: 2.5, flex: 1, overflow: 'auto' }}>
-            {/* Scenario heading */}
-            <Typography variant="h6" sx={{ fontWeight: 700, color: '#1F3864', mb: 0.5, fontSize: '1rem' }}>
+            <Typography
+              variant="h6"
+              sx={{ fontWeight: 700, color: '#1F3864', mb: 0.5, fontSize: '1rem' }}
+            >
               Simulación por Período
             </Typography>
             <Typography variant="body2" sx={{ color: '#6B7280', mb: 2.5, fontSize: '0.8rem' }}>
@@ -293,20 +348,13 @@ export default function SimulationConfigPage() {
               >
                 Duración del período
               </FormLabel>
-              <RadioGroup
-                row
-                value={period}
-                onChange={(e) => setPeriod(e.target.value)}
-              >
-                {['3', '5', '7'].map(d => (
+              <RadioGroup row value={period} onChange={(e) => setPeriod(e.target.value)}>
+                {['3', '5', '7'].map((d) => (
                   <FormControlLabel
                     key={d}
                     value={d}
                     control={
-                      <Radio
-                        size="small"
-                        sx={{ '&.Mui-checked': { color: '#1F3864' } }}
-                      />
+                      <Radio size="small" sx={{ '&.Mui-checked': { color: '#1F3864' } }} />
                     }
                     label={
                       <Typography sx={{ fontSize: '0.82rem', fontWeight: period === d ? 700 : 400 }}>
@@ -325,6 +373,7 @@ export default function SimulationConfigPage() {
               >
                 Fecha de inicio
               </FormLabel>
+              {/* FIX 4: DatePicker works natively with dayjs; no conversion needed here */}
               <DatePicker
                 value={startDate}
                 onChange={(newVal) => setStartDate(newVal)}
@@ -340,30 +389,61 @@ export default function SimulationConfigPage() {
 
             {/* Shipments Upload */}
             <Box sx={{ mb: 3 }}>
-              <Typography variant="caption" sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}>
+              <Typography
+                variant="caption"
+                sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}
+              >
                 Datos de Envíos (TXT)
               </Typography>
 
-              {/* Loaded file indicator — shown after successful upload */}
-              {loadedFileName && !uploading && (
-                <Box sx={{
-                  display: 'flex', alignItems: 'center', gap: 1,
-                  px: 1.5, py: 1,
-                  mb: 1,
-                  borderRadius: 1,
-                  border: '1px solid #A5D6A7',
-                  backgroundColor: '#F1FBF3',
-                }}>
-                  <CheckCircleIcon sx={{ fontSize: 18, color: '#2E7D32', flexShrink: 0 }} />
-                  <InsertDriveFileOutlinedIcon sx={{ fontSize: 16, color: '#4CAF50', flexShrink: 0 }} />
-                  <Typography variant="caption" sx={{ flex: 1, color: '#1B5E20', fontWeight: 600, fontSize: '0.75rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {loadedFileName}
-                  </Typography>
-                  <Tooltip title="Quitar archivo cargado">
-                    <IconButton size="small" onClick={handleClearFile} sx={{ color: '#C62828', p: 0.25 }}>
-                      <DeleteOutlineIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
-                  </Tooltip>
+              {/* Loaded files list */}
+              {loadedFiles.length > 0 && !uploading && (
+                <Box sx={{ mb: 1 }}>
+                  {loadedFiles.map((fileName, index) => (
+                    <Box
+                      key={index}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        px: 1.5,
+                        py: 1,
+                        mb: 1,
+                        borderRadius: 1,
+                        border: '1px solid #A5D6A7',
+                        backgroundColor: '#F1FBF3',
+                      }}
+                    >
+                      <CheckCircleIcon sx={{ fontSize: 18, color: '#2E7D32', flexShrink: 0 }} />
+                      <InsertDriveFileOutlinedIcon
+                        sx={{ fontSize: 16, color: '#4CAF50', flexShrink: 0 }}
+                      />
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          flex: 1,
+                          color: '#1B5E20',
+                          fontWeight: 600,
+                          fontSize: '0.75rem',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {fileName}
+                      </Typography>
+                      {/* FIX 3: use dedicated handler that resets shipmentsCount when empty */}
+                      <Tooltip title="Quitar archivo">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleRemoveFile(index)}
+                          sx={{ color: '#C62828', p: 0.25 }}
+                        >
+                          <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  ))}
                 </Box>
               )}
 
@@ -371,36 +451,38 @@ export default function SimulationConfigPage() {
                 component="label"
                 variant="outlined"
                 fullWidth
-                disabled={uploading || !!loadedFileName}
+                disabled={uploading}
                 startIcon={<CloudUploadIcon />}
                 sx={{
                   py: 1,
-                  borderColor: loadedFileName ? '#A5D6A7' : '#2E75B6',
-                  color: loadedFileName ? '#A5D6A7' : '#2E75B6',
-                  cursor: loadedFileName ? 'not-allowed' : 'pointer',
+                  borderColor: uploading ? '#A5D6A7' : '#2E75B6',
+                  color: uploading ? '#A5D6A7' : '#2E75B6',
+                  cursor: uploading ? 'not-allowed' : 'pointer',
                 }}
               >
                 Cargar Archivo de Envíos
                 <input
                   type="file"
                   accept=".txt"
+                  multiple
                   hidden
                   onChange={handleFileUpload}
                 />
               </Button>
-              {loadedFileName && !uploading && (
-                <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: '#6B7280', fontSize: '0.7rem', textAlign: 'center' }}>
-                  Para cargar otro archivo, primero elimine el actual.
-                </Typography>
-              )}
+
               {uploading && (
                 <Box sx={{ mt: 2 }}>
                   <Typography variant="caption" sx={{ display: 'block', mb: 0.5, color: '#1F3864' }}>
-                    {uploadProgress.message} ({uploadProgress.processed} / {uploadProgress.total || '?'})
+                    {uploadProgress.message} ({uploadProgress.processed} /{' '}
+                    {uploadProgress.total || '?'})
                   </Typography>
                   <LinearProgress
                     variant={uploadProgress.total > 0 ? 'determinate' : 'indeterminate'}
-                    value={uploadProgress.total > 0 ? (uploadProgress.processed / uploadProgress.total) * 100 : 0}
+                    value={
+                      uploadProgress.total > 0
+                        ? (uploadProgress.processed / uploadProgress.total) * 100
+                        : 0
+                    }
                   />
                 </Box>
               )}
@@ -428,7 +510,7 @@ export default function SimulationConfigPage() {
               size="large"
               startIcon={<PlayArrowIcon />}
               onClick={handleStart}
-              disabled={starting}
+              disabled={starting || uploading}
               sx={{
                 backgroundColor: '#1F3864',
                 fontWeight: 700,
@@ -448,8 +530,14 @@ export default function SimulationConfigPage() {
                 fullWidth
                 variant="text"
                 endIcon={flightsExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                onClick={() => setFlightsExpanded(v => !v)}
-                sx={{ justifyContent: 'space-between', color: '#1F3864', fontWeight: 600, fontSize: '0.78rem', px: 0 }}
+                onClick={() => setFlightsExpanded((v) => !v)}
+                sx={{
+                  justifyContent: 'space-between',
+                  color: '#1F3864',
+                  fontWeight: 600,
+                  fontSize: '0.78rem',
+                  px: 0,
+                }}
               >
                 Vuelos del Escenario ({flights.length})
               </Button>
@@ -462,15 +550,16 @@ export default function SimulationConfigPage() {
           </Box>
         </Box>
       </Box>
+
       {/* Backdrop for simulation start */}
       <Backdrop
-        sx={{ 
-          color: '#fff', 
+        sx={{
+          color: '#fff',
           zIndex: (theme) => theme.zIndex.drawer + 1,
           flexDirection: 'column',
           gap: 2,
           textAlign: 'center',
-          backgroundColor: 'rgba(31, 56, 100, 0.9)'
+          backgroundColor: 'rgba(31, 56, 100, 0.9)',
         }}
         open={starting}
       >
@@ -480,8 +569,8 @@ export default function SimulationConfigPage() {
             Inicializando Simulación
           </Typography>
           <Typography variant="body2" sx={{ opacity: 0.8, maxWidth: 300 }}>
-            Estamos procesando los envíos y optimizando las rutas iniciales. 
-            Esto puede tomar un momento...
+            Estamos procesando los envíos y optimizando las rutas iniciales. Esto puede tomar un
+            momento...
           </Typography>
         </Box>
       </Backdrop>
