@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import apiClient from '../api/client'
@@ -107,6 +108,7 @@ export default function SimulationConfigPage() {
   const { startSimulation } = useSimulationContext()
   const utcClock = useClock()
 
+  // FIX 4: use dayjs as the canonical type for startDate (MUI DatePicker returns dayjs)
   const [period, setPeriod] = useState('3')
   const [startDate, setStartDate] = useState()
   const [flightsExpanded, setFlightsExpanded] = useState(false)
@@ -115,7 +117,6 @@ export default function SimulationConfigPage() {
   const [loadingData, setLoadingData] = useState(true)
   const [shipmentsCount, setShipmentsCount] = useState(0)
   const [starting, setStarting] = useState(false)
-  const [simulationStarted, setSimulationStarted] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({
     processed: 0,
@@ -125,36 +126,8 @@ export default function SimulationConfigPage() {
   })
   const [loadedFiles, setLoadedFiles] = useState([])
 
-  // Resizable panel state
-  const [panelWidth, setPanelWidth] = useState(30) // percentage
-  const isResizing = useRef(false)
-  const containerRef = useRef(null)
-
   // FIX 2: keep a stable ref to the STOMP client so we can deactivate it properly
   const stompClientRef = useRef(null)
-
-  // Resize panel handlers
-  const handleResizeStart = (e) => {
-    e.preventDefault()
-    isResizing.current = true
-
-    const onMouseMove = (moveEvent) => {
-      if (!isResizing.current || !containerRef.current) return
-      const containerRect = containerRef.current.getBoundingClientRect()
-      const offsetFromRight = containerRect.right - moveEvent.clientX
-      const newWidthPct = (offsetFromRight / containerRect.width) * 100
-      setPanelWidth(Math.min(60, Math.max(20, newWidthPct)))
-    }
-
-    const onMouseUp = () => {
-      isResizing.current = false
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-    }
-
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-  }
 
   useEffect(() => {
     const fetchData = async () => {
@@ -201,12 +174,8 @@ export default function SimulationConfigPage() {
         stompClient.subscribe('/topic/shipments/progress', (message) => {
           const progress = JSON.parse(message.body)
           setUploadProgress(progress)
-          // Update count in real-time as backend processes each shipment
-          if (progress.processed > 0) {
-            setShipmentsCount(progress.processed)
-          }
           if (progress.status === 'COMPLETED') {
-            setShipmentsCount(progress.processed)
+            setShipmentsCount(progress.total)
             setUploading(false)
           } else if (progress.status === 'ERROR') {
             setUploading(false)
@@ -228,20 +197,46 @@ export default function SimulationConfigPage() {
     }
   }, [])
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files)
     // Reset input so the same file can be re-selected after clearing
     e.target.value = ''
     if (!files.length) return
 
-    setLoadedFiles((prev) => {
-      const existingNames = new Set(prev.map((f) => f.name))
-      const newFiles = files.filter((f) => !existingNames.has(f.name))
-      return [...prev, ...newFiles]
-    })
+    setUploading(true)
+
+    try {
+      for (const file of files) {
+        setUploadProgress({
+          processed: 0,
+          total: 0,
+          status: 'IN_PROGRESS',
+          message: `Subiendo ${file.name}...`,
+        })
+
+        const formData = new FormData()
+        formData.append('file', file)
+
+        // FIX 5: use the same key name ("period") consistently; convert dayjs → ISO string
+        formData.append('periodo', period)
+        formData.append('startDate', startDate.toISOString().replace('Z', ''))
+
+        await apiClient.post('/batches/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+
+        setLoadedFiles((prev) => [...prev, file.name])
+      }
+    } catch (err) {
+      console.error('Error subiendo archivos:', err)
+      alert('Error subiendo archivos')
+      setUploading(false)
+    }
+    // NOTE: setUploading(false) for the success path is handled by the STOMP
+    // COMPLETED message so the progress bar stays visible until the server confirms.
   }
 
-  // removing a loaded file also resets shipmentsCount when no files remain
+  // FIX 3: removing a loaded file also resets shipmentsCount when no files remain
   const handleRemoveFile = (index) => {
     setLoadedFiles((prev) => {
       const updated = prev.filter((_, i) => i !== index)
@@ -253,51 +248,23 @@ export default function SimulationConfigPage() {
   }
 
   const handleStart = async () => {
-    if (!startDate) {
-      alert('Por favor, seleccione la fecha de inicio.')
-      return
-    }
-    if (loadedFiles.length === 0) {
-      alert('Por favor, cargue al menos un archivo de envíos antes de iniciar.')
+    // FIX 6: guard against WebSocket failure — check loadedFiles as a fallback
+    if (shipmentsCount === 0 && loadedFiles.length === 0) {
+      alert('Por favor, cargue el archivo de envíos antes de iniciar.')
       return
     }
 
     setStarting(true)
-    setUploading(true)
-
     try {
-      // Step 1: Upload all staged files to backend
-      for (const file of loadedFiles) {
-        setUploadProgress({
-          processed: 0,
-          total: 0,
-          status: 'IN_PROGRESS',
-          message: `Subiendo ${file.name}...`,
-        })
-
-        const formData = new FormData()
-        formData.append('file', file)
-        formData.append('periodo', period)
-        formData.append('startDate', startDate.toISOString().replace('Z', ''))
-
-        await apiClient.post('/batches/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        })
-      }
-
-      // Step 2: Wait for STOMP COMPLETED signal (setUploading(false) triggered by STOMP)
-      // Then start simulation
+      // FIX 4 + 5: pass a native Date and the numeric period consistently
       await startSimulation({
         period: parseInt(period, 10),
         startDate: startDate.toDate(),
       })
-
-      setSimulationStarted(true)
       navigate('/simulation/running')
     } catch (err) {
       console.error('Error al iniciar simulación:', err)
       alert('No se pudo iniciar la simulación. Verifique los logs del servidor.')
-      setUploading(false)
     } finally {
       setStarting(false)
     }
@@ -335,10 +302,10 @@ export default function SimulationConfigPage() {
         </Toolbar>
       </AppBar>
 
-      {/* Main Content: resizable split */}
-      <Box ref={containerRef} sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* Left: Map */}
-        <Box sx={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      {/* Main Content: 70/30 split */}
+      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* Left: Map (70%) */}
+        <Box sx={{ flex: '0 0 70%', position: 'relative' }}>
           {loadingData ? (
             <Box
               sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}
@@ -350,28 +317,13 @@ export default function SimulationConfigPage() {
           )}
         </Box>
 
-        {/* Resize Handle */}
-        <Box
-          onMouseDown={handleResizeStart}
-          sx={{
-            width: '5px',
-            cursor: 'col-resize',
-            backgroundColor: '#BFBFBF',
-            flexShrink: 0,
-            transition: 'background-color 0.15s',
-            '&:hover': { backgroundColor: '#2E75B6' },
-            zIndex: 10,
-          }}
-        />
-
-        {/* Right: Config Panel */}
+        {/* Right: Config Panel (30%) */}
         <Box
           sx={{
-            width: `${panelWidth}%`,
-            flexShrink: 0,
+            flex: '0 0 30%',
             overflow: 'auto',
             backgroundColor: '#FFFFFF',
-            borderLeft: 'none',
+            borderLeft: '1px solid #BFBFBF',
             display: 'flex',
             flexDirection: 'column',
           }}
@@ -448,8 +400,9 @@ export default function SimulationConfigPage() {
               {/* Loaded files list */}
               {loadedFiles.length > 0 && !uploading && (
                 <Box sx={{ mb: 1 }}>
-                  {loadedFiles.map((file, index) => ( // Cambié el nombre a 'file' para que sea más claro
-                    <Box key={index} 
+                  {loadedFiles.map((fileName, index) => (
+                    <Box
+                      key={index}
                       sx={{
                         display: 'flex',
                         alignItems: 'center',
@@ -478,8 +431,9 @@ export default function SimulationConfigPage() {
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {file.name} {/* <--- SOLUCIÓN: Acceder a la propiedad .name */}
+                        {fileName}
                       </Typography>
+                      {/* FIX 3: use dedicated handler that resets shipmentsCount when empty */}
                       <Tooltip title="Quitar archivo">
                         <IconButton
                           size="small"
