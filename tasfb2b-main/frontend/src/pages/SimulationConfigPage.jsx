@@ -124,6 +124,9 @@ export default function SimulationConfigPage() {
     message: '',
   })
   const [loadedFiles, setLoadedFiles] = useState([])
+  const isWaitingForCompletion = useRef(false);
+  // ... dentro de SimulationConfigPage
+  const [isWaitingToStart, setIsWaitingToStart] = useState(false);
 
   // Resizable panel state
   const [panelWidth, setPanelWidth] = useState(30) // percentage
@@ -198,21 +201,22 @@ export default function SimulationConfigPage() {
       debug: (str) => console.debug('[STOMP]', str),
       onConnect: () => {
         console.log('STOMP connected')
+        // Dentro del useEffect de STOMP
+        // Dentro de la suscripción STOMP (useEffect original)
         stompClient.subscribe('/topic/shipments/progress', (message) => {
-          const progress = JSON.parse(message.body)
-          setUploadProgress(progress)
-          // Update count in real-time as backend processes each shipment
-          if (progress.processed > 0) {
-            setShipmentsCount(progress.processed)
-          }
+          const progress = JSON.parse(message.body);
+          setUploadProgress(progress);
+          
+          if (progress.processed > 0) setShipmentsCount(progress.processed);
+          
           if (progress.status === 'COMPLETED') {
-            setShipmentsCount(progress.processed)
-            setUploading(false)
+            setUploading(false); // Esto disparará el useEffect de arriba
           } else if (progress.status === 'ERROR') {
-            setUploading(false)
-            alert('Error en la carga: ' + progress.message)
+            setUploading(false);
+            setIsWaitingToStart(false);
+            alert('Error en backend: ' + progress.message);
           }
-        })
+        });
       },
       onStompError: (frame) => {
         console.error('STOMP error', frame.headers['message'])
@@ -252,6 +256,36 @@ export default function SimulationConfigPage() {
     })
   }
 
+  useEffect(() => {
+    const triggerSimulation = async () => {
+      // Si el usuario dio a "Iniciar" Y el estado de carga ya no es 'uploading' 
+      // Y además el estatus de los mensajes es 'COMPLETED'
+      if (isWaitingToStart && !uploading && uploadProgress.status === 'COMPLETED') {
+        try {
+          setStarting(true); // Mostrar backdrop de inicialización
+
+          // Ejecutar la lógica del contexto
+          await startSimulation({
+            period: parseInt(period, 10),
+            startDate: startDate.toDate(),
+          });
+
+          // Limpiar estados y navegar
+          setIsWaitingToStart(false);
+          navigate('/simulation/running');
+        } catch (err) {
+          console.error("Error al arrancar simulación:", err);
+          alert("Error al iniciar la simulación en el servidor.");
+          setIsWaitingToStart(false);
+          setStarting(false);
+        }
+      }
+    };
+
+    triggerSimulation();
+  }, [isWaitingToStart, uploading, uploadProgress.status]); 
+  // Se ejecuta solo cuando cambian estos valores
+
   const handleStart = async () => {
     if (!startDate) {
       alert('Por favor, seleccione la fecha de inicio.')
@@ -264,6 +298,7 @@ export default function SimulationConfigPage() {
 
     setStarting(true)
     setUploading(true)
+    setIsWaitingToStart(true);
 
     try {
       // Step 1: Upload all staged files to backend
@@ -295,9 +330,10 @@ export default function SimulationConfigPage() {
       setSimulationStarted(true)
       navigate('/simulation/running')
     } catch (err) {
-      console.error('Error al iniciar simulación:', err)
-      alert('No se pudo iniciar la simulación. Verifique los logs del servidor.')
-      setUploading(false)
+      console.error('Error al iniciar simulación:', err);
+      alert('No se pudo iniciar la simulación.');
+      setUploading(false);
+      isWaitingForCompletion.current = false;
     } finally {
       setStarting(false)
     }
