@@ -115,25 +115,20 @@ export default function SimulationConfigPage() {
   const [loadingData, setLoadingData] = useState(true)
   const [shipmentsCount, setShipmentsCount] = useState(0)
   const [starting, setStarting] = useState(false)
-  const [simulationStarted, setSimulationStarted] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState({
-    processed: 0,
-    total: 0,
-    status: '',
-    message: '',
-  })
+
+  const [uploadProgressMap, setUploadProgressMap] = useState({})
+  const [completedCount, setCompletedCount] = useState(0)  // ← nuevo
+
+
   const [loadedFiles, setLoadedFiles] = useState([])
-  const isWaitingForCompletion = useRef(false);
-  // ... dentro de SimulationConfigPage
-  const [isWaitingToStart, setIsWaitingToStart] = useState(false);
+  const [isWaitingToStart, setIsWaitingToStart] = useState(false)
 
   // Resizable panel state
   const [panelWidth, setPanelWidth] = useState(30) // percentage
   const isResizing = useRef(false)
   const containerRef = useRef(null)
 
-  // FIX 2: keep a stable ref to the STOMP client so we can deactivate it properly
   const stompClientRef = useRef(null)
 
   // Resize panel handlers
@@ -197,36 +192,42 @@ export default function SimulationConfigPage() {
     const socket = new SockJS(wsUrl)
     const stompClient = new Client({
       webSocketFactory: () => socket,
-      // FIX 2: remove noisy debug logger in production; use console.debug to keep it opt-in
       debug: (str) => console.debug('[STOMP]', str),
       onConnect: () => {
         console.log('STOMP connected')
-        // Dentro del useEffect de STOMP
-        // Dentro de la suscripción STOMP (useEffect original)
         stompClient.subscribe('/topic/shipments/progress', (message) => {
-          const progress = JSON.parse(message.body);
-          setUploadProgress(progress);
-          
-          if (progress.processed > 0) setShipmentsCount(progress.processed);
-          
-          if (progress.status === 'COMPLETED') {
-            setUploading(false); // Esto disparará el useEffect de arriba
-          } else if (progress.status === 'ERROR') {
-            setUploading(false);
-            setIsWaitingToStart(false);
-            alert('Error en backend: ' + progress.message);
+          const data = JSON.parse(message.body)
+          console.log('Mensaje:', data)
+
+          const airportCode = data.aeropuerto
+
+          setUploadProgressMap((prev) => ({
+            ...prev,
+            [airportCode]: data,
+          }))
+
+          if (data.status === 'IN_PROGRESS') {
+            setShipmentsCount((prev) => prev + (data.processedDelta || 0))
           }
-        });
+
+          if (data.status === 'COMPLETED') {
+            setShipmentsCount((prev) => prev + (data.processedDelta || 0))
+            setCompletedCount((prev) => prev + 1)  // ← solo aquí se incrementa
+          }
+
+          if (data.status === 'ERROR') {
+            alert(`Error en aeropuerto ${airportCode}: ${data.message}`)
+            setUploading(false)
+            setIsWaitingToStart(false)
+          }
+        })
       },
       onStompError: (frame) => {
         console.error('STOMP error', frame.headers['message'])
       },
     })
-
     stompClient.activate()
-    // FIX 2: store ref so cleanup always has access to the current client
     stompClientRef.current = stompClient
-
     return () => {
       stompClient.deactivate()
     }
@@ -245,7 +246,7 @@ export default function SimulationConfigPage() {
     })
   }
 
-  // removing a loaded file also resets shipmentsCount when no files remain
+  // FIX 2: handleRemoveFile is now wired up to the delete button in the file list
   const handleRemoveFile = (index) => {
     setLoadedFiles((prev) => {
       const updated = prev.filter((_, i) => i !== index)
@@ -257,34 +258,28 @@ export default function SimulationConfigPage() {
   }
 
   useEffect(() => {
-    const triggerSimulation = async () => {
-      // Si el usuario dio a "Iniciar" Y el estado de carga ya no es 'uploading' 
-      // Y además el estatus de los mensajes es 'COMPLETED'
-      if (isWaitingToStart && !uploading && uploadProgress.status === 'COMPLETED') {
-        try {
-          setStarting(true); // Mostrar backdrop de inicialización
+    if (!isWaitingToStart) return
+    if (loadedFiles.length === 0) return
+    if (completedCount < loadedFiles.length) return  // espera a que todos completen
 
-          // Ejecutar la lógica del contexto
-          await startSimulation({
-            period: parseInt(period, 10),
-            startDate: startDate.toDate(),
-          });
-
-          // Limpiar estados y navegar
-          setIsWaitingToStart(false);
-          navigate('/simulation/running');
-        } catch (err) {
-          console.error("Error al arrancar simulación:", err);
-          alert("Error al iniciar la simulación en el servidor.");
-          setIsWaitingToStart(false);
-          setStarting(false);
-        }
+    const run = async () => {
+      try {
+        setUploading(false)
+        setStarting(true)
+        await startSimulation({
+          period: parseInt(period, 10),
+          startDate: startDate,
+        })
+        navigate('/simulation/running')
+      } catch (err) {
+        console.error('Error al arrancar:', err)
+        setIsWaitingToStart(false)
+        setStarting(false)
       }
-    };
-
-    triggerSimulation();
-  }, [isWaitingToStart, uploading, uploadProgress.status]); 
-  // Se ejecuta solo cuando cambian estos valores
+    }
+    run()
+  }, [completedCount, isWaitingToStart, loadedFiles.length])
+  // ↑ dependencias mínimas: solo reacciona cuando cambia el contador
 
   const handleStart = async () => {
     if (!startDate) {
@@ -296,20 +291,11 @@ export default function SimulationConfigPage() {
       return
     }
 
-    setStarting(true)
     setUploading(true)
-    setIsWaitingToStart(true);
+    setIsWaitingToStart(true)
 
     try {
-      // Step 1: Upload all staged files to backend
       for (const file of loadedFiles) {
-        setUploadProgress({
-          processed: 0,
-          total: 0,
-          status: 'IN_PROGRESS',
-          message: `Subiendo ${file.name}...`,
-        })
-
         const formData = new FormData()
         formData.append('file', file)
         formData.append('periodo', period)
@@ -319,23 +305,11 @@ export default function SimulationConfigPage() {
           headers: { 'Content-Type': 'multipart/form-data' },
         })
       }
-
-      // Step 2: Wait for STOMP COMPLETED signal (setUploading(false) triggered by STOMP)
-      // Then start simulation
-      await startSimulation({
-        period: parseInt(period, 10),
-        startDate: startDate.toDate(),
-      })
-
-      setSimulationStarted(true)
-      navigate('/simulation/running')
     } catch (err) {
-      console.error('Error al iniciar simulación:', err);
-      alert('No se pudo iniciar la simulación.');
-      setUploading(false);
-      isWaitingForCompletion.current = false;
-    } finally {
-      setStarting(false)
+      console.error('Error al subir archivos:', err)
+      alert('Error al cargar los archivos.')
+      setUploading(false)
+      setIsWaitingToStart(false)
     }
   }
 
@@ -458,7 +432,6 @@ export default function SimulationConfigPage() {
               >
                 Fecha de inicio
               </FormLabel>
-              {/* FIX 4: DatePicker works natively with dayjs; no conversion needed here */}
               <DatePicker
                 value={startDate}
                 onChange={(newVal) => setStartDate(newVal)}
@@ -481,52 +454,61 @@ export default function SimulationConfigPage() {
                 Datos de Envíos (TXT)
               </Typography>
 
-              {/* Loaded files list */}
-              {loadedFiles.length > 0 && !uploading && (
+              {/* FIX 3: show file list always (not just when !uploading), so progress bars are visible during upload */}
+              {loadedFiles.length > 0 && (
                 <Box sx={{ mb: 1 }}>
-                  {loadedFiles.map((file, index) => ( // Cambié el nombre a 'file' para que sea más claro
-                    <Box key={index} 
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        px: 1.5,
-                        py: 1,
-                        mb: 1,
-                        borderRadius: 1,
-                        border: '1px solid #A5D6A7',
-                        backgroundColor: '#F1FBF3',
-                      }}
-                    >
-                      <CheckCircleIcon sx={{ fontSize: 18, color: '#2E7D32', flexShrink: 0 }} />
-                      <InsertDriveFileOutlinedIcon
-                        sx={{ fontSize: 16, color: '#4CAF50', flexShrink: 0 }}
-                      />
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          flex: 1,
-                          color: '#1B5E20',
-                          fontWeight: 600,
-                          fontSize: '0.75rem',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
+                  {loadedFiles.map((file, index) => {
+                    const airportCode = file.name.split('_')[1]?.split('.')[0]
+                    const progress = uploadProgressMap[airportCode]
+
+                    return (
+                      <Box
+                        key={index}
+                        sx={{ mb: 2, p: 1.5, border: '1px solid #E0E0E0', borderRadius: 1 }}
                       >
-                        {file.name} {/* <--- SOLUCIÓN: Acceder a la propiedad .name */}
-                      </Typography>
-                      <Tooltip title="Quitar archivo">
-                        <IconButton
-                          size="small"
-                          onClick={() => handleRemoveFile(index)}
-                          sx={{ color: '#C62828', p: 0.25 }}
-                        >
-                          <DeleteOutlineIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  ))}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                          <InsertDriveFileOutlinedIcon sx={{ fontSize: 16, color: '#1F3864' }} />
+                          <Typography variant="caption" sx={{ flex: 1, fontWeight: 600 }}>
+                            {file.name}
+                          </Typography>
+                          {progress?.status === 'COMPLETED' && (
+                            <CheckCircleIcon sx={{ fontSize: 18, color: '#2E7D32' }} />
+                          )}
+                          {/* FIX 2: delete button now wired to handleRemoveFile; disabled while uploading */}
+                          <Tooltip title="Eliminar archivo">
+                            <span>
+                              <IconButton
+                                size="small"
+                                disabled={uploading}
+                                onClick={() => handleRemoveFile(index)}
+                              >
+                                <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </Box>
+
+                        {progress && (progress.status === 'IN_PROGRESS' || progress.status === 'COMPLETED') && (
+                          <Box>
+                            <LinearProgress
+                              variant={progress.total > 0 ? 'determinate' : 'indeterminate'}
+                              value={progress.total > 0 ? (progress.processed / progress.total) * 100 : 0}
+                              sx={{
+                                height: 6,
+                                borderRadius: 5,
+                                '& .MuiLinearProgress-bar': {
+                                  backgroundColor: progress.status === 'COMPLETED' ? '#2E7D32' : '#2E75B6',
+                                },
+                              }}
+                            />
+                            <Typography variant="caption" sx={{ fontSize: '0.65rem', color: '#666' }}>
+                              {progress.message} ({progress.processed}/{progress.total})
+                            </Typography>
+                          </Box>
+                        )}
+                      </Box>
+                    )
+                  })}
                 </Box>
               )}
 
@@ -553,22 +535,8 @@ export default function SimulationConfigPage() {
                 />
               </Button>
 
-              {uploading && (
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="caption" sx={{ display: 'block', mb: 0.5, color: '#1F3864' }}>
-                    {uploadProgress.message} ({uploadProgress.processed} /{' '}
-                    {uploadProgress.total || '?'})
-                  </Typography>
-                  <LinearProgress
-                    variant={uploadProgress.total > 0 ? 'determinate' : 'indeterminate'}
-                    value={
-                      uploadProgress.total > 0
-                        ? (uploadProgress.processed / uploadProgress.total) * 100
-                        : 0
-                    }
-                  />
-                </Box>
-              )}
+              {/* FIX 1: removed the broken second progress block that referenced undefined `uploadProgress`.
+                  Per-file progress is now handled entirely inside the file list above. */}
             </Box>
 
             {/* Summary cards */}
@@ -602,7 +570,7 @@ export default function SimulationConfigPage() {
                 '&:hover': { backgroundColor: '#162D4F' },
               }}
             >
-              {starting ? 'INICIANDO...' : 'INICIAR SIMULACIÓN'}
+              {uploading ? 'PROCESANDO ARCHIVOS...' : starting ? 'INICIANDO...' : 'INICIAR SIMULACIÓN'}
             </Button>
 
             <Divider sx={{ my: 2 }} />
