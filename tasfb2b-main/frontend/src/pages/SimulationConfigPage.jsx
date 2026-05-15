@@ -6,9 +6,6 @@ import AppBar from '@mui/material/AppBar'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
 import Paper from '@mui/material/Paper'
-import RadioGroup from '@mui/material/RadioGroup'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import Radio from '@mui/material/Radio'
 import FormLabel from '@mui/material/FormLabel'
 import FormControl from '@mui/material/FormControl'
 import Button from '@mui/material/Button'
@@ -107,7 +104,7 @@ export default function SimulationConfigPage() {
   const { startSimulation } = useSimulationContext()
   const utcClock = useClock()
 
-  const [period, setPeriod] = useState('3')
+  const [period] = useState('5')
   const [startDate, setStartDate] = useState()
   const [flightsExpanded, setFlightsExpanded] = useState(false)
   const [airports, setAirports] = useState([])
@@ -396,30 +393,14 @@ export default function SimulationConfigPage() {
             <Divider sx={{ mb: 2 }} />
 
             {/* Period selector */}
-            <FormControl component="fieldset" sx={{ mb: 2.5, width: '100%' }}>
-              <FormLabel
-                component="legend"
-                sx={{ fontSize: '0.8rem', fontWeight: 600, color: '#1F3864', mb: 1 }}
-              >
+            <Box sx={{ mb: 2.5 }}>
+              <Typography sx={{ fontSize: '0.8rem', fontWeight: 600, color: '#1F3864', mb: 0.5 }}>
                 Duración del período
-              </FormLabel>
-              <RadioGroup row value={period} onChange={(e) => setPeriod(e.target.value)}>
-                {['3', '5', '7'].map((d) => (
-                  <FormControlLabel
-                    key={d}
-                    value={d}
-                    control={
-                      <Radio size="small" sx={{ '&.Mui-checked': { color: '#1F3864' } }} />
-                    }
-                    label={
-                      <Typography sx={{ fontSize: '0.82rem', fontWeight: period === d ? 700 : 400 }}>
-                        {d} días
-                      </Typography>
-                    }
-                  />
-                ))}
-              </RadioGroup>
-            </FormControl>
+              </Typography>
+              <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: '#1F3864' }}>
+                5 días
+              </Typography>
+            </Box>
 
             {/* Start date */}
             <FormControl sx={{ mb: 2.5, width: '100%' }}>
