@@ -37,6 +37,8 @@ function WorldMap({ airports = [], flights = [], simulatedTime = null, resizeTri
         center={[20, 0]}
         zoom={2}
         minZoom={2}
+        maxBounds={[[-85.051129, -180], [85.051129, 180]]}
+        maxBoundsViscosity={1.0}
         style={{ width: '100%', height: '100%' }}
         zoomControl={true}
         attributionControl={false}

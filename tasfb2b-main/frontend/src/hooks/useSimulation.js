@@ -56,10 +56,44 @@ export function useSimulation() {
   const simIdRef = useRef(null)
   const shipmentPollRef = useRef(null)
 
+  // Refs for smooth timer interpolation between ticks
+  const lastTickSimTimeRef = useRef(null)
+  const lastTickRealTimeRef = useRef(null)
+  const simMsPerRealMsRef = useRef(null)
+
   useEffect(() => {
     simTimeRef.current = simulationState.simulatedTime
     statusRef.current = simulationState.status
   }, [simulationState.simulatedTime, simulationState.status])
+
+  // Smooth 1-second timer: increments elapsedSeconds every real second and
+  // interpolates simulatedTime between WebSocket ticks so neither jumps.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (statusRef.current !== 'running') return
+      setSimulationState(prev => {
+        if (prev.status !== 'running') return prev
+
+        let newSimTime = prev.simulatedTime
+        if (lastTickSimTimeRef.current && lastTickRealTimeRef.current && simMsPerRealMsRef.current) {
+          const elapsedSinceTickMs = Date.now() - lastTickRealTimeRef.current
+          const interpolated = new Date(
+            lastTickSimTimeRef.current.getTime() + elapsedSinceTickMs * simMsPerRealMsRef.current
+          )
+          if (!prev.simulatedTime || interpolated > prev.simulatedTime) {
+            newSimTime = interpolated
+          }
+        }
+
+        return {
+          ...prev,
+          elapsedSeconds: prev.elapsedSeconds + 1,
+          simulatedTime: newSimTime,
+        }
+      })
+    }, 1000)
+    return () => clearInterval(id)
+  }, [])
 
   const loadShipments = useCallback(async () => {
     try {
@@ -93,15 +127,33 @@ export function useSimulation() {
   // Handle WebSocket tick events from backend
   const handleTickEvent = useCallback((event) => {
     simLogger.info(`Tick recibido: día=${event.simulatedDay}, hora=${event.simulatedTime}`)
-    const currentSimDateStr = (simTimeRef.current || new Date()).toISOString().slice(0, 10)
-    const timeStr = event.simulatedTime ? event.simulatedTime.replace(' UTC', '') : '00:00:00'
-    const simTime = new Date(`${currentSimDateStr}T${timeStr}`)
+    // Use the full ISO datetime from the backend (UTC) when available; fall back to legacy HH:mm parsing
+    let simTime
+    if (event.simulatedIso) {
+      simTime = new Date(event.simulatedIso + 'Z')
+    } else {
+      const currentSimDateStr = (simTimeRef.current || new Date()).toISOString().slice(0, 10)
+      const timeStr = event.simulatedTime ? event.simulatedTime.replace(' UTC', '') : '00:00:00'
+      simTime = new Date(`${currentSimDateStr}T${timeStr}Z`)
+    }
 
-    // Update state once per tick
+    // Compute simulated-time speed from consecutive ticks for smooth interpolation
+    const now = Date.now()
+    if (lastTickSimTimeRef.current && lastTickRealTimeRef.current) {
+      const simDeltaMs = simTime.getTime() - lastTickSimTimeRef.current.getTime()
+      const realDeltaMs = now - lastTickRealTimeRef.current
+      if (realDeltaMs > 500 && simDeltaMs > 0) {
+        simMsPerRealMsRef.current = simDeltaMs / realDeltaMs
+      }
+    }
+    lastTickSimTimeRef.current = simTime
+    lastTickRealTimeRef.current = now
+
+    // Update state — use Math.max so the locally-running timer never goes backward
     setSimulationState(prev => ({
       ...prev,
       simulatedTime: simTime,
-      elapsedSeconds: event.elapsedRealSeconds,
+      elapsedSeconds: Math.max(prev.elapsedSeconds, event.elapsedRealSeconds),
       status: 'running',
     }))
 
@@ -154,6 +206,18 @@ export function useSimulation() {
   }, [])
 
   const handlePlanProgress = useCallback((snap) => {
+    if (snap.phase === 'BLOCK_START') {
+      setPlanningProgress(prev => ({
+        ...prev,
+        phase: `Planificando día ${snap.assignedBatches + 1} de ${snap.totalBatches}`,
+        iteration: 0,
+        maxIterations: snap.totalBatches,
+        assignedBatches: snap.assignedBatches,
+        totalBatches: snap.totalBatches,
+      }))
+      setSimulationState(prev => ({ ...prev, status: 'planning' }))
+      return
+    }
     setPlanningProgress({
       phase: snap.phase,
       iteration: snap.iteration,
@@ -162,9 +226,6 @@ export function useSimulation() {
       totalBatches: snap.totalBatches,
       currentObjective: snap.currentObjective,
     })
-    if (snap.phase === 'COMPLETE') {
-      setSimulationState(prev => ({ ...prev, status: 'running' }))
-    }
   }, [])
 
   const handleAlert = useCallback((alert) => {
@@ -234,6 +295,7 @@ export function useSimulation() {
           arrivalUTC: f.arrivalTime,
           capacity: f.baggageCapacity,
           bagsAboard: f.currentLoad,
+          airline: f.airlineName || f.airlineIata || '—',
           backendId: f.id,
         }))
         : []
@@ -285,7 +347,7 @@ export function useSimulation() {
     if (id) {
       try {
         await simulationApi.resume(id)
-        connectSimulationWebSocket(id, handleTickEvent, handleAlert)
+        connectSimulationWebSocket(id, handleTickEvent, handleAlert, handlePlanProgress)
       } catch (e) { console.error(e) }
     }
     statusRef.current = 'running'
@@ -298,7 +360,7 @@ export function useSimulation() {
     async function reconnect() {
       try {
         const sims = await simulationApi.getAll()
-        const actives = sims.filter(s => s.status === 'RUNNING' || s.status === 'PAUSED' || s.status === 'PLANNING')
+        const actives = sims.filter(s => s.status === 'PLAYING' || s.status === 'BUFFERING' || s.status === 'PAUSED')
         if (!actives.length) return
         const active = actives[actives.length - 1]
 
@@ -307,8 +369,8 @@ export function useSimulation() {
           ? new Date(active.simulatedTime)
           : new Date(active.startDate)
         simTimeRef.current = simTime
-        const frontendStatus = active.status === 'RUNNING' ? 'running'
-          : active.status === 'PLANNING' ? 'planning'
+        const frontendStatus = active.status === 'PLAYING' ? 'running'
+          : active.status === 'BUFFERING' ? 'planning'
             : 'paused'
         statusRef.current = frontendStatus
 
@@ -337,6 +399,7 @@ export function useSimulation() {
             arrivalUTC: f.arrivalTime,
             capacity: f.baggageCapacity,
             bagsAboard: f.currentLoad,
+            airline: f.airlineName || f.airlineIata || '—',
             backendId: f.id,
           }))
           : []
@@ -354,7 +417,7 @@ export function useSimulation() {
         if (shipmentPollRef.current) clearInterval(shipmentPollRef.current)
         shipmentPollRef.current = setInterval(loadShipments, 5000)
 
-        if (active.status === 'RUNNING' || active.status === 'PLANNING') {
+        if (active.status === 'PLAYING' || active.status === 'BUFFERING' || active.status === 'PAUSED') {
           connectSimulationWebSocket(active.id, handleTickEvent, handleAlert, handlePlanProgress)
         }
 

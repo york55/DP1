@@ -16,13 +16,12 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import WorldMap from '../components/map/WorldMap'
 import SimulationPanel from '../components/simulation/SimulationPanel'
 import SimulationControls from '../components/simulation/SimulationControls'
-import StatusBar from '../components/common/StatusBar'
 import NotificationStack from '../components/common/NotificationStack'
 import { useSimulationContext } from '../context/SimulationContext'
 import { formatUTCFull, formatElapsed } from '../utils/timeUtils'
 
 const STATUS_LABELS = {
-  planning: { label: 'Planificando', color: '#1565C0', bg: '#E3F2FD' },
+  planning: { label: 'Planificando bloque...', color: '#1565C0', bg: '#E3F2FD' },
   running: { label: 'En Ejecución', color: '#2E7D32', bg: '#E8F5E9' },
   paused: { label: 'Pausada', color: '#E65100', bg: '#FFF3E0' },
   finished: { label: 'Completada', color: '#1F3864', bg: '#E8EEF7' },
@@ -40,6 +39,7 @@ export default function SimulationRunningPage() {
     airports,
     flights,
     shipments,
+    planningProgress,
   } = useSimulationContext()
 
   const { status, simulatedTime, elapsedSeconds, config } = simulationState
@@ -101,7 +101,9 @@ export default function SimulationRunningPage() {
           <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.5 }} />
 
           <Chip
-            label={statusInfo.label}
+            label={status === 'planning' && planningProgress?.phase
+              ? planningProgress.phase
+              : statusInfo.label}
             size="small"
             sx={{ backgroundColor: statusInfo.bg, color: statusInfo.color, fontWeight: 700, fontSize: '0.65rem', height: 22 }}
           />
@@ -145,7 +147,7 @@ export default function SimulationRunningPage() {
       </AppBar>
 
       {/* Main Content */}
-      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden', mb: '32px' }}>
+      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden', mb: '36px' }}>
         {/* Map — fills remaining space */}
         <Box sx={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <WorldMap airports={airports} flights={flights} simulatedTime={simulatedTime} resizeTrigger={collapsed ? 'collapsed' : panelWidth} />
@@ -212,7 +214,6 @@ export default function SimulationRunningPage() {
         )}
       </Box>
 
-      <StatusBar />
       <NotificationStack />
     </Box>
   )

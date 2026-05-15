@@ -170,11 +170,7 @@ export default function SimulationConfigPage() {
           occupancy: a.currentOccupancy,
         }))
 
-        const mappedFlights = flightsRes.data.map((f) => ({
-          ...f,
-          originIata: f.originAirport?.iataCode,
-          destinationIata: f.destinationAirport?.iataCode,
-        }))
+        const mappedFlights = flightsRes.data.map((f) => ({ ...f }))
 
         setAirports(mappedAirports)
         setFlights(mappedFlights)
