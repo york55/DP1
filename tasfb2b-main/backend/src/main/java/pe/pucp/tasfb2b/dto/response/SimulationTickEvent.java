@@ -12,6 +12,7 @@ public class SimulationTickEvent {
     private Long simulationId;
     private int simulatedDay;
     private String simulatedTime;
+    private String simulatedIso;   // full UTC ISO-8601: "2026-05-11T14:30:00"
     private long elapsedRealSeconds;
 
     private KpisPayload kpis;
@@ -50,5 +51,7 @@ public class SimulationTickEvent {
         private String destinationIata;
         private double progress;
         private String status;
+        private int baggageCapacity;
+        private int currentLoad;
     }
 }

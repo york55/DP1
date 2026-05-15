@@ -29,6 +29,14 @@ public class WebSocketEventPublisher {
         messagingTemplate.convertAndSend("/topic/alerts", event);
     }
 
+    public void publishBlockStart(Long simulationId, int blockIndex, int totalBlocks) {
+        String destination = "/topic/simulation/" + simulationId + "/plan-progress";
+        // Reuse plan-progress channel with BLOCK_START phase so the frontend knows which day is being planned
+        var payload = new pe.pucp.tasfb2b.planner.PlanProgressSnapshot(
+                "BLOCK_START", 0, totalBlocks, blockIndex, totalBlocks, 0.0);
+        messagingTemplate.convertAndSend(destination, payload);
+    }
+
     public record AlertEvent(
             String type,
             Long shipmentId,

@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import pe.pucp.tasfb2b.domain.*;
 import pe.pucp.tasfb2b.domain.enums.*;
 import pe.pucp.tasfb2b.dto.response.SimulationTickEvent;
@@ -58,7 +60,9 @@ public class SimulationEngine {
 
     public void initSimulation(Long simulationId) {
         Simulation sim = simulationRepo.findById(simulationId).orElseThrow();
-        LocalDateTime start = sim.getStartDate().atStartOfDay();
+        LocalDateTime start = sim.getSimulatedTime() != null
+                ? sim.getSimulatedTime()
+                : sim.getStartDate().atStartOfDay();
         SimulationClock clock = new SimulationClock(start, tickDurationMinutes);
         long startNano = System.currentTimeMillis();
         runtimeStates.put(simulationId, new SimulationRuntimeState(clock, startNano, new Random(sim.getSeed())));
@@ -66,10 +70,10 @@ public class SimulationEngine {
     }
 
     @Transactional
-    public void tick(Long simulationId) {
+    public LocalDateTime tick(Long simulationId) {
         try {
             Simulation sim = simulationRepo.findById(simulationId).orElse(null);
-            if (sim == null || sim.getStatus() != SimulationStatus.RUNNING) return;
+            if (sim == null || sim.getStatus() != SimulationStatus.PLAYING) return null;
 
             SimulationRuntimeState state = runtimeStates.get(simulationId);
             if (state == null) {
@@ -96,28 +100,29 @@ public class SimulationEngine {
             checkSlaViolations(simNow);
 
             // 5. Update airport occupancy
-            updateAirportOccupancy();
+            updateAirportOccupancy(simNow);
 
             // 6. Persist KPI snapshot
             KpiSnapshot kpi = persistKpi(sim, simNow);
 
-            // 7. Check period end
-            if (sim.getPeriodDays() != null) {
-                LocalDateTime endTime = sim.getStartDate().atStartOfDay()
-                        .plusDays(sim.getPeriodDays());
-                if (!simNow.isBefore(endTime)) {
-                    sim.setStatus(SimulationStatus.FINISHED);
-                    simulationRepo.save(sim);
-                    log.info("Simulación {} finalizada tras {} días simulados",
-                            simulationId, sim.getPeriodDays());
+            // 7. Publish WebSocket event after transaction commits so subscribers see committed data
+            final long elapsedSec = state.elapsedRealSeconds();
+            final SimulationClock clockRef = clock;
+            final KpiSnapshot kpiRef = kpi;
+            final Simulation simRef = sim;
+            final LocalDateTime simNowRef = simNow;
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    publishTick(simRef, simNowRef, clockRef, kpiRef, elapsedSec);
                 }
-            }
+            });
 
-            // 8. Publish WebSocket event
-            publishTick(sim, simNow, clock, kpi, state.elapsedRealSeconds());
+            return simNow;
 
         } catch (Exception e) {
             log.error("Error en tick de simulación {}: {}", simulationId, e.getMessage(), e);
+            return null;
         }
     }
 
@@ -125,14 +130,13 @@ public class SimulationEngine {
         List<Flight> arriving = flightRepo.findInFlightArriving(FlightStatus.IN_FLIGHT, simNow);
         for (Flight flight : arriving) {
             flight.setStatus(FlightStatus.LANDED);
-            flightRepo.save(flight);
+            flight.setCurrentLoad(0);
 
             List<RouteLeg> activeLegs = routeLegRepo
-                    .findByFlightIdAndStatus(flight.getId(), RouteLegStatus.IN_FLIGHT);
+                    .findByFlightIdAndStatusWithBatch(flight.getId(), RouteLegStatus.IN_FLIGHT);
 
             for (RouteLeg leg : activeLegs) {
                 leg.setStatus(RouteLegStatus.COMPLETED);
-                routeLegRepo.save(leg);
 
                 Route route = leg.getRoute();
                 List<RouteLeg> allLegs = routeLegRepo.findByRouteIdOrderByLegOrder(route.getId());
@@ -176,20 +180,21 @@ public class SimulationEngine {
                     }
                 }
             }
+            routeLegRepo.saveAll(activeLegs);
         }
+        flightRepo.saveAll(arriving);
     }
 
     private void processDepartures(LocalDateTime simNow) {
         List<Flight> departing = flightRepo.findScheduledDeparting(FlightStatus.SCHEDULED, simNow);
         for (Flight flight : departing) {
             flight.setStatus(FlightStatus.IN_FLIGHT);
-            flightRepo.save(flight);
 
             List<RouteLeg> pendingLegs = routeLegRepo
-                    .findByFlightIdAndStatus(flight.getId(), RouteLegStatus.PENDING);
+                    .findByFlightIdAndStatusWithBatch(flight.getId(), RouteLegStatus.PENDING);
+            int bagsBoarding = 0;
             for (RouteLeg leg : pendingLegs) {
                 leg.setStatus(RouteLegStatus.IN_FLIGHT);
-                routeLegRepo.save(leg);
 
                 Shipment shipment = leg.getRoute().getShipment();
                 String oldStatus = shipment.getStatus().name();
@@ -197,13 +202,17 @@ public class SimulationEngine {
                 shipmentRepo.save(shipment);
 
                 BaggageBatch batch = shipment.getBaggageBatch();
+                bagsBoarding += batch.getQuantity();
                 batch.setStatus(BatchStatus.IN_TRANSIT);
                 batchRepo.save(batch);
 
                 recordStatusChange(shipment, oldStatus, "IN_TRANSIT",
                         flight.getOriginAirport(), simNow);
             }
+            routeLegRepo.saveAll(pendingLegs);
+            flight.setCurrentLoad(bagsBoarding);
         }
+        flightRepo.saveAll(departing);
     }
 
     private void processCancellations(Simulation sim, Random rng, LocalDateTime simNow,
@@ -211,7 +220,10 @@ public class SimulationEngine {
         double rate = sim.getCancellationRate().doubleValue() / 100.0;
         if (rate <= 0) return;
 
-        List<Flight> scheduled = flightRepo.findByStatus(FlightStatus.SCHEDULED);
+        // Only consider flights departing in this tick window so each flight
+        // gets exactly one cancellation opportunity (prevents over-cancellation).
+        LocalDateTime nextTick = simNow.plusMinutes(tickDurationMinutes);
+        List<Flight> scheduled = flightRepo.findScheduledInWindow(FlightStatus.SCHEDULED, simNow, nextTick);
         for (Flight flight : scheduled) {
             try {
                 if (rng.nextDouble() >= rate) continue;
@@ -294,16 +306,29 @@ public class SimulationEngine {
         }
     }
 
-    private void updateAirportOccupancy() {
+    private static final int DELIVERED_STORAGE_HOURS = 5;
+
+    private void updateAirportOccupancy(LocalDateTime simNow) {
         List<Airport> airports = airportRepo.findAll();
+
+        // Bags waiting at origin (not yet dispatched)
+        List<BaggageBatch> waitingBatches = batchRepo.findByStatus(BatchStatus.IN_ORIGIN);
+
+        // Bags that arrived at destination within the last 5 simulated hours
+        LocalDateTime deliveryCutoff = simNow.minusHours(DELIVERED_STORAGE_HOURS);
+        List<BaggageBatch> recentlyDelivered = batchRepo.findRecentlyDelivered(deliveryCutoff);
+
         for (Airport airport : airports) {
-            long waiting = batchRepo.findByStatus(BatchStatus.IN_ORIGIN).stream()
+            long waiting = waitingBatches.stream()
                     .filter(b -> b.getOriginAirport().getId().equals(airport.getId()))
                     .mapToLong(BaggageBatch::getQuantity)
                     .sum();
-            int occupancy = (int) Math.min(waiting, airport.getWarehouseCapacity());
+            long justArrived = recentlyDelivered.stream()
+                    .filter(b -> b.getDestinationAirport().getId().equals(airport.getId()))
+                    .mapToLong(BaggageBatch::getQuantity)
+                    .sum();
+            int occupancy = (int) Math.min(waiting + justArrived, airport.getWarehouseCapacity());
             airport.setCurrentOccupancy(occupancy);
-            airportRepo.save(airport);
 
             double pct = airport.getOccupancyPct();
             if (pct >= thresholdRed) {
@@ -311,13 +336,14 @@ public class SimulationEngine {
                         String.format("%.1f", pct));
             }
         }
+        airportRepo.saveAll(airports);
     }
 
     private KpiSnapshot persistKpi(Simulation sim, LocalDateTime simNow) {
         long total = shipmentRepo.countTotal();
         long delivered = shipmentRepo.countDelivered();
         long onTime = shipmentRepo.countOnTimeDeliveries();
-        long delayed = shipmentRepo.findByStatus(ShipmentStatus.DELAYED).size();
+        long delayed = shipmentRepo.countByStatus(ShipmentStatus.DELAYED);
 
         double onTimePct = total > 0 ? (double) onTime / total * 100.0 : 100.0;
 
@@ -351,7 +377,7 @@ public class SimulationEngine {
     private void publishTick(Simulation sim, LocalDateTime simNow, SimulationClock clock,
                               KpiSnapshot kpi, long elapsedSec) {
         List<Airport> airports = airportRepo.findAll();
-        List<Flight> allFlights = flightRepo.findAllWithAirports();
+        List<Flight> activeFlights = flightRepo.findActiveFlightsForTick(simNow.plusHours(24));
 
         List<SimulationTickEvent.AirportPayload> airportPayloads = airports.stream()
                 .map(a -> {
@@ -365,31 +391,29 @@ public class SimulationEngine {
                 })
                 .collect(Collectors.toList());
 
-        List<SimulationTickEvent.FlightPayload> flightPayloads = allFlights.stream()
+        List<SimulationTickEvent.FlightPayload> flightPayloads = activeFlights.stream()
                 .map(f -> SimulationTickEvent.FlightPayload.builder()
                         .flightId(f.getId())
                         .originIata(f.getOriginAirport().getIataCode())
                         .destinationIata(f.getDestinationAirport().getIataCode())
                         .progress(f.getProgress(simNow))
                         .status(f.getStatus().name())
+                        .baggageCapacity(f.getBaggageCapacity())
+                        .currentLoad(f.getCurrentLoad())
                         .build())
                 .collect(Collectors.toList());
 
-        long totalBags = batchRepo.findAllWithAirports().stream()
-                .mapToLong(BaggageBatch::getQuantity).sum();
-        long deliveredBags = batchRepo.findByStatus(BatchStatus.DELIVERED).stream()
-                .mapToLong(BaggageBatch::getQuantity).sum();
-        long inTransitBags = batchRepo.findByStatus(BatchStatus.IN_TRANSIT).stream()
-                .mapToLong(BaggageBatch::getQuantity).sum();
-        long delayedBags = batchRepo.findByStatus(BatchStatus.DELAYED).stream()
-                .mapToLong(BaggageBatch::getQuantity).sum();
-        long waitingBags = batchRepo.findByStatus(BatchStatus.IN_ORIGIN).stream()
-                .mapToLong(BaggageBatch::getQuantity).sum();
+        long totalBags     = batchRepo.sumAllQuantity();
+        long deliveredBags = batchRepo.sumQuantityByStatus(BatchStatus.DELIVERED);
+        long inTransitBags = batchRepo.sumQuantityByStatus(BatchStatus.IN_TRANSIT);
+        long delayedBags   = batchRepo.sumQuantityByStatus(BatchStatus.DELAYED);
+        long waitingBags   = batchRepo.sumQuantityByStatus(BatchStatus.IN_ORIGIN);
 
         SimulationTickEvent event = SimulationTickEvent.builder()
                 .simulationId(sim.getId())
                 .simulatedDay(clock.getSimulatedDay())
                 .simulatedTime(simNow.format(TIME_FMT) + " UTC")
+                .simulatedIso(simNow.toString())
                 .elapsedRealSeconds(elapsedSec)
                 .kpis(SimulationTickEvent.KpisPayload.builder()
                         .onTimePct(kpi.getOnTimePct().doubleValue())

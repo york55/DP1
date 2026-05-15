@@ -1,6 +1,7 @@
 package pe.pucp.tasfb2b.controller;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -16,6 +17,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
@@ -30,6 +32,7 @@ public class ShipmentController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
 
+        log.debug("ACTION list_shipments status={} simulationId={} page={}", status, simulationId, page);
         if (status != null) {
             Pageable pageable = PageRequest.of(page, size);
             Page<ShipmentDto> result = shipmentService.findByStatus(
@@ -41,6 +44,7 @@ public class ShipmentController {
 
     @GetMapping("/shipments/{id}/status")
     public ResponseEntity<ShipmentDto> getStatus(@PathVariable Long id) {
+        log.debug("ACTION get_shipment_status id={}", id);
         return ResponseEntity.ok(shipmentService.findById(id));
     }
 
@@ -64,6 +68,7 @@ public class ShipmentController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
             LocalDateTime startDate) {
 
+        log.info("ACTION upload_batches file='{}' periodo={} startDate={}", file.getOriginalFilename(), periodo, startDate);
         try {
             byte[] fileBytes = file.getBytes();
             String filename = file.getOriginalFilename();
@@ -75,10 +80,12 @@ public class ShipmentController {
                     startDate
             );
 
+            log.info("ACTION upload_batches OK async task started file='{}'", filename);
             return ResponseEntity.status(202)
                     .body(Map.of("message", "Carga asíncrona iniciada"));
 
         } catch (Exception e) {
+            log.error("ACTION upload_batches ERROR file='{}' error='{}'", file.getOriginalFilename(), e.getMessage());
             return ResponseEntity.status(500)
                     .body(Map.of("error", e.getMessage()));
         }
