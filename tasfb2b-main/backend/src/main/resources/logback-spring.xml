@@ -36,15 +36,19 @@
         </encoder>
     </appender>
 
-    <!-- Logger for Frontend logs -->
-    <logger name="frontend-logger" level="INFO" additivity="false">
+    <!-- Frontend logs (received via POST /api/logs) -->
+    <logger name="frontend-logger" level="DEBUG" additivity="false">
         <appender-ref ref="FRONTEND_FILE" />
         <appender-ref ref="CONSOLE" />
     </logger>
 
+    <!-- In-memory buffer appender for the DevFooter UI -->
+    <appender name="BUFFER" class="pe.pucp.tasfb2b.config.LogBufferAppender" />
+
     <root level="INFO">
         <appender-ref ref="CONSOLE" />
         <appender-ref ref="BACKEND_FILE" />
+        <appender-ref ref="BUFFER" />
     </root>
 
     <!-- Debug level for our own code -->

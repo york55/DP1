@@ -5,6 +5,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import pe.pucp.tasfb2b.config.LogBuffer;
+
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/logs")
@@ -15,25 +19,35 @@ public class LogController {
 
     @PostMapping
     public ResponseEntity<Void> receiveLog(@RequestBody LogRequest request) {
-        String message = String.format("[%s] %s", request.getContext() != null ? request.getContext() : "FRONTEND", request.getMessage());
-        
+        String ctx = request.getContext() != null ? request.getContext() : "FRONTEND";
+        String message = String.format("[%s] %s", ctx, request.getMessage());
+
         switch (request.getLevel().toUpperCase()) {
-            case "ERROR":
-                frontendLogger.error(message);
-                break;
-            case "WARN":
-            case "WARNING":
-                frontendLogger.warn(message);
-                break;
-            case "DEBUG":
-                frontendLogger.debug(message);
-                break;
-            case "INFO":
-            default:
-                frontendLogger.info(message);
-                break;
+            case "ERROR" -> frontendLogger.error(message);
+            case "WARN", "WARNING" -> frontendLogger.warn(message);
+            case "DEBUG" -> frontendLogger.debug(message);
+            default -> frontendLogger.info(message);
         }
+
+        LogBuffer buf = LogBuffer.getInstance();
+        if (buf != null) {
+            buf.addFrontend(request.getLevel(), ctx, request.getMessage());
+        }
+
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/recent")
+    public ResponseEntity<Map<String, List<LogBuffer.LogEntry>>> getRecent(
+            @RequestParam(defaultValue = "200") int limit) {
+        LogBuffer buf = LogBuffer.getInstance();
+        if (buf == null) {
+            return ResponseEntity.ok(Map.of("backend", List.of(), "frontend", List.of()));
+        }
+        return ResponseEntity.ok(Map.of(
+            "backend",  buf.getBackend(limit),
+            "frontend", buf.getFrontend(limit)
+        ));
     }
 
     @Data
