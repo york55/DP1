@@ -1,6 +1,7 @@
 -- V2: Tablas de vuelos y lotes de maletas
 CREATE TABLE IF NOT EXISTS flights (
     id                    BIGINT NOT NULL AUTO_INCREMENT,
+    airline_id            BIGINT NULL,
     origin_airport_id     BIGINT NOT NULL,
     destination_airport_id BIGINT NOT NULL,
     departure_time        DATETIME        NOT NULL,
@@ -12,6 +13,7 @@ CREATE TABLE IF NOT EXISTS flights (
     created_at            DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at            DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
+    CONSTRAINT fk_flights_airline     FOREIGN KEY (airline_id)             REFERENCES airlines(id) ON UPDATE CASCADE ON DELETE SET NULL,
     CONSTRAINT fk_flights_origin      FOREIGN KEY (origin_airport_id)      REFERENCES airports(id) ON UPDATE CASCADE ON DELETE RESTRICT,
     CONSTRAINT fk_flights_destination FOREIGN KEY (destination_airport_id) REFERENCES airports(id) ON UPDATE CASCADE ON DELETE RESTRICT
 );

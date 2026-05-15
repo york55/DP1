@@ -9,6 +9,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import pe.pucp.tasfb2b.domain.enums.FlightStatus;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 
 @Entity
 @Table(name = "flights")
@@ -20,6 +21,10 @@ public class Flight {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "airline_id")
+    private Airline airline;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "origin_airport_id", nullable = false)

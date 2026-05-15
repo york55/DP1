@@ -20,4 +20,16 @@ public interface BaggageBatchRepository extends JpaRepository<BaggageBatch, Long
 
     @Query("SELECT b FROM BaggageBatch b JOIN FETCH b.originAirport JOIN FETCH b.destinationAirport")
     List<BaggageBatch> findAllWithAirports();
+
+    // Batches DELIVERED within the last 5 simulated hours — still occupying destination storage.
+    @Query("SELECT b FROM BaggageBatch b JOIN FETCH b.destinationAirport " +
+           "WHERE b.status = 'DELIVERED' " +
+           "AND EXISTS (SELECT s FROM Shipment s WHERE s.baggageBatch = b AND s.deliveredAt > :cutoff)")
+    List<BaggageBatch> findRecentlyDelivered(@Param("cutoff") LocalDateTime cutoff);
+
+    @Query("SELECT COALESCE(SUM(b.quantity), 0) FROM BaggageBatch b WHERE b.status = :status")
+    long sumQuantityByStatus(@Param("status") BatchStatus status);
+
+    @Query("SELECT COALESCE(SUM(b.quantity), 0) FROM BaggageBatch b")
+    long sumAllQuantity();
 }

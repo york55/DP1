@@ -15,6 +15,15 @@ public interface RouteLegRepository extends JpaRepository<RouteLeg, Long> {
     List<RouteLeg> findByFlightIdAndStatus(@Param("flightId") Long flightId,
                                             @Param("status") RouteLegStatus status);
 
+    @Query("SELECT rl FROM RouteLeg rl " +
+           "JOIN FETCH rl.route r " +
+           "JOIN FETCH r.shipment s " +
+           "JOIN FETCH s.baggageBatch b " +
+           "JOIN rl.flight f " +
+           "WHERE f.id = :flightId AND rl.status = :status")
+    List<RouteLeg> findByFlightIdAndStatusWithBatch(@Param("flightId") Long flightId,
+                                                     @Param("status") RouteLegStatus status);
+
     @Query("SELECT rl FROM RouteLeg rl WHERE rl.route.id = :routeId ORDER BY rl.legOrder")
     List<RouteLeg> findByRouteIdOrderByLegOrder(@Param("routeId") Long routeId);
 }

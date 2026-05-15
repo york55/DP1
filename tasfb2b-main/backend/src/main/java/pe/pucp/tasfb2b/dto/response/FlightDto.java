@@ -21,4 +21,6 @@ public class FlightDto {
     private String frequency;
     private String status;
     private double progress;
+    private String airlineName;
+    private String airlineIata;
 }

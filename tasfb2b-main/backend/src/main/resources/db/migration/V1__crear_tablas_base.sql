@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS airports (
     continent           VARCHAR(20)      NOT NULL,
     warehouse_capacity  INT     NOT NULL,
     current_occupancy   INT     NOT NULL DEFAULT 0,
+    gmt_offset          INT     NOT NULL DEFAULT 0,
     latitude            DECIMAL(9,6)     NOT NULL,
     longitude           DECIMAL(9,6)     NOT NULL,
     created_at          DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,

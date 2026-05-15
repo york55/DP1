@@ -13,11 +13,13 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
 
     List<Flight> findByStatus(FlightStatus status);
 
-    @Query("SELECT f FROM Flight f WHERE f.status = :status AND f.departureTime <= :simNow")
+    @Query("SELECT f FROM Flight f JOIN FETCH f.originAirport JOIN FETCH f.destinationAirport " +
+           "WHERE f.status = :status AND f.departureTime <= :simNow")
     List<Flight> findScheduledDeparting(@Param("status") FlightStatus status,
                                         @Param("simNow") LocalDateTime simNow);
 
-    @Query("SELECT f FROM Flight f WHERE f.status = :status AND f.arrivalTime <= :simNow")
+    @Query("SELECT f FROM Flight f JOIN FETCH f.originAirport JOIN FETCH f.destinationAirport " +
+           "WHERE f.status = :status AND f.arrivalTime <= :simNow")
     List<Flight> findInFlightArriving(@Param("status") FlightStatus status,
                                        @Param("simNow") LocalDateTime simNow);
 
@@ -42,4 +44,15 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
 
     @Query("SELECT f FROM Flight f JOIN FETCH f.originAirport JOIN FETCH f.destinationAirport")
     List<Flight> findAllWithAirports();
+
+    @Query("SELECT f FROM Flight f WHERE f.status = :status " +
+           "AND f.departureTime > :simNow AND f.departureTime <= :simNowPlusTick")
+    List<Flight> findScheduledInWindow(@Param("status") FlightStatus status,
+                                       @Param("simNow") LocalDateTime simNow,
+                                       @Param("simNowPlusTick") LocalDateTime simNowPlusTick);
+
+    @Query("SELECT f FROM Flight f JOIN FETCH f.originAirport JOIN FETCH f.destinationAirport " +
+           "WHERE f.status = 'IN_FLIGHT' " +
+           "OR (f.status = 'SCHEDULED' AND f.departureTime <= :until)")
+    List<Flight> findActiveFlightsForTick(@Param("until") LocalDateTime until);
 }

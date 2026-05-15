@@ -17,6 +17,7 @@ public class AirportMapper {
         dto.setWarehouseCapacity(a.getWarehouseCapacity());
         dto.setCurrentOccupancy(a.getCurrentOccupancy());
         dto.setOccupancyPct(a.getOccupancyPct());
+        dto.setGmtOffset(a.getGmtOffset());
         dto.setLatitude(a.getLatitude().doubleValue());
         dto.setLongitude(a.getLongitude().doubleValue());
         return dto;

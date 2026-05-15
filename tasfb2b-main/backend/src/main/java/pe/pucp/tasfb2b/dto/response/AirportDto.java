@@ -15,6 +15,7 @@ public class AirportDto {
     private int warehouseCapacity;
     private int currentOccupancy;
     private double occupancyPct;
+    private int gmtOffset;
     private String semaphoreLevel;
     private double latitude;
     private double longitude;

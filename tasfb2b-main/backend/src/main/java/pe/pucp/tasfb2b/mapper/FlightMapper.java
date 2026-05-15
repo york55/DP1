@@ -22,7 +22,11 @@ public class FlightMapper {
         dto.setCurrentLoad(f.getCurrentLoad());
         dto.setFrequency(f.getFrequency());
         dto.setStatus(f.getStatus().name());
-        dto.setProgress(f.getProgress(java.time.LocalDateTime.now()));
+        dto.setProgress(0.0);
+        if (f.getAirline() != null) {
+            dto.setAirlineName(f.getAirline().getName());
+            dto.setAirlineIata(f.getAirline().getIataCode());
+        }
         return dto;
     }
 }

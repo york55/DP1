@@ -32,5 +32,7 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
     @Query("SELECT COUNT(s) FROM Shipment s")
     long countTotal();
 
+    long countByStatus(ShipmentStatus status);
+
     Optional<Shipment> findByBaggageBatchId(Long batchId);
 }

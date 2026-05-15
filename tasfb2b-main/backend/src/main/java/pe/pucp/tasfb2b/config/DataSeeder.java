@@ -5,10 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import pe.pucp.tasfb2b.domain.Airline;
 import pe.pucp.tasfb2b.domain.Airport;
 import pe.pucp.tasfb2b.domain.Flight;
 import pe.pucp.tasfb2b.domain.enums.FlightStatus;
+import pe.pucp.tasfb2b.repository.AirlineRepository;
 import pe.pucp.tasfb2b.repository.AirportRepository;
 import pe.pucp.tasfb2b.repository.FlightRepository;
 
@@ -19,6 +20,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -31,15 +33,42 @@ public class DataSeeder implements CommandLineRunner {
 
     private final AirportRepository airportRepository;
     private final FlightRepository flightRepository;
+    private final AirlineRepository airlineRepository;
 
     @Override
-    @Transactional
     public void run(String... args) throws Exception {
+        // Re-seed if airports exist but gmtOffset was never stored (all zero)
+        boolean needReseed = airportRepository.count() > 0 &&
+                airportRepository.findAll().stream().allMatch(a -> a.getGmtOffset() == 0);
+
+        if (needReseed) {
+            log.info("Detected airports without gmtOffset — re-seeding airports and flights.");
+            flightRepository.deleteAll();
+            airportRepository.deleteAll();
+        }
+
         if (airportRepository.count() == 0) {
             log.info("Populating Airports from aeropuertos.txt...");
             populateAirports();
         } else {
             log.info("Airports table already populated.");
+        }
+
+        if (airlineRepository.count() == 0) {
+            log.info("Populating Airlines...");
+            populateAirlines();
+        } else {
+            log.info("Airlines table already populated.");
+        }
+
+        boolean needFlightReseed = flightRepository.count() > 0 &&
+                flightRepository.findAllBetween(
+                        LocalDateTime.of(2026, 5, 11, 0, 0),
+                        LocalDateTime.of(2026, 5, 12, 0, 0)
+                ).isEmpty();
+        if (needFlightReseed) {
+            log.info("Detected single-day flights — re-seeding flights for full simulation period.");
+            flightRepository.deleteAll();
         }
 
         if (flightRepository.count() == 0) {
@@ -53,18 +82,21 @@ public class DataSeeder implements CommandLineRunner {
     private void populateAirports() {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(
                 new ClassPathResource("data/aeropuertos.txt").getInputStream(), StandardCharsets.UTF_16))) {
-            
+
             String line;
             String currentContinent = "Unknown";
             Pattern airportPattern = Pattern.compile("^\\d+\\s+([A-Z]{4})\\s+(.+?)\\s{2,}(.+?)\\s{2,}([a-z]{4})\\s+([\\+\\-]?\\d+)\\s+(\\d+)\\s+Latitude:\\s*(\\d+)\\D+(\\d+)\\D+(\\d+)\\D+([NS])\\s+Longitude:\\s*(\\d+)\\D+(\\d+)\\D+(\\d+)\\D+([EW])\\??.*$");
-            
+
             while ((line = br.readLine()) != null) {
                 line = line.trim();
-                if (line.isEmpty() || line.startsWith("*") || line.startsWith("PDDS") || line.contains("GMT")) {
+                if (line.isEmpty() || line.startsWith("*") || line.startsWith("PDDS")) {
+                    continue;
+                }
+                // Skip column-header lines (contain both GMT and CAPACIDAD)
+                if (line.contains("GMT") && line.contains("CAPACIDAD")) {
                     continue;
                 }
 
-                // If line does not start with digits, it might be a continent header
                 if (!line.matches("^\\d+.*")) {
                     currentContinent = line.replace(".", "").trim();
                     continue;
@@ -73,21 +105,22 @@ public class DataSeeder implements CommandLineRunner {
                 Matcher m = airportPattern.matcher(line);
                 if (m.matches()) {
                     Airport airport = new Airport();
-                    airport.setIataCode(m.group(1)); // Note: File has ICAO (e.g. SKBO), but using it as IATA/Identifier
+                    airport.setIataCode(m.group(1));
                     airport.setCity(m.group(2).trim());
                     airport.setCountry(m.group(3).trim());
                     airport.setContinent(currentContinent);
+                    airport.setGmtOffset(Integer.parseInt(m.group(5)));
                     airport.setWarehouseCapacity(Integer.parseInt(m.group(6)));
-                    
-                    double lat = Double.parseDouble(m.group(7)) + Double.parseDouble(m.group(8))/60.0 + Double.parseDouble(m.group(9))/3600.0;
+
+                    double lat = Double.parseDouble(m.group(7)) + Double.parseDouble(m.group(8)) / 60.0 + Double.parseDouble(m.group(9)) / 3600.0;
                     if (m.group(10).equals("S")) lat = -lat;
-                    
-                    double lon = Double.parseDouble(m.group(11)) + Double.parseDouble(m.group(12))/60.0 + Double.parseDouble(m.group(13))/3600.0;
+
+                    double lon = Double.parseDouble(m.group(11)) + Double.parseDouble(m.group(12)) / 60.0 + Double.parseDouble(m.group(13)) / 3600.0;
                     if (m.group(14).equals("W")) lon = -lon;
-                    
+
                     airport.setLatitude(BigDecimal.valueOf(lat));
                     airport.setLongitude(BigDecimal.valueOf(lon));
-                    
+
                     airportRepository.save(airport);
                 }
             }
@@ -97,53 +130,82 @@ public class DataSeeder implements CommandLineRunner {
         }
     }
 
+    private void populateAirlines() {
+        List<Object[]> data = List.of(
+            new Object[]{"LATAM Airlines",       "LA"},
+            new Object[]{"Lufthansa",             "LH"},
+            new Object[]{"Singapore Airlines",    "SQ"}
+        );
+        for (Object[] row : data) {
+            Airline a = new Airline((String) row[0], (String) row[1], null);
+            airlineRepository.save(a);
+        }
+        log.info("Successfully loaded {} airlines.", airlineRepository.count());
+    }
+
+    private static final int SIMULATION_DAYS = 5;
+
     private void populateFlights() {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(
                 new ClassPathResource("data/vuelos.txt").getInputStream(), StandardCharsets.UTF_8))) {
-            
+
             Map<String, Airport> airportMap = new HashMap<>();
             airportRepository.findAll().forEach(a -> airportMap.put(a.getIataCode(), a));
-            
-            String line;
+
+            Map<String, Airline> airlineByContinent = new HashMap<>();
+            airlineRepository.findByIataCode("LA").ifPresent(a -> {
+                airlineByContinent.put("America del Sur", a);
+                airlineByContinent.put("Unknown", a);
+            });
+            airlineRepository.findByIataCode("LH").ifPresent(a -> airlineByContinent.put("Europa", a));
+            airlineRepository.findByIataCode("SQ").ifPresent(a -> airlineByContinent.put("Asia", a));
+            Airline defaultAirline = airlineRepository.findByIataCode("LA").orElse(null);
+
             DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
-            // Assuming default simulation date of 2026-05-10
             LocalDateTime baseDate = LocalDateTime.of(2026, 5, 10, 0, 0);
-            
+
+            // Read all flight templates once, then replicate for each simulation day
+            List<String> lines = new java.util.ArrayList<>();
+            String line;
             while ((line = br.readLine()) != null) {
                 line = line.trim();
-                if (line.isEmpty()) continue;
-                
-                // Format: SKBO-SEQM-03:34-04:21-0300
-                String[] parts = line.split("-");
-                if (parts.length >= 5) {
+                if (!line.isEmpty()) lines.add(line);
+            }
+
+            for (int day = 0; day < SIMULATION_DAYS; day++) {
+                LocalDateTime dayBase = baseDate.plusDays(day);
+                for (String flightLine : lines) {
+                    String[] parts = flightLine.split("-");
+                    if (parts.length < 5) continue;
+
                     Airport origin = airportMap.get(parts[0]);
                     Airport dest = airportMap.get(parts[1]);
-                    
-                    if (origin != null && dest != null) {
-                        Flight flight = new Flight();
-                        flight.setOriginAirport(origin);
-                        flight.setDestinationAirport(dest);
-                        
-                        LocalTime depTime = LocalTime.parse(parts[2], timeFormatter);
-                        LocalTime arrTime = LocalTime.parse(parts[3], timeFormatter);
-                        
-                        LocalDateTime departure = baseDate.with(depTime);
-                        LocalDateTime arrival = baseDate.with(arrTime);
-                        if (arrival.isBefore(departure)) {
-                            arrival = arrival.plusDays(1); // Crossed midnight
-                        }
-                        
-                        flight.setDepartureTime(departure);
-                        flight.setArrivalTime(arrival);
-                        flight.setBaggageCapacity(Integer.parseInt(parts[4]));
-                        flight.setFrequency("DAILY");
-                        flight.setStatus(FlightStatus.SCHEDULED);
-                        
-                        flightRepository.save(flight);
+                    if (origin == null || dest == null) continue;
+
+                    LocalTime depLocal = LocalTime.parse(parts[2], timeFormatter);
+                    LocalTime arrLocal = LocalTime.parse(parts[3], timeFormatter);
+
+                    LocalDateTime departureUTC = dayBase.with(depLocal).minusHours(origin.getGmtOffset());
+                    LocalDateTime arrivalUTC = dayBase.with(arrLocal).minusHours(dest.getGmtOffset());
+
+                    if (arrivalUTC.isBefore(departureUTC)) {
+                        arrivalUTC = arrivalUTC.plusDays(1);
                     }
+
+                    Flight flight = new Flight();
+                    flight.setOriginAirport(origin);
+                    flight.setDestinationAirport(dest);
+                    flight.setDepartureTime(departureUTC);
+                    flight.setArrivalTime(arrivalUTC);
+                    flight.setBaggageCapacity(Integer.parseInt(parts[4]));
+                    flight.setFrequency("DAILY");
+                    flight.setStatus(FlightStatus.SCHEDULED);
+                    flight.setAirline(airlineByContinent.getOrDefault(origin.getContinent(), defaultAirline));
+                    flightRepository.save(flight);
                 }
             }
-            log.info("Successfully loaded {} flights.", flightRepository.count());
+            log.info("Successfully loaded {} flights ({} days × templates).",
+                    flightRepository.count(), SIMULATION_DAYS);
         } catch (Exception e) {
             log.error("Error loading flights", e);
         }

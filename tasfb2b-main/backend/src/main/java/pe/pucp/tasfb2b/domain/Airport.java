@@ -39,6 +39,9 @@ public class Airport {
     @Column(name = "current_occupancy", nullable = false)
     private int currentOccupancy = 0;
 
+    @Column(name = "gmt_offset", nullable = false)
+    private int gmtOffset = 0;
+
     @Column(name = "latitude", nullable = false, precision = 9, scale = 6)
     private BigDecimal latitude;
 
