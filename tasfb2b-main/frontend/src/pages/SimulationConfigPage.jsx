@@ -295,7 +295,7 @@ export default function SimulationConfigPage() {
         formData.append('startDate', startDate.toISOString().replace('Z', ''))
 
         await apiClient.post('/batches/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
+          headers: { 'Content-Type': undefined },
         })
       }
     } catch (err) {

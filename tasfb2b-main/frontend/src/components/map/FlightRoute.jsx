@@ -30,8 +30,14 @@ function FlightRoute({ flight, airports = [], simulatedTime }) {
 
   const progress = useMemo(() => {
     if (!isInFlight) return 0
+    if (simulatedTime && flight.departureUTC && flight.arrivalUTC) {
+      const dep = new Date(flight.departureUTC).getTime()
+      const arr = new Date(flight.arrivalUTC).getTime()
+      const now = simulatedTime instanceof Date ? simulatedTime.getTime() : new Date(simulatedTime).getTime()
+      if (arr > dep) return Math.max(0, Math.min(1, (now - dep) / (arr - dep)))
+    }
     return flight.progress || 0
-  }, [isInFlight, flight.progress])
+  }, [isInFlight, flight.progress, flight.departureUTC, flight.arrivalUTC, simulatedTime])
 
   const { progressPosition, angle } = useMemo(() => {
     if (!originAirport || !destAirport) return { progressPosition: null, angle: 0 }
