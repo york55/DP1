@@ -5,6 +5,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import { SimulationProvider } from './context/SimulationContext'
 import AppRouter from './routes/AppRouter'
+import DevFooter from './components/common/DevFooter'
 import theme from './theme/theme'
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
       <LocalizationProvider dateAdapter={AdapterDateFns}>
         <SimulationProvider>
           <AppRouter />
+          <DevFooter />
         </SimulationProvider>
       </LocalizationProvider>
     </ThemeProvider>
