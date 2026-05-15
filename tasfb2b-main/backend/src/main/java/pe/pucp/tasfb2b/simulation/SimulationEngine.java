@@ -377,7 +377,7 @@ public class SimulationEngine {
     private void publishTick(Simulation sim, LocalDateTime simNow, SimulationClock clock,
                               KpiSnapshot kpi, long elapsedSec) {
         List<Airport> airports = airportRepo.findAll();
-        List<Flight> activeFlights = flightRepo.findActiveFlightsForTick(simNow.plusHours(24));
+        List<Flight> activeFlights = flightRepo.findAssignedFlightsForTick(simNow.plusHours(24));
 
         List<SimulationTickEvent.AirportPayload> airportPayloads = airports.stream()
                 .map(a -> {

@@ -23,7 +23,7 @@ export function useSimulation() {
     status: 'idle',
     simulatedTime: null,
     elapsedSeconds: 0,
-    config: { period: 3, startDate: new Date() },
+    config: { period: 5, startDate: new Date() },
     simulationId: null,
   })
 
@@ -176,17 +176,39 @@ export function useSimulation() {
       let nextFlights = prev.flights
       if (event.flights) {
         const flightUpdateMap = new Map(event.flights.map(x => [x.flightId, x]))
+        const matchedIds = new Set()
         nextFlights = prev.flights.map(f => {
           const update = flightUpdateMap.get(f.id) || flightUpdateMap.get(f.backendId)
           if (!update) return f
+          matchedIds.add(update.flightId)
           return {
             ...f,
             status: update.status,
             progress: update.progress,
             bagsAboard: update.currentLoad,
-            capacity: update.baggageCapacity || f.capacity
+            capacity: update.baggageCapacity || f.capacity,
           }
         })
+
+        // Append flights from the tick that weren't in the initial load
+        const newFlights = []
+        for (const [fId, update] of flightUpdateMap) {
+          if (matchedIds.has(fId)) continue
+          newFlights.push({
+            id: update.flightId,
+            backendId: update.flightId,
+            origin: update.originIata,
+            destination: update.destinationIata,
+            status: update.status,
+            progress: update.progress,
+            bagsAboard: update.currentLoad,
+            capacity: update.baggageCapacity,
+            airline: '—',
+          })
+        }
+        if (newFlights.length > 0) {
+          nextFlights = [...nextFlights, ...newFlights]
+        }
       }
 
       const nextKpis = event.kpis ? {
