@@ -76,20 +76,22 @@ public class ShipmentService {
         log.info("Iniciando carga asíncrona para archivo: {}", filename);
         log.info("Rango de fechas: {} -> {}", startDate, endDate);
 
-        messagingTemplate.convertAndSend("/topic/shipments/progress",
-                new UploadProgressDto(
-                        0,
-                        0,
-                        "IN_PROGRESS",
-                        "Procesando envíos entre " + startDate + " y " + endDate));
-
         String originIata = extractOriginFromFilename(filename);
-
         if (originIata == null) {
             log.warn("No se pudo extraer aeropuerto del archivo {}. Usando SKBO.", filename);
             originIata = "SKBO";
         }
 
+        messagingTemplate.convertAndSend("/topic/shipments/progress",
+                new UploadProgressDto(
+                        0,
+                        0,
+                        "IN_PROGRESS",
+                        "Procesando envíos entre " + startDate + " y " + endDate,
+                        originIata,
+                        0));
+
+        final String finalOriginIata = originIata;
         try {
 
             Airport origin = airportRepo.findByIataCode(originIata).orElse(null);
@@ -233,7 +235,9 @@ public class ShipmentService {
                                         processed,
                                         totalLines,
                                         "IN_PROGRESS",
-                                        "Procesando envíos..."));
+                                        "Procesando envíos...",
+                                        finalOriginIata,
+                                        inserted));
                     }
                 }
 
@@ -249,7 +253,9 @@ public class ShipmentService {
                             processed,
                             totalLines,
                             "COMPLETED",
-                            "Carga finalizada. Insertados: " + inserted));
+                            "Carga finalizada. Insertados: " + inserted,
+                            finalOriginIata,
+                            inserted));
 
             log.info(
                     "Carga completada. Procesados: {}, Insertados: {}",
