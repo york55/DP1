@@ -175,7 +175,11 @@ public class DataSeeder implements CommandLineRunner {
             for (int day = 0; day < SIMULATION_DAYS; day++) {
                 LocalDateTime dayBase = baseDate.plusDays(day);
                 for (String flightLine : lines) {
-                    String[] parts = flightLine.split("-");
+                    // Strip leading "N\t" line-number prefix if present
+                    String flightData = flightLine.contains("\t")
+                            ? flightLine.substring(flightLine.lastIndexOf('\t') + 1)
+                            : flightLine;
+                    String[] parts = flightData.split("-");
                     if (parts.length < 5) continue;
 
                     Airport origin = airportMap.get(parts[0]);
