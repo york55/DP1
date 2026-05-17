@@ -53,5 +53,8 @@ public class SimulationTickEvent {
         private String status;
         private int baggageCapacity;
         private int currentLoad;
+        private String departureTime;
+        private String arrivalTime;
+        private String airlineName;
     }
 }
