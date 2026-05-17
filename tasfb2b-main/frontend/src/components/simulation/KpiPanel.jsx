@@ -6,13 +6,13 @@ import KpiCard from './KpiCard'
 import { useSimulationContext } from '../../context/SimulationContext'
 
 export default function KpiPanel() {
-  const { kpis } = useSimulationContext()
+  const { kpis = {} } = useSimulationContext()
 
   const {
-    onTimeDeliveryPct,
-    avgFlightOccupancy,
-    avgWarehouseOccupancy,
-    totalDelayedBags,
+    onTimeDeliveryPct = 100,
+    avgFlightOccupancy = 0,
+    avgWarehouseOccupancy = 0,
+    totalDelayedBags = 0,
   } = kpis
 
   return (

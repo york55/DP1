@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import apiClient from '../api/client'
 import Box from '@mui/material/Box'
@@ -44,7 +44,7 @@ const flightColumns = [
       <span style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{p.value}</span>
     ),
   },
-  { field: 'airline', headerName: 'Aerolínea', width: 90, renderCell: () => 'TASF' },
+  { field: 'airlineName', headerName: 'Aerolínea', width: 90, renderCell: (p) => p.row.airlineName || p.row.airlineIata || '—' },
   { field: 'originIata', headerName: 'Origen', width: 80 },
   { field: 'destinationIata', headerName: 'Destino', width: 90 },
   {
@@ -128,6 +128,18 @@ export default function SimulationConfigPage() {
 
   const stompClientRef = useRef(null)
 
+  const periodFlightCount = useMemo(() => {
+    if (!startDate || !flights.length) return flights.length
+    const start = startDate.toDate ? startDate.toDate() : new Date(startDate)
+    const end = new Date(start)
+    end.setDate(end.getDate() + parseInt(period, 10))
+    return flights.filter((f) => {
+      if (!f.departureTime) return false
+      const dep = new Date(f.departureTime)
+      return dep >= start && dep <= end
+    }).length
+  }, [flights, startDate, period])
+
   // Resize panel handlers
   const handleResizeStart = (e) => {
     e.preventDefault()
@@ -199,13 +211,9 @@ export default function SimulationConfigPage() {
             [airportCode]: data,
           }))
 
-          if (data.status === 'IN_PROGRESS') {
-            setShipmentsCount((prev) => prev + (data.processedDelta || 0))
-          }
-
           if (data.status === 'COMPLETED') {
-            setShipmentsCount((prev) => prev + (data.processedDelta || 0))
-            setCompletedCount((prev) => prev + 1)  // ← solo aquí se incrementa
+            setShipmentsCount((prev) => prev + (data.inserted || 0))
+            setCompletedCount((prev) => prev + 1)
           }
 
           if (data.status === 'ERROR') {
@@ -349,7 +357,7 @@ export default function SimulationConfigPage() {
               <CircularProgress />
             </Box>
           ) : (
-            <WorldMap airports={airports} flights={flights} simulatedTime={null} />
+            <WorldMap airports={airports} flights={[]} simulatedTime={null} />
           )}
         </Box>
 
@@ -526,7 +534,7 @@ export default function SimulationConfigPage() {
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                 <SummaryCard label="Aeropuertos" value={airports.length} color="#1F3864" />
-                <SummaryCard label="Vuelos" value={flights.length} color="#2E75B6" />
+                <SummaryCard label="Vuelos" value={periodFlightCount} color="#2E75B6" />
                 <SummaryCard label="Envíos" value={shipmentsCount} color="#2E7D32" />
               </Box>
             </Box>
