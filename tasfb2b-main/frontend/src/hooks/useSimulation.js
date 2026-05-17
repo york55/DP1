@@ -187,6 +187,9 @@ export function useSimulation() {
             progress: update.progress,
             bagsAboard: update.currentLoad,
             capacity: update.baggageCapacity || f.capacity,
+            departureUTC: update.departureTime || f.departureUTC,
+            arrivalUTC: update.arrivalTime || f.arrivalUTC,
+            airline: update.airlineName || f.airline,
           }
         })
 
@@ -203,7 +206,9 @@ export function useSimulation() {
             progress: update.progress,
             bagsAboard: update.currentLoad,
             capacity: update.baggageCapacity,
-            airline: '—',
+            airline: update.airlineName || '—',
+            departureUTC: update.departureTime,
+            arrivalUTC: update.arrivalTime,
           })
         }
         if (newFlights.length > 0) {

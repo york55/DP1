@@ -130,4 +130,4 @@ function FlightRoute({ flight, airports = [], simulatedTime }) {
   )
 }
 
-export default React.memo(FlightRoute)
+export default FlightRoute
