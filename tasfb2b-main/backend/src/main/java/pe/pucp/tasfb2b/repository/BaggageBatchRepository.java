@@ -18,6 +18,12 @@ public interface BaggageBatchRepository extends JpaRepository<BaggageBatch, Long
            "WHERE b.status IN ('IN_ORIGIN', 'DELAYED') AND b.availableFrom <= :simNow")
     List<BaggageBatch> findPendingBatches(@Param("simNow") LocalDateTime simNow);
 
+    @Query("SELECT b FROM BaggageBatch b " +
+           "JOIN FETCH b.originAirport JOIN FETCH b.destinationAirport JOIN FETCH b.airline " +
+           "WHERE b.status = 'IN_ORIGIN' AND b.availableFrom <= :simNow " +
+           "AND NOT EXISTS (SELECT s FROM Shipment s WHERE s.baggageBatch = b)")
+    List<BaggageBatch> findUnroutedBatches(@Param("simNow") LocalDateTime simNow);
+
     @Query("SELECT b FROM BaggageBatch b JOIN FETCH b.originAirport JOIN FETCH b.destinationAirport")
     List<BaggageBatch> findAllWithAirports();
 
