@@ -300,7 +300,10 @@ export default function SimulationConfigPage() {
         const formData = new FormData()
         formData.append('file', file)
         formData.append('periodo', period)
-        formData.append('startDate', startDate.toISOString().replace('Z', ''))
+        const dateStr = startDate instanceof Date
+          ? startDate.toISOString().slice(0, 10)
+          : String(startDate).slice(0, 10)
+        formData.append('startDate', dateStr + 'T00:00:00')
 
         await apiClient.post('/batches/upload', formData, {
           headers: { 'Content-Type': undefined },
@@ -308,7 +311,8 @@ export default function SimulationConfigPage() {
       }
     } catch (err) {
       console.error('Error al subir archivos:', err)
-      alert('Error al cargar los archivos.')
+      const detail = err.response?.data?.error || err.response?.data?.message || err.message || 'Error de red'
+      alert(`Error al cargar los archivos:\n${detail}`)
       setUploading(false)
       setIsWaitingToStart(false)
     }

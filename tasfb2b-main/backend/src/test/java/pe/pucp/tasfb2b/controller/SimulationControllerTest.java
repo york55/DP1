@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
 @WebMvcTest(SimulationController.class)
 @ActiveProfiles("test")
@@ -58,6 +59,7 @@ class SimulationControllerTest {
         when(simulationService.createSimulation(any())).thenReturn(dto);
 
         mockMvc.perform(post("/api/simulations")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
@@ -72,7 +74,7 @@ class SimulationControllerTest {
 
         when(simulationService.pauseSimulation(1L)).thenReturn(dto);
 
-        mockMvc.perform(put("/api/simulations/1/pause"))
+        mockMvc.perform(put("/api/simulations/1/pause").with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PAUSED"));
     }
@@ -85,7 +87,7 @@ class SimulationControllerTest {
 
         when(simulationService.resumeSimulation(1L)).thenReturn(dto);
 
-        mockMvc.perform(put("/api/simulations/1/resume"))
+        mockMvc.perform(put("/api/simulations/1/resume").with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RUNNING"));
     }

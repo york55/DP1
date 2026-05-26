@@ -1,6 +1,6 @@
 # 🚀 Guía de Despliegue - Sistema Tasf.B2B
 
-Este repositorio contiene la solución final del proyecto **Tasf.B2B**, un sistema de optimización logística para el enrutamiento de equipajes extraviados utilizando los algoritmos **ALNS** (Adaptive Large Neighborhood Search) y **ACO** (Ant Colony Optimization).
+Este repositorio contiene la solución final del proyecto **Tasf.B2B**, un sistema de optimización logística para el enrutamiento de equipajes extraviados utilizando el algoritmo **ALNS** (Adaptive Large Neighborhood Search).
 
 El proyecto se divide en tres componentes principales:
 1. **Backend (Java/Spring Boot)**: Motor de cálculo y APIs.
@@ -60,7 +60,7 @@ El frontend proporciona una interfaz gráfica para cargar los archivos CSV, eleg
 
 ## 🧪 3. Ejecución de la Solución Conjunta y Experimentos (Scripts)
 
-Para pruebas automatizadas, simulaciones masivas y validación de las hipótesis (comparativa ALNS vs ACO), utilizamos scripts que interactúan directamente con los endpoints del backend (por ejemplo `POST /api/planner/execute` o sus variantes asíncronas).
+Para pruebas automatizadas, simulaciones masivas y validación de las hipótesis, utilizamos scripts que interactúan directamente con los endpoints del backend (por ejemplo `POST /api/planner/execute` o sus variantes asíncronas).
 
 ### Uso del script principal (Ejemplo)
 

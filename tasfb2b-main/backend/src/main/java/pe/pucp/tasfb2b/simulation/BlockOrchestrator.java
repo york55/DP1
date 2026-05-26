@@ -44,10 +44,9 @@ public class BlockOrchestrator {
     public void start(Long simId) {
         OrchestratorState state = new OrchestratorState();
         states.put(simId, state);
-        Thread thread = Thread.ofVirtual()
-                .name("orchestrator-" + simId)
-                .start(() -> runPipeline(simId));
+        Thread thread = new Thread(() -> runPipeline(simId), "orchestrator-" + simId);
         state.thread = thread;
+        thread.start();
     }
 
     public void pause(Long simId) {
