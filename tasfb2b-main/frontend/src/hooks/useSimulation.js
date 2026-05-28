@@ -32,11 +32,16 @@ export function useSimulation() {
     airports: [],
     flights: [],
     shipments: [],
+    shipmentCounts: {},
     kpis: {
       onTimeDeliveryPct: 100,
       avgFlightOccupancy: 0,
       avgWarehouseOccupancy: 0,
       totalDelayedBags: 0,
+      totalBags: 0,
+      deliveredBags: 0,
+      inTransitBags: 0,
+      waitingBags: 0,
     }
   })
 
@@ -99,19 +104,47 @@ export function useSimulation() {
     try {
       const sms = await shipmentApi.getAll()
       if (Array.isArray(sms)) {
-        setSimulationData(prev => ({
-          ...prev,
-          shipments: sms.map(s => ({
-            id: s.id,
-            status: s.status,
-            origin: s.originIata || '—',
-            destination: s.destinationIata || '—',
-            totalBags: s.quantity || 0,
-            deliveredBags: s.status === 'DELIVERED' ? (s.quantity || 0) : 0,
-            client: s.airline || '—',
-            currentFlight: null,
-          })),
-        }))
+        setSimulationData(prev => {
+          let totalBags = 0
+          let waitingBags = 0
+          let inTransitBags = 0
+          let deliveredBags = 0
+          const shipmentCounts = {}
+
+          const shipments = sms.map(s => {
+            const qty = s.quantity || 0
+            totalBags += qty
+            if (s.status === 'IN_ORIGIN') waitingBags += qty
+            if (s.status === 'IN_TRANSIT') inTransitBags += qty
+            if (s.status === 'DELIVERED') deliveredBags += qty
+
+            shipmentCounts[s.status] = (shipmentCounts[s.status] || 0) + 1
+
+            return {
+              id: s.id,
+              status: s.status,
+              origin: s.originIata || '—',
+              destination: s.destinationIata || '—',
+              totalBags: qty,
+              deliveredBags: s.status === 'DELIVERED' ? qty : 0,
+              client: s.airline || '—',
+              currentFlight: null,
+            }
+          })
+
+          return {
+            ...prev,
+            shipments,
+            shipmentCounts: Object.keys(prev.shipmentCounts).length === 0 ? shipmentCounts : prev.shipmentCounts,
+            kpis: {
+              ...prev.kpis,
+              totalBags: prev.kpis.totalBags === 0 ? totalBags : prev.kpis.totalBags,
+              waitingBags: prev.kpis.totalBags === 0 ? waitingBags : prev.kpis.waitingBags,
+              inTransitBags: prev.kpis.totalBags === 0 ? inTransitBags : prev.kpis.inTransitBags,
+              deliveredBags: prev.kpis.totalBags === 0 ? deliveredBags : prev.kpis.deliveredBags,
+            }
+          }
+        })
       }
     } catch (e) { /* silent */ }
   }, [])
@@ -175,12 +208,12 @@ export function useSimulation() {
 
       let nextFlights = prev.flights
       if (event.flights) {
-        const flightUpdateMap = new Map(event.flights.map(x => [x.flightId, x]))
+        const flightUpdateMap = new Map(event.flights.map(x => [String(x.flightId), x]))
         const matchedIds = new Set()
         nextFlights = prev.flights.map(f => {
-          const update = flightUpdateMap.get(f.id) || flightUpdateMap.get(f.backendId)
+          const update = flightUpdateMap.get(String(f.id)) || flightUpdateMap.get(String(f.backendId))
           if (!update) return f
-          matchedIds.add(update.flightId)
+          matchedIds.add(String(update.flightId))
           return {
             ...f,
             status: update.status,
@@ -221,13 +254,18 @@ export function useSimulation() {
         avgFlightOccupancy: event.kpis.avgFlightOcc ?? 0,
         avgWarehouseOccupancy: event.kpis.avgWarehouseOcc ?? 0,
         totalDelayedBags: event.delayedBags ?? 0,
+        totalBags: event.totalBags ?? prev.kpis.totalBags ?? 0,
+        deliveredBags: event.deliveredBags ?? prev.kpis.deliveredBags ?? 0,
+        inTransitBags: event.inTransitBags ?? prev.kpis.inTransitBags ?? 0,
+        waitingBags: event.waitingBags ?? prev.kpis.waitingBags ?? 0,
       } : prev.kpis
 
       return {
         ...prev,
         airports: nextAirports,
         flights: nextFlights,
-        kpis: nextKpis
+        kpis: nextKpis,
+        shipmentCounts: event.shipmentCounts || prev.shipmentCounts || {},
       }
     })
   }, [])
@@ -274,11 +312,16 @@ export function useSimulation() {
       airports: [],
       flights: [],
       shipments: [],
+      shipmentCounts: {},
       kpis: {
         onTimeDeliveryPct: 100,
         avgFlightOccupancy: 0,
         avgWarehouseOccupancy: 0,
         totalDelayedBags: 0,
+        totalBags: 0,
+        deliveredBags: 0,
+        inTransitBags: 0,
+        waitingBags: 0,
       }
     })
     setNotifications([])

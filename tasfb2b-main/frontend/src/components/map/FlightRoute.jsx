@@ -66,7 +66,7 @@ function FlightRoute({ flight, airports = [], simulatedTime }) {
   ]
 
   const lineColor = isInFlight ? '#FB8C00' : '#2E75B6'
-  const lineWeight = isInFlight ? 2.5 : 1.5
+  const lineWeight = isInFlight ? 1.2 : 1.5
   const lineOpacity = isInFlight ? 0.9 : 0.4
   const dashArray = isInFlight ? null : '4 6'
 

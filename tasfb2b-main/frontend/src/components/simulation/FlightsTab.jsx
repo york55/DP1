@@ -59,7 +59,7 @@ const columns = [
     field: 'route',
     headerName: 'Ruta',
     width: 100,
-    valueGetter: (value, row) => `${row.origin} → ${row.destination}`,
+    valueGetter: (params) => `${params.row.origin} → ${params.row.destination}`,
   },
   {
     field: 'departureUTC',
