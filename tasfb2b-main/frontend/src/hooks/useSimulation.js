@@ -22,6 +22,7 @@ export function useSimulation() {
   const [simulationState, setSimulationState] = useState({
     status: 'idle',
     simulatedTime: null,
+    currentDay: 1,
     elapsedSeconds: 0,
     config: { period: 5, startDate: new Date() },
     simulationId: null,
@@ -79,7 +80,7 @@ export function useSimulation() {
       setSimulationState(prev => {
         if (prev.status !== 'running') return prev
 
-        let newSimTime = prev.simulatedTime
+        let newSimTime = prev.simulatedTime ? new Date(prev.simulatedTime.getTime()) : new Date()
         if (lastTickSimTimeRef.current && lastTickRealTimeRef.current && simMsPerRealMsRef.current) {
           const elapsedSinceTickMs = Date.now() - lastTickRealTimeRef.current
           const interpolated = new Date(
@@ -183,12 +184,20 @@ export function useSimulation() {
     lastTickRealTimeRef.current = now
 
     // Update state — use Math.max so the locally-running timer never goes backward
-    setSimulationState(prev => ({
-      ...prev,
-      simulatedTime: simTime,
-      elapsedSeconds: Math.max(prev.elapsedSeconds, event.elapsedRealSeconds),
-      status: 'running',
-    }))
+    setSimulationState(prev => {
+      let nextStatus = prev.status;
+      if (prev.status !== 'paused' && prev.status !== 'finished') {
+        nextStatus = event.status === 'FINISHED' ? 'finished' : 'running';
+      }
+
+      return {
+        ...prev,
+        simulatedTime: simTime,
+        currentDay: event.simulatedDay || prev.currentDay || 1,
+        elapsedSeconds: Math.max(prev.elapsedSeconds, event.elapsedRealSeconds),
+        status: nextStatus,
+      };
+    })
 
     setSimulationData(prev => {
       let nextAirports = prev.airports
@@ -223,6 +232,7 @@ export function useSimulation() {
             departureUTC: update.departureTime || f.departureUTC,
             arrivalUTC: update.arrivalTime || f.arrivalUTC,
             airline: update.airlineName || f.airline,
+            fromTick: true,
           }
         })
 
@@ -242,6 +252,7 @@ export function useSimulation() {
             airline: update.airlineName || '—',
             departureUTC: update.departureTime,
             arrivalUTC: update.arrivalTime,
+            fromTick: true,
           })
         }
         if (newFlights.length > 0) {
@@ -361,8 +372,8 @@ export function useSimulation() {
           ...f,
           origin: f.originIata,
           destination: f.destinationIata,
-          departureUTC: f.departureTime,
-          arrivalUTC: f.arrivalTime,
+          departureUTC: f.departureTime ? (String(f.departureTime).endsWith('Z') ? f.departureTime : f.departureTime + 'Z') : null,
+          arrivalUTC: f.arrivalTime ? (String(f.arrivalTime).endsWith('Z') ? f.arrivalTime : f.arrivalTime + 'Z') : null,
           capacity: f.baggageCapacity,
           bagsAboard: f.currentLoad,
           airline: f.airlineName || f.airlineIata || '—',
@@ -382,6 +393,7 @@ export function useSimulation() {
       setSimulationState({
         status: 'planning',
         simulatedTime: simStart,
+        currentDay: 1,
         elapsedSeconds: 0,
         config: { period: config.period, startDate: simStart },
         simulationId: simDto.id,
@@ -465,8 +477,8 @@ export function useSimulation() {
             ...f,
             origin: f.originIata,
             destination: f.destinationIata,
-            departureUTC: f.departureTime,
-            arrivalUTC: f.arrivalTime,
+            departureUTC: f.departureTime ? (String(f.departureTime).endsWith('Z') ? f.departureTime : f.departureTime + 'Z') : null,
+            arrivalUTC: f.arrivalTime ? (String(f.arrivalTime).endsWith('Z') ? f.arrivalTime : f.arrivalTime + 'Z') : null,
             capacity: f.baggageCapacity,
             bagsAboard: f.currentLoad,
             airline: f.airlineName || f.airlineIata || '—',
@@ -475,9 +487,19 @@ export function useSimulation() {
           : []
 
         setSimulationData(prev => ({ ...prev, airports: nextAirports, flights: nextFlights }))
+        let currentDay = 1;
+        if (active.simulatedTime && active.startDate) {
+          const start = new Date(active.startDate);
+          start.setUTCHours(0,0,0,0);
+          const current = new Date(active.simulatedTime);
+          const diffDays = Math.floor((current.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+          currentDay = diffDays + 1;
+        }
+
         setSimulationState({
           status: frontendStatus,
           simulatedTime: simTime,
+          currentDay: currentDay,
           elapsedSeconds: 0,
           config: { period: active.periodDays, startDate: new Date(active.startDate) },
           simulationId: active.id,

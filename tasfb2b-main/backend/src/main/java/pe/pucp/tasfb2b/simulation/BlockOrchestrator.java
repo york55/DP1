@@ -50,19 +50,27 @@ public class BlockOrchestrator {
     }
 
     public void pause(Long simId) {
+        log.info("ACTION: pause() invocado para simId={}", simId);
         OrchestratorState state = states.get(simId);
         if (state != null) {
             state.paused = true;
+            log.info("Simulación {}: ha sido PAUSADA internamente", simId);
+        } else {
+            log.warn("Simulación {}: intento de pausa, pero estado no encontrado", simId);
         }
     }
 
     public void resume(Long simId) {
+        log.info("ACTION: resume() invocado para simId={}", simId);
         OrchestratorState state = states.get(simId);
         if (state != null) {
             synchronized (state) {
                 state.paused = false;
                 state.notifyAll();
+                log.info("Simulación {}: ha sido REANUDADA internamente", simId);
             }
+        } else {
+            log.warn("Simulación {}: intento de reanudar, pero estado no encontrado", simId);
         }
     }
 
@@ -149,7 +157,10 @@ public class BlockOrchestrator {
                     .build();
 
             log.info("Simulación {}: planificando {} lotes para bloque {}", simId, pending.size(), blockIndex);
+            long startPlanTime = System.currentTimeMillis();
             plannerService.plan(context, sim.getAlgorithm());
+            long endPlanTime = System.currentTimeMillis();
+            log.info("Simulación {}: planificación de bloque {} finalizada exitosamente en {} ms", simId, blockIndex, endPlanTime - startPlanTime);
 
             return new SimulationBlock(blockIndex, blockStart, blockEnd, pending.size());
 

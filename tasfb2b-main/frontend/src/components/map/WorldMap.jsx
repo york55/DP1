@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef } from 'react'
+import { useMemo, useEffect, useRef } from 'react'
 import { MapContainer, TileLayer, useMap } from 'react-leaflet'
 import Box from '@mui/material/Box'
 import AirportMarker from './AirportMarker'
@@ -24,10 +24,11 @@ function MapResizer({ trigger }) {
  * @param {*} resizeTrigger - any value whose change signals a container resize
  */
 function WorldMap({ airports = [], flights = [], simulatedTime = null, resizeTrigger }) {
-  // OPTIMIZATION: Only show IN_FLIGHT routes to avoid massive lag with 800+ polylines.
-  // Rendering all scheduled flights makes Leaflet extremely slow.
+  // Show IN_FLIGHT flights (route + plane icon) and SCHEDULED flights that came from
+  // a tick event (route only, dashed). The fromTick flag limits display to the
+  // ~50-flight tick window instead of the full 800+ DB dataset, avoiding Leaflet lag.
   const visibleFlights = useMemo(() =>
-    flights.filter(f => f.status === 'IN_FLIGHT'),
+    flights.filter(f => f.status === 'IN_FLIGHT' || (f.status === 'SCHEDULED' && f.fromTick)),
     [flights]
   )
 
@@ -143,4 +144,4 @@ function WorldMap({ airports = [], flights = [], simulatedTime = null, resizeTri
   )
 }
 
-export default React.memo(WorldMap)
+export default WorldMap

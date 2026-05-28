@@ -400,8 +400,8 @@ public class SimulationEngine {
                         .status(f.getStatus().name())
                         .baggageCapacity(f.getBaggageCapacity())
                         .currentLoad(f.getCurrentLoad())
-                        .departureTime(f.getDepartureTime() != null ? f.getDepartureTime().toString() : null)
-                        .arrivalTime(f.getArrivalTime() != null ? f.getArrivalTime().toString() : null)
+                        .departureTime(f.getDepartureTime() != null ? f.getDepartureTime().toString() + "Z" : null)
+                        .arrivalTime(f.getArrivalTime() != null ? f.getArrivalTime().toString() + "Z" : null)
                         .airlineName(f.getAirline() != null ? f.getAirline().getName() : null)
                         .build())
                 .collect(Collectors.toList());

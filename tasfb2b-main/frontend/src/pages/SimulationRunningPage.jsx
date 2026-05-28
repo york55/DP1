@@ -42,7 +42,7 @@ export default function SimulationRunningPage() {
     planningProgress,
   } = useSimulationContext()
 
-  const { status, simulatedTime, elapsedSeconds, config } = simulationState
+  const { status, simulatedTime, elapsedSeconds, config, currentDay } = simulationState
 
   // Sidebar resize / collapse state
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
@@ -136,9 +136,11 @@ export default function SimulationRunningPage() {
             />
           )}
 
-          <Typography variant="caption" sx={{ color: '#90CAF9', fontSize: '0.7rem' }}>
-            Período: {config?.period || 0} días
-          </Typography>
+          <Chip
+            label={`Día ${currentDay || 1}/${config?.period || 0}`}
+            size="small"
+            sx={{ backgroundColor: '#1565C0', color: '#FFFFFF', fontWeight: 700, fontSize: '0.75rem', height: 24 }}
+          />
 
           <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.5 }} />
 
