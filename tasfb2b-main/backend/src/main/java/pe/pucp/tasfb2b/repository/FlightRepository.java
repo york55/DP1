@@ -57,7 +57,9 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
     List<Flight> findActiveFlightsForTick(@Param("until") LocalDateTime until);
 
     @Query("SELECT DISTINCT f FROM Flight f JOIN FETCH f.originAirport JOIN FETCH f.destinationAirport " +
-           "WHERE (f.status = 'IN_FLIGHT' OR (f.status = 'SCHEDULED' AND f.departureTime <= :until)) " +
+           "WHERE (f.status = 'IN_FLIGHT' " +
+           "OR (f.status = 'SCHEDULED' AND f.departureTime <= :until) " +
+           "OR (f.status = 'LANDED' AND f.arrivalTime >= :since)) " +
            "AND EXISTS (SELECT 1 FROM RouteLeg rl WHERE rl.flight = f)")
-    List<Flight> findAssignedFlightsForTick(@Param("until") LocalDateTime until);
+    List<Flight> findAssignedFlightsForTick(@Param("until") LocalDateTime until, @Param("since") LocalDateTime since);
 }

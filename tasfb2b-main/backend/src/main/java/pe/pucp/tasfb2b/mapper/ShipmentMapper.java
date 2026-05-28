@@ -28,4 +28,17 @@ public class ShipmentMapper {
 
         return dto;
     }
+
+    public ShipmentDto batchToDto(pe.pucp.tasfb2b.domain.BaggageBatch b) {
+        ShipmentDto dto = new ShipmentDto();
+        dto.setId(b.getId());
+        dto.setBatchId(b.getId());
+        dto.setStatus(b.getStatus().name());
+        dto.setQuantity(b.getQuantity());
+        if (b.getOriginAirport() != null) dto.setOriginIata(b.getOriginAirport().getIataCode());
+        if (b.getDestinationAirport() != null) dto.setDestinationIata(b.getDestinationAirport().getIataCode());
+        if (b.getAirline() != null) dto.setAirline(b.getAirline().getIataCode());
+        dto.setCreatedAt(b.getCreatedAt());
+        return dto;
+    }
 }

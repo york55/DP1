@@ -25,6 +25,8 @@ public class SimulationTickEvent {
     private long waitingBags;
     private long delayedBags;
 
+    private java.util.Map<String, Long> shipmentCounts;
+
     @Data
     @Builder
     public static class KpisPayload {

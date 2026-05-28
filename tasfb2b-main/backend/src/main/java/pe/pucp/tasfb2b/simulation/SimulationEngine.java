@@ -377,7 +377,7 @@ public class SimulationEngine {
     private void publishTick(Simulation sim, LocalDateTime simNow, SimulationClock clock,
                               KpiSnapshot kpi, long elapsedSec) {
         List<Airport> airports = airportRepo.findAll();
-        List<Flight> activeFlights = flightRepo.findAssignedFlightsForTick(simNow.plusHours(24));
+        List<Flight> activeFlights = flightRepo.findAssignedFlightsForTick(simNow.plusHours(24), simNow.minusHours(1));
 
         List<SimulationTickEvent.AirportPayload> airportPayloads = airports.stream()
                 .map(a -> {
@@ -412,6 +412,13 @@ public class SimulationEngine {
         long delayedBags   = batchRepo.sumQuantityByStatus(BatchStatus.DELAYED);
         long waitingBags   = batchRepo.sumQuantityByStatus(BatchStatus.IN_ORIGIN);
 
+        // Shipment status counts for sidebar
+        Map<String, Long> shipmentCounts = new HashMap<>();
+        for (BatchStatus bs : BatchStatus.values()) {
+            long count = batchRepo.findByStatus(bs).size();
+            shipmentCounts.put(bs.name(), count);
+        }
+
         SimulationTickEvent event = SimulationTickEvent.builder()
                 .simulationId(sim.getId())
                 .simulatedDay(clock.getSimulatedDay())
@@ -431,6 +438,7 @@ public class SimulationEngine {
                 .inTransitBags(inTransitBags)
                 .waitingBags(waitingBags)
                 .delayedBags(delayedBags)
+                .shipmentCounts(shipmentCounts)
                 .build();
 
         eventPublisher.publishTick(sim.getId(), event);

@@ -46,8 +46,8 @@ public class ShipmentService {
     }
 
     public List<ShipmentDto> findAll() {
-        return shipmentRepo.findAll().stream()
-                .map(shipmentMapper::toDto)
+        return batchRepo.findAll().stream()
+                .map(shipmentMapper::batchToDto)
                 .collect(Collectors.toList());
     }
 
