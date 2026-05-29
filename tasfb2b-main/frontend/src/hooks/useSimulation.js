@@ -109,7 +109,7 @@ export function useSimulation() {
   const refreshInFlightFlights = useCallback(async () => {
     if (statusRef.current !== 'running') return
     try {
-      const inFlightList = await flightApi.getAll('IN_FLIGHT')
+      const inFlightList = await flightApi.getAll('IN_FLIGHT', true)
       if (!Array.isArray(inFlightList) || inFlightList.length === 0) return
 
       setSimulationData(prev => {
@@ -397,7 +397,7 @@ export function useSimulation() {
 
       const [realAirports, realFlights] = await Promise.allSettled([
         airportApi.getAll(),
-        flightApi.getAll(),
+        flightApi.getAll(null, true),
       ])
 
       const nextAirports = realAirports.status === 'fulfilled'
@@ -504,7 +504,7 @@ export function useSimulation() {
 
         const [realAirports, realFlights] = await Promise.allSettled([
           airportApi.getAll(),
-          flightApi.getAll(),
+          flightApi.getAll(null, true),
         ])
 
         const nextAirports = realAirports.status === 'fulfilled'

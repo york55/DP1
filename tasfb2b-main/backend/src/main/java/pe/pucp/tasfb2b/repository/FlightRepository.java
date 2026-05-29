@@ -62,4 +62,15 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
            "OR (f.status = 'LANDED' AND f.arrivalTime >= :since)) " +
            "AND EXISTS (SELECT 1 FROM RouteLeg rl WHERE rl.flight = f)")
     List<Flight> findAssignedFlightsForTick(@Param("until") LocalDateTime until, @Param("since") LocalDateTime since);
+
+    @Query("SELECT DISTINCT f FROM Flight f " +
+           "JOIN FETCH f.originAirport JOIN FETCH f.destinationAirport " +
+           "WHERE f.status = :status " +
+           "AND EXISTS (SELECT 1 FROM RouteLeg rl WHERE rl.flight = f)")
+    List<Flight> findByStatusWithRouteLegs(@Param("status") FlightStatus status);
+
+    @Query("SELECT DISTINCT f FROM Flight f " +
+           "JOIN FETCH f.originAirport JOIN FETCH f.destinationAirport " +
+           "WHERE EXISTS (SELECT 1 FROM RouteLeg rl WHERE rl.flight = f)")
+    List<Flight> findAllWithRouteLegs();
 }

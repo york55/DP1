@@ -23,12 +23,17 @@ public class FlightController {
 
     @GetMapping
     public ResponseEntity<List<FlightDto>> findAll(
-            @RequestParam(required = false) String status) {
-        log.debug("ACTION list_flights status={}", status);
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false, defaultValue = "false") boolean assignedOnly) {
+        log.debug("ACTION list_flights status={} assignedOnly={}", status, assignedOnly);
         if (status != null) {
-            return ResponseEntity.ok(flightService.findByStatus(FlightStatus.valueOf(status)));
+            return ResponseEntity.ok(assignedOnly
+                    ? flightService.findByStatusAssigned(FlightStatus.valueOf(status))
+                    : flightService.findByStatus(FlightStatus.valueOf(status)));
         }
-        return ResponseEntity.ok(flightService.findAll());
+        return ResponseEntity.ok(assignedOnly
+                ? flightService.findAllAssigned()
+                : flightService.findAll());
     }
 
     @PostMapping("/{id}/cancel")

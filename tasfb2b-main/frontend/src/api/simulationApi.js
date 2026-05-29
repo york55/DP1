@@ -16,8 +16,8 @@ export const airportApi = {
 }
 
 export const flightApi = {
-  getAll: (status) => {
-    const params = status ? { status } : {}
+  getAll: (status, assignedOnly = false) => {
+    const params = { ...(status ? { status } : {}), ...(assignedOnly ? { assignedOnly: true } : {}) }
     return client.get('/flights', { params }).then(r => r.data)
   },
   cancel: (id, reason) => client.post(`/flights/${id}/cancel`, { reason }).then(r => r.data),

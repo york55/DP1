@@ -50,6 +50,18 @@ public class FlightService {
                 .collect(Collectors.toList());
     }
 
+    public List<FlightDto> findAllAssigned() {
+        return flightRepo.findAllWithRouteLegs().stream()
+                .map(flightMapper::toDto)
+                .collect(Collectors.toList());
+    }
+
+    public List<FlightDto> findByStatusAssigned(FlightStatus status) {
+        return flightRepo.findByStatusWithRouteLegs(status).stream()
+                .map(flightMapper::toDto)
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public FlightDto cancelFlight(Long flightId, String reason, LocalDateTime simNow) {
         Flight flight = flightRepo.findById(flightId)
