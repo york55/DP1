@@ -61,6 +61,7 @@ export function useSimulation() {
   const statusRef = useRef('idle')
   const simIdRef = useRef(null)
   const shipmentPollRef = useRef(null)
+  const flightPollRef = useRef(null)
 
   // Refs for smooth timer interpolation between ticks
   const lastTickSimTimeRef = useRef(null)
@@ -99,6 +100,49 @@ export function useSimulation() {
       })
     }, 1000)
     return () => clearInterval(id)
+  }, [])
+
+  // Periodically fetch IN_FLIGHT flights from the REST API and merge them into state.
+  // This is the same thing reconnect() does on F5 — it catches flights that became
+  // IN_FLIGHT via processDepartures even when planning produced no route legs (so the
+  // WebSocket tick query never includes them).
+  const refreshInFlightFlights = useCallback(async () => {
+    if (statusRef.current !== 'running') return
+    try {
+      const inFlightList = await flightApi.getAll('IN_FLIGHT')
+      if (!Array.isArray(inFlightList) || inFlightList.length === 0) return
+
+      setSimulationData(prev => {
+        const apiMap = new Map(inFlightList.map(f => [String(f.id), f]))
+
+        // Update existing flights whose status is now IN_FLIGHT
+        const updated = prev.flights.map(f => {
+          const apiF = apiMap.get(String(f.id)) || apiMap.get(String(f.backendId))
+          if (!apiF) return f
+          apiMap.delete(String(apiF.id)) // mark as matched
+          return { ...f, status: 'IN_FLIGHT', bagsAboard: apiF.currentLoad, capacity: apiF.baggageCapacity || f.capacity }
+        })
+
+        // Append any IN_FLIGHT flights that weren't in the initial load at all
+        const existingIds = new Set(prev.flights.map(f => String(f.id || f.backendId)))
+        const appended = inFlightList
+          .filter(f => !existingIds.has(String(f.id)))
+          .map(f => ({
+            ...f,
+            origin: f.originIata,
+            destination: f.destinationIata,
+            departureUTC: f.departureTime ? (String(f.departureTime).endsWith('Z') ? f.departureTime : f.departureTime + 'Z') : null,
+            arrivalUTC: f.arrivalTime ? (String(f.arrivalTime).endsWith('Z') ? f.arrivalTime : f.arrivalTime + 'Z') : null,
+            capacity: f.baggageCapacity,
+            bagsAboard: f.currentLoad,
+            airline: f.airlineName || f.airlineIata || '—',
+            backendId: f.id,
+          }))
+
+        if (appended.length === 0 && !updated.some((f, i) => f !== prev.flights[i])) return prev
+        return { ...prev, flights: appended.length > 0 ? [...updated, ...appended] : updated }
+      })
+    } catch (e) { /* silent */ }
   }, [])
 
   const loadShipments = useCallback(async () => {
@@ -404,6 +448,8 @@ export function useSimulation() {
       await loadShipments()
       if (shipmentPollRef.current) clearInterval(shipmentPollRef.current)
       shipmentPollRef.current = setInterval(loadShipments, 5000)
+      if (flightPollRef.current) clearInterval(flightPollRef.current)
+      flightPollRef.current = setInterval(refreshInFlightFlights, 5000)
     } catch (err) {
       simLogger.error('Error al iniciar simulación:', err.message)
       console.warn('[useSimulation] Backend no disponible:', err.message)
@@ -411,7 +457,7 @@ export function useSimulation() {
       statusRef.current = 'idle'
       setSimulationState(prev => ({ ...prev, status: 'idle' }))
     }
-  }, [handleTickEvent, handleAlert, addNotification, loadShipments])
+  }, [handleTickEvent, handleAlert, addNotification, loadShipments, refreshInFlightFlights])
 
   const pauseSimulation = useCallback(async () => {
     const id = simIdRef.current
@@ -508,6 +554,8 @@ export function useSimulation() {
         await loadShipments()
         if (shipmentPollRef.current) clearInterval(shipmentPollRef.current)
         shipmentPollRef.current = setInterval(loadShipments, 5000)
+        if (flightPollRef.current) clearInterval(flightPollRef.current)
+        flightPollRef.current = setInterval(refreshInFlightFlights, 5000)
 
         if (active.status === 'PLAYING' || active.status === 'BUFFERING' || active.status === 'PAUSED') {
           connectSimulationWebSocket(active.id, handleTickEvent, handleAlert, handlePlanProgress)
@@ -525,6 +573,7 @@ export function useSimulation() {
     return () => {
       disconnectSimulationWebSocket()
       if (shipmentPollRef.current) clearInterval(shipmentPollRef.current)
+      if (flightPollRef.current) clearInterval(flightPollRef.current)
     }
   }, [])
 

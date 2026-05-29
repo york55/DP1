@@ -22,6 +22,11 @@ import pe.pucp.tasfb2b.websocket.WebSocketEventPublisher;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 @RequiredArgsConstructor
@@ -41,8 +46,11 @@ public class BlockOrchestrator {
 
     private final ConcurrentHashMap<Long, OrchestratorState> states = new ConcurrentHashMap<>();
 
+    // Global counter for unique planner thread names
+    private static final AtomicInteger plannerThreadCounter = new AtomicInteger(0);
+
     public void start(Long simId) {
-        OrchestratorState state = new OrchestratorState();
+        OrchestratorState state = new OrchestratorState(simId);
         states.put(simId, state);
         Thread thread = new Thread(() -> runPipeline(simId), "orchestrator-" + simId);
         state.thread = thread;
@@ -81,11 +89,18 @@ public class BlockOrchestrator {
             synchronized (state) {
                 state.notifyAll();
             }
+            // Cancel any in-flight background planning
+            if (state.nextBlockFuture != null) {
+                state.nextBlockFuture.cancel(true);
+            }
+            state.plannerExecutor.shutdownNow();
             if (state.thread != null) {
                 state.thread.interrupt();
             }
         }
     }
+
+    // ─── Pipeline ────────────────────────────────────────────────────────────────
 
     private void runPipeline(Long simId) {
         try {
@@ -100,25 +115,38 @@ public class BlockOrchestrator {
                 LocalDateTime blockStart = sim.getStartDate().atStartOfDay().plusDays(day);
                 LocalDateTime blockEnd = blockStart.plusDays(1);
 
-                // BUFFERING: plan this block
-                log.info("Simulación {}: BUFFERING bloque {} (día {} de {})", simId, day, day + 1, totalDays);
-                setStatus(simId, SimulationStatus.BUFFERING);
-                webSocketPublisher.publishBlockStart(simId, day, totalDays);
+                SimulationBlock block;
 
-                SimulationBlock block = planBlock(simId, sim, blockStart, blockEnd, day, simEnd);
+                if (day == 0) {
+                    // First block must be planned synchronously — nothing to play yet.
+                    log.info("Simulación {}: BUFFERING bloque 0 (día 1 de {})", simId, totalDays);
+                    setStatus(simId, SimulationStatus.BUFFERING);
+                    webSocketPublisher.publishBlockStart(simId, 0, totalDays);
+                    block = planBlock(simId, sim, blockStart, blockEnd, 0, simEnd);
+                } else {
+                    // Subsequent blocks were planned in background during the previous playback.
+                    // Resolve the future — should already be done; log a warning if we had to wait.
+                    block = resolveNextBlock(state, day, blockStart, blockEnd);
+                }
 
                 state = states.get(simId);
                 if (state == null || state.stopped) break;
 
-                // PLAYING: tick through this block
                 log.info("Simulación {}: PLAYING bloque {} ({} lotes planificados)", simId, day, block.batchesPlanned());
                 setStatus(simId, SimulationStatus.PLAYING);
+
+                // Submit planning of the NEXT block in background BEFORE starting playback of current block.
+                // This way ALNS and visualization run in parallel — no freeze between days.
+                if (day + 1 < totalDays) {
+                    submitBackgroundPlanning(simId, sim, day + 1, totalDays, simEnd, state);
+                }
 
                 playBlock(simId, block, state);
             }
 
             OrchestratorState state = states.remove(simId);
             if (state != null && !state.stopped) {
+                state.plannerExecutor.shutdown();
                 setStatus(simId, SimulationStatus.FINISHED);
                 simulationEngine.removeState(simId);
                 log.info("Simulación {} completada (pipeline finalizado)", simId);
@@ -130,12 +158,71 @@ public class BlockOrchestrator {
         } catch (Exception e) {
             log.error("Error fatal en pipeline de simulación {}", simId, e);
             setStatus(simId, SimulationStatus.FINISHED);
-            states.remove(simId);
+            OrchestratorState s = states.remove(simId);
+            if (s != null) s.plannerExecutor.shutdownNow();
         }
     }
 
+    /**
+     * Submits planning of {@code nextDay} to the per-simulation background executor.
+     * The result is stored in {@code state.nextBlockFuture} and retrieved by
+     * {@link #resolveNextBlock} at the start of the next iteration.
+     * <p>
+     * We deliberately do NOT emit BLOCK_START here: that event triggers the
+     * planning overlay on the frontend, which would freeze the visualization.
+     * ALNS will still push OPTIMIZING events that update the progress bar without
+     * changing the main simulation status.
+     */
+    private void submitBackgroundPlanning(Long simId, Simulation sim, int nextDay, int totalDays,
+                                          LocalDateTime simEnd, OrchestratorState state) {
+        LocalDateTime nextStart = sim.getStartDate().atStartOfDay().plusDays(nextDay);
+        LocalDateTime nextEnd   = nextStart.plusDays(1);
+
+        log.info("Simulación {}: lanzando planificación en segundo plano del bloque {} (día {} de {})",
+                simId, nextDay, nextDay + 1, totalDays);
+
+        state.nextBlockFuture = state.plannerExecutor.submit(
+                () -> planBlock(simId, sim, nextStart, nextEnd, nextDay, simEnd)
+        );
+    }
+
+    /**
+     * Waits for the background-planned block future.
+     * If planning finished before playback ended (the happy path), this returns immediately.
+     * If it's still running, we block and log a warning — that gap will be visible in the UI.
+     */
+    private SimulationBlock resolveNextBlock(OrchestratorState state, int day,
+                                             LocalDateTime blockStart, LocalDateTime blockEnd) {
+        if (state.nextBlockFuture == null) {
+            log.warn("Simulación: no había future para bloque {} — se devuelve bloque vacío", day);
+            return new SimulationBlock(day, blockStart, blockEnd, 0);
+        }
+        try {
+            long waitStart = System.currentTimeMillis();
+            SimulationBlock result = state.nextBlockFuture.get();
+            long waited = System.currentTimeMillis() - waitStart;
+            if (waited > 200) {
+                log.warn("Bloque {} no estaba listo al iniciar playback: esperó {} ms extra (gap visible en visualización). "
+                        + "Considera reducir max-iterations o ampliar el tick-interval.", day, waited);
+            } else {
+                log.info("Bloque {} listo sin espera (planificación paralela exitosa)", day);
+            }
+            state.nextBlockFuture = null;
+            return result;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new SimulationBlock(day, blockStart, blockEnd, 0);
+        } catch (ExecutionException e) {
+            log.error("Error en planificación paralela del bloque {}: {}", day,
+                    e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+            return new SimulationBlock(day, blockStart, blockEnd, 0);
+        }
+    }
+
+    // ─── Planning & Playback ─────────────────────────────────────────────────────
+
     private SimulationBlock planBlock(Long simId, Simulation sim, LocalDateTime blockStart,
-                                       LocalDateTime blockEnd, int blockIndex, LocalDateTime simEnd) {
+                                      LocalDateTime blockEnd, int blockIndex, LocalDateTime simEnd) {
         try {
             List<BaggageBatch> pending = batchRepo.findPendingBatches(blockEnd);
             if (pending.isEmpty()) {
@@ -160,7 +247,8 @@ public class BlockOrchestrator {
             long startPlanTime = System.currentTimeMillis();
             plannerService.plan(context, sim.getAlgorithm());
             long endPlanTime = System.currentTimeMillis();
-            log.info("Simulación {}: planificación de bloque {} finalizada exitosamente en {} ms", simId, blockIndex, endPlanTime - startPlanTime);
+            log.info("Simulación {}: planificación de bloque {} finalizada en {} ms", simId, blockIndex,
+                    endPlanTime - startPlanTime);
 
             return new SimulationBlock(blockIndex, blockStart, blockEnd, pending.size());
 
@@ -198,6 +286,8 @@ public class BlockOrchestrator {
         }
     }
 
+    // ─── Helpers ──────────────────────────────────────────────────────────────────
+
     @Transactional
     protected void setStatus(Long simId, SimulationStatus status) {
         simulationRepo.findById(simId).ifPresent(s -> {
@@ -219,9 +309,20 @@ public class BlockOrchestrator {
         );
     }
 
+    // ─── State ────────────────────────────────────────────────────────────────────
+
     static class OrchestratorState {
         volatile boolean paused = false;
         volatile boolean stopped = false;
         Thread thread;
+        final ExecutorService plannerExecutor;
+        volatile Future<SimulationBlock> nextBlockFuture;
+
+        OrchestratorState(Long simId) {
+            int seq = plannerThreadCounter.incrementAndGet();
+            this.plannerExecutor = Executors.newSingleThreadExecutor(
+                    r -> new Thread(r, "planner-bg-" + simId + "-" + seq)
+            );
+        }
     }
 }
