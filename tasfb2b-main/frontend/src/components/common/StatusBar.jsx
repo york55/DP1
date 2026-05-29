@@ -69,14 +69,14 @@ function PlanningBar({ progress }) {
 }
 
 export default function StatusBar() {
-  const { shipments, simulationState, planningProgress } = useSimulationContext()
+  const { shipments, shipmentCounts, simulationState, planningProgress } = useSimulationContext()
   const isPlanning = simulationState?.status === 'planning'
 
   const total = shipments.length
-  const delivered = shipments.filter(s => s.status === 'DELIVERED').length
-  const inTransit = shipments.filter(s => s.status === 'IN_TRANSIT').length
-  const planned = shipments.filter(s => s.status === 'PLANNED').length
-  const delayed = shipments.filter(s => s.status === 'DELAYED').length
+  const delivered = shipmentCounts?.DELIVERED ?? shipments.filter(s => s.status === 'DELIVERED').length
+  const inTransit = shipmentCounts?.IN_TRANSIT ?? shipments.filter(s => s.status === 'IN_TRANSIT').length
+  const planned   = shipmentCounts?.IN_ORIGIN  ?? shipments.filter(s => s.status === 'IN_ORIGIN').length
+  const delayed   = shipmentCounts?.DELAYED    ?? shipments.filter(s => s.status === 'DELAYED').length
 
   return (
     <Box

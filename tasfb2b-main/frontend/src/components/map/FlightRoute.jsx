@@ -13,9 +13,9 @@ function lerp(a, b, t) {
 
 const createPlaneIcon = (angle) => L.divIcon({
   className: '',
-  html: `<div style="transform: rotate(${angle}deg); font-size:24px; line-height:1; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4)); color: #1F3864;">✈️</div>`,
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
+  html: `<div style="transform: rotate(${angle}deg); font-size:14px; line-height:1; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.4)); color: #1F3864;">✈️</div>`,
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
 })
 
 /**
@@ -66,9 +66,9 @@ function FlightRoute({ flight, airports = [], simulatedTime }) {
   ]
 
   const lineColor = isInFlight ? '#FB8C00' : '#2E75B6'
-  const lineWeight = isInFlight ? 1.2 : 1.5
-  const lineOpacity = isInFlight ? 0.9 : 0.4
-  const dashArray = isInFlight ? null : '4 6'
+  const lineWeight = isInFlight ? 1.5 : 1.2
+  const lineOpacity = isInFlight ? 0.85 : 0.4
+  const dashArray = isInFlight ? '8 6' : '4 6'
 
   const planeIcon = useMemo(() => createPlaneIcon(angle), [angle])
 

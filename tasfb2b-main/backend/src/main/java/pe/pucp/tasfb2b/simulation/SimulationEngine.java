@@ -100,7 +100,7 @@ public class SimulationEngine {
             checkSlaViolations(simNow);
 
             // 5. Update airport occupancy
-            updateAirportOccupancy(simNow);
+            updateAirportOccupancy();
 
             // 6. Persist KPI snapshot
             KpiSnapshot kpi = persistKpi(sim, simNow);
@@ -306,28 +306,26 @@ public class SimulationEngine {
         }
     }
 
-    private static final int DELIVERED_STORAGE_HOURS = 5;
-
-    private void updateAirportOccupancy(LocalDateTime simNow) {
+    private void updateAirportOccupancy() {
         List<Airport> airports = airportRepo.findAll();
 
         // Bags waiting at origin (not yet dispatched)
         List<BaggageBatch> waitingBatches = batchRepo.findByStatus(BatchStatus.IN_ORIGIN);
 
-        // Bags that arrived at destination within the last 5 simulated hours
-        LocalDateTime deliveryCutoff = simNow.minusHours(DELIVERED_STORAGE_HOURS);
-        List<BaggageBatch> recentlyDelivered = batchRepo.findRecentlyDelivered(deliveryCutoff);
+        // All bags delivered to destination — they occupy warehouse space permanently
+        // until the simulation ends (no pickup event is modeled).
+        List<BaggageBatch> deliveredBatches = batchRepo.findByStatus(BatchStatus.DELIVERED);
 
         for (Airport airport : airports) {
             long waiting = waitingBatches.stream()
                     .filter(b -> b.getOriginAirport().getId().equals(airport.getId()))
                     .mapToLong(BaggageBatch::getQuantity)
                     .sum();
-            long justArrived = recentlyDelivered.stream()
+            long delivered = deliveredBatches.stream()
                     .filter(b -> b.getDestinationAirport().getId().equals(airport.getId()))
                     .mapToLong(BaggageBatch::getQuantity)
                     .sum();
-            int occupancy = (int) Math.min(waiting + justArrived, airport.getWarehouseCapacity());
+            int occupancy = (int) Math.min(waiting + delivered, airport.getWarehouseCapacity());
             airport.setCurrentOccupancy(occupancy);
 
             double pct = airport.getOccupancyPct();

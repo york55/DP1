@@ -137,7 +137,7 @@ function PlanningPanel({ progress }) {
   )
 }
 
-function StatusSummary({ simulationState, shipments, planningProgress }) {
+function StatusSummary({ simulationState, shipments, shipmentCounts, planningProgress }) {
   const { status } = simulationState || {}
   const isPlanning = status === 'planning'
 
@@ -166,13 +166,14 @@ function StatusSummary({ simulationState, shipments, planningProgress }) {
     )
   }
 
-  if (!shipments?.length) return null
+  const hasCounts = shipmentCounts && Object.keys(shipmentCounts).length > 0
+  if (!hasCounts && !shipments?.length) return null
 
   const counts = {
-    delivered: shipments.filter(s => s.status === 'DELIVERED').length,
-    transit:   shipments.filter(s => s.status === 'IN_TRANSIT').length,
-    planned:   shipments.filter(s => s.status === 'PLANNED').length,
-    delayed:   shipments.filter(s => s.status === 'DELAYED').length,
+    delivered: shipmentCounts?.DELIVERED  ?? shipments.filter(s => s.status === 'DELIVERED').length,
+    transit:   shipmentCounts?.IN_TRANSIT ?? shipments.filter(s => s.status === 'IN_TRANSIT').length,
+    planned:   shipmentCounts?.IN_ORIGIN  ?? shipments.filter(s => s.status === 'IN_ORIGIN').length,
+    delayed:   shipmentCounts?.DELAYED    ?? shipments.filter(s => s.status === 'DELAYED').length,
   }
 
   return (
@@ -202,7 +203,7 @@ export default function DevFooter() {
   const [tab, setTab] = useState(0)
   const [backendLogs, setBackendLogs] = useState([])
   const [frontendLogs, setFrontendLogs] = useState([])
-  const { planningProgress, simulationState, shipments } = useSimulationContext()
+  const { planningProgress, simulationState, shipments, shipmentCounts } = useSimulationContext()
 
   const fetchBackend = useCallback(async () => {
     try {
@@ -306,6 +307,7 @@ export default function DevFooter() {
         <StatusSummary
           simulationState={simulationState}
           shipments={shipments}
+          shipmentCounts={shipmentCounts}
           planningProgress={planningProgress}
         />
 

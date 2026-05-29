@@ -5,14 +5,27 @@ import AirportMarker from './AirportMarker'
 import FlightRoute from './FlightRoute'
 import MapLegend from './MapLegend'
 
-// Triggers Leaflet's invalidateSize() whenever `trigger` changes, fixing gray
-// zones that appear after the map's container is resized (e.g. sidebar collapse).
 function MapResizer({ trigger }) {
   const map = useMap()
   useEffect(() => {
     const id = setTimeout(() => map.invalidateSize(), 50)
     return () => clearTimeout(id)
   }, [trigger, map])
+  return null
+}
+
+// Creates a custom Leaflet pane for airport markers so they always render
+// above flight route polylines (overlayPane z-index is 400; airports get 450).
+function AirportPaneSetup() {
+  const map = useMap()
+  useEffect(() => {
+    if (!map.getPane('airportPane')) {
+      const pane = map.createPane('airportPane')
+      pane.style.zIndex = 450
+      // Pane is SVG-based — pointer events must be enabled explicitly
+      pane.style.pointerEvents = 'auto'
+    }
+  }, [map])
   return null
 }
 
@@ -24,11 +37,9 @@ function MapResizer({ trigger }) {
  * @param {*} resizeTrigger - any value whose change signals a container resize
  */
 function WorldMap({ airports = [], flights = [], simulatedTime = null, resizeTrigger }) {
-  // Show IN_FLIGHT flights (route + plane icon) and SCHEDULED flights that came from
-  // a tick event (route only, dashed). The fromTick flag limits display to the
-  // ~50-flight tick window instead of the full 800+ DB dataset, avoiding Leaflet lag.
+  // Show all IN_FLIGHT flights with valid airport assignments.
   const visibleFlights = useMemo(() =>
-    flights.filter(f => f.status === 'IN_FLIGHT' || (f.status === 'SCHEDULED' && f.fromTick)),
+    flights.filter(f => f.status === 'IN_FLIGHT'),
     [flights]
   )
 
@@ -74,7 +85,7 @@ function WorldMap({ airports = [], flights = [], simulatedTime = null, resizeTri
     }
 
     // Print the summary report
-    console.group(`[WorldMap] Flight Draw Report #${logIndex} — SimTime: ${simulatedTime ? simulatedTime.toISOString() : 'null'}`)
+    console.group(`[WorldMap] Flight Draw Report #${logIndex}`)
     console.log(`📊 Total flights received: ${flights.length} | Airports loaded: ${airports.length}`)
     console.log(`✅ Drawn (IN_FLIGHT + valid airports): ${drawn.length}`)
     if (drawn.length > 0) {
@@ -96,7 +107,7 @@ function WorldMap({ airports = [], flights = [], simulatedTime = null, resizeTri
     }, {})
     console.log('📋 Status breakdown:', statusCounts)
     console.groupEnd()
-  }, [flights, airports, simulatedTime])
+  }, [flights, airports])
   // ─────────────────────────────────────────────────────────────────────────────
 
   return (
@@ -117,6 +128,7 @@ function WorldMap({ airports = [], flights = [], simulatedTime = null, resizeTri
           noWrap={true}
         />
         <MapResizer trigger={resizeTrigger} />
+        <AirportPaneSetup />
 
         {/* Flight routes and Planes */}
         {visibleFlights.map(flight => (
