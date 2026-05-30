@@ -488,7 +488,7 @@ export function useSimulation() {
     async function reconnect() {
       try {
         const sims = await simulationApi.getAll()
-        const actives = sims.filter(s => s.status === 'PLAYING' || s.status === 'BUFFERING' || s.status === 'PAUSED')
+        const actives = sims.filter(s => ['PLAYING', 'BUFFERING', 'PAUSED', 'FINISHED'].includes(s.status))
         if (!actives.length) return
         const active = actives[actives.length - 1]
 
@@ -499,7 +499,8 @@ export function useSimulation() {
         simTimeRef.current = simTime
         const frontendStatus = active.status === 'PLAYING' ? 'running'
           : active.status === 'BUFFERING' ? 'planning'
-            : 'paused'
+            : active.status === 'FINISHED' ? 'finished'
+              : 'paused'
         statusRef.current = frontendStatus
 
         const [realAirports, realFlights] = await Promise.allSettled([
@@ -550,6 +551,27 @@ export function useSimulation() {
           config: { period: active.periodDays, startDate: new Date(active.startDate) },
           simulationId: active.id,
         })
+
+        if (frontendStatus === 'finished') {
+          try {
+            const kpiList = await simulationApi.getKpis(active.id)
+            if (kpiList && kpiList.length > 0) {
+              const latest = kpiList[kpiList.length - 1]
+              setSimulationData(prev => ({
+                ...prev,
+                kpis: {
+                  ...prev.kpis,
+                  onTimeDeliveryPct: latest.onTimePct ?? 100,
+                  avgFlightOccupancy: latest.avgFlightOccupancy ?? 0,
+                  avgWarehouseOccupancy: latest.avgWarehouseOccupancy ?? 0,
+                  totalDelayedBags: latest.delayedCount ?? 0,
+                }
+              }))
+            }
+          } catch (e) {
+            console.error('Error fetching final KPIs:', e)
+          }
+        }
 
         await loadShipments()
         if (shipmentPollRef.current) clearInterval(shipmentPollRef.current)

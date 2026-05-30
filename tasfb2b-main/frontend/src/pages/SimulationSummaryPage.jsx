@@ -86,7 +86,16 @@ export default function SimulationSummaryPage() {
   const navigate = useNavigate()
   const { simulationState, airports, flights, shipments, kpis } = useSimulationContext()
 
-  const { simulatedTime, elapsedSeconds, config } = simulationState
+  const { simulatedTime, elapsedSeconds, config, status } = simulationState
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (status === 'idle') {
+        navigate('/')
+      }
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [status, navigate])
 
   const total = shipments.length
   const delivered = shipments.filter(s => s.status === 'DELIVERED').length
