@@ -32,6 +32,9 @@ public class SimulationService {
     private final SimulationRepository simulationRepo;
     private final FlightRepository flightRepo;
     private final FlightCancellationRepository cancellationRepo;
+    private final ShipmentRepository shipmentRepo;
+    private final BaggageBatchRepository batchRepo;
+    private final AirportRepository airportRepo;
     private final SimulationEngine simulationEngine;
     private final BlockOrchestrator blockOrchestrator;
     private final KpiService kpiService;
@@ -80,7 +83,7 @@ public class SimulationService {
             throw new IllegalArgumentException("La simulación no puede iniciarse en estado: " + sim.getStatus());
         }
 
-        resetFlightsForSimulation(sim);
+        resetForSimulation(sim);
         sim.setStatus(SimulationStatus.BUFFERING);
         simulationRepo.save(sim);
         simulationEngine.initSimulation(id);
@@ -154,7 +157,20 @@ public class SimulationService {
                 .toList();
     }
 
-    private void resetFlightsForSimulation(Simulation sim) {
+    private void resetForSimulation(Simulation sim) {
+        // 1. Delete all shipments so findUnroutedBatches finds batches again
+        long shipmentCount = shipmentRepo.count();
+        shipmentRepo.deleteAllInBatch();
+        log.info("Eliminados {} shipments para simulación {}", shipmentCount, sim.getId());
+
+        // 2. Reset all batch statuses to IN_ORIGIN
+        batchRepo.resetAllToInOrigin();
+        log.info("Reset {} lotes a IN_ORIGIN para simulación {}", batchRepo.count(), sim.getId());
+
+        // 3. Reset airport occupancies to 0
+        airportRepo.resetAllOccupancies();
+
+        // 4. Reset flights within simulation window
         LocalDateTime start = sim.getStartDate().atStartOfDay();
         LocalDateTime end = start.plusDays(sim.getPeriodDays() != null ? sim.getPeriodDays() : 5);
         List<Flight> flights = flightRepo.findAllBetween(start, end);

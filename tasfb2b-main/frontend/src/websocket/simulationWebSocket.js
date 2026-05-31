@@ -8,12 +8,13 @@ export function connectSimulationWebSocket(simulationId, onTick, onAlert, onPlan
     stompClient.deactivate()
   }
   const wsUrl = import.meta.env.VITE_WS_URL || '/ws';
+  const connectStart = Date.now()
 
   stompClient = new Client({
     webSocketFactory: () => new SockJS(wsUrl),
     reconnectDelay: 3000,
     onConnect: () => {
-      console.log('[WS] Conectado al WebSocket STOMP')
+      console.log(`[WS] Connected in ${Date.now() - connectStart}ms to sim ${simulationId}`)
 
       stompClient.subscribe(`/topic/simulation/${simulationId}/tick`, (msg) => {
         try {

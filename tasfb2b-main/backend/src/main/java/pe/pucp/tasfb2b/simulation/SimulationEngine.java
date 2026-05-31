@@ -82,28 +82,58 @@ public class SimulationEngine {
             }
 
             SimulationClock clock = state.clock();
+            int tickNum = clock.getTickCount(); // before advance
+            long tickWall = System.currentTimeMillis();
+
             LocalDateTime simNow = clock.advance();
+            log.debug("[SIM-{}] tick#{} simTime={} realElapsed={}s",
+                    simulationId, tickNum, simNow.format(TIME_FMT), state.elapsedRealSeconds());
 
             sim.setSimulatedTime(simNow);
             simulationRepo.save(sim);
 
             // 1. Land arrived flights
-            processArrivals(simNow);
+            long t0 = System.currentTimeMillis();
+            int arrivedCount = processArrivals(simNow);
+            log.debug("[SIM-{}] tick#{} arrivals={} ({}ms)", simulationId, tickNum, arrivedCount, System.currentTimeMillis() - t0);
 
             // 2. Depart scheduled flights
-            processDepartures(simNow);
+            long t1 = System.currentTimeMillis();
+            int departedCount = processDepartures(simNow);
+            log.debug("[SIM-{}] tick#{} departures={} ({}ms)", simulationId, tickNum, departedCount, System.currentTimeMillis() - t1);
 
             // 3. Generate cancellations
+            long t2 = System.currentTimeMillis();
             processCancellations(sim, state.rng(), simNow, simulationId);
+            log.debug("[SIM-{}] tick#{} cancellations ({}ms)", simulationId, tickNum, System.currentTimeMillis() - t2);
 
             // 4. Check SLA violations
+            long t3 = System.currentTimeMillis();
             checkSlaViolations(simNow);
+            log.debug("[SIM-{}] tick#{} slaCheck ({}ms)", simulationId, tickNum, System.currentTimeMillis() - t3);
 
             // 5. Update airport occupancy
+            long t4 = System.currentTimeMillis();
             updateAirportOccupancy();
+            log.debug("[SIM-{}] tick#{} occupancy ({}ms)", simulationId, tickNum, System.currentTimeMillis() - t4);
 
             // 6. Persist KPI snapshot
+            long t5 = System.currentTimeMillis();
             KpiSnapshot kpi = persistKpi(sim, simNow);
+            log.debug("[SIM-{}] tick#{} kpi ({}ms)", simulationId, tickNum, System.currentTimeMillis() - t5);
+
+            long processingMs = System.currentTimeMillis() - tickWall;
+            log.debug("[SIM-{}] tick#{} processing={}ms", simulationId, tickNum, processingMs);
+
+            // Log simulated speed ratio every 10 ticks (simulated min advanced / real seconds elapsed)
+            if (tickNum > 0 && tickNum % 10 == 0) {
+                long realMs = System.currentTimeMillis() - state.startMillis();
+                long simMs = (long) tickNum * tickDurationMinutes * 60_000L;
+                double ratio = realMs > 0 ? (double) simMs / realMs : 0;
+                log.info("[SIM-{}] speed: {}x realtime | tick#{} simTime={} realElapsed={}s",
+                        simulationId, String.format("%.1f", ratio), tickNum,
+                        simNow.format(TIME_FMT), state.elapsedRealSeconds());
+            }
 
             // 7. Publish WebSocket event after transaction commits so subscribers see committed data
             final long elapsedSec = state.elapsedRealSeconds();
@@ -126,7 +156,7 @@ public class SimulationEngine {
         }
     }
 
-    private void processArrivals(LocalDateTime simNow) {
+    private int processArrivals(LocalDateTime simNow) {
         List<Flight> arriving = flightRepo.findInFlightArriving(FlightStatus.IN_FLIGHT, simNow);
         for (Flight flight : arriving) {
             flight.setStatus(FlightStatus.LANDED);
@@ -183,9 +213,10 @@ public class SimulationEngine {
             routeLegRepo.saveAll(activeLegs);
         }
         flightRepo.saveAll(arriving);
+        return arriving.size();
     }
 
-    private void processDepartures(LocalDateTime simNow) {
+    private int processDepartures(LocalDateTime simNow) {
         List<Flight> departing = flightRepo.findScheduledDeparting(FlightStatus.SCHEDULED, simNow);
         for (Flight flight : departing) {
             flight.setStatus(FlightStatus.IN_FLIGHT);
@@ -213,6 +244,7 @@ public class SimulationEngine {
             flight.setCurrentLoad(bagsBoarding);
         }
         flightRepo.saveAll(departing);
+        return departing.size();
     }
 
     private void processCancellations(Simulation sim, Random rng, LocalDateTime simNow,
@@ -271,7 +303,11 @@ public class SimulationEngine {
                                 .simulatedNow(simNow)
                                 .build();
 
+                        long replanStart = System.currentTimeMillis();
                         plannerService.replan(affectedBatches, ctx, sim.getAlgorithm());
+                        log.info("[SIM-{}] replan for cancelled flight {} batches={} in {}ms",
+                                simulationId, flight.getId(), affectedBatches.size(),
+                                System.currentTimeMillis() - replanStart);
 
                         eventPublisher.publishAlert(simulationId,
                                 new WebSocketEventPublisher.AlertEvent(
@@ -374,6 +410,7 @@ public class SimulationEngine {
 
     private void publishTick(Simulation sim, LocalDateTime simNow, SimulationClock clock,
                               KpiSnapshot kpi, long elapsedSec) {
+        long pubStart = System.currentTimeMillis();
         List<Airport> airports = airportRepo.findAll();
         List<Flight> activeFlights = flightRepo.findAssignedFlightsForTick(simNow.plusHours(24), simNow.minusHours(1));
 
@@ -440,6 +477,10 @@ public class SimulationEngine {
                 .build();
 
         eventPublisher.publishTick(sim.getId(), event);
+        log.debug("[SIM-{}] publishTick flights={} airports={} bags(total/del/transit/wait/delayed)={}/{}/{}/{}/{} in {}ms",
+                sim.getId(), flightPayloads.size(), airportPayloads.size(),
+                totalBags, deliveredBags, inTransitBags, waitingBags, delayedBags,
+                System.currentTimeMillis() - pubStart);
     }
 
     private void recordStatusChange(Shipment shipment, String oldStatus, String newStatus,

@@ -31,7 +31,9 @@ spring:
 tasf:
   simulation:
     tick-interval-ms: 1000
-    tick-duration-minutes: 30
+    tick-duration-minutes: 120   # 1 real second = 2 simulated hours
+    block-size-hours: 2          # ALNS plans in 2h rolling blocks
+    flight-lookahead-hours: 48   # flights visible to ALNS per block
     default-threshold-amber: 75
     default-threshold-red: 90
   alns:

@@ -142,7 +142,7 @@ export function useSimulation() {
         if (appended.length === 0 && !updated.some((f, i) => f !== prev.flights[i])) return prev
         return { ...prev, flights: appended.length > 0 ? [...updated, ...appended] : updated }
       })
-    } catch (e) { /* silent */ }
+    } catch (e) { simLogger.warn('refreshInFlightFlights error: ' + e.message) }
   }, [])
 
   const loadShipments = useCallback(async () => {
@@ -191,7 +191,7 @@ export function useSimulation() {
           }
         })
       }
-    } catch (e) { /* silent */ }
+    } catch (e) { simLogger.warn('loadShipments error: ' + e.message) }
   }, [])
 
   const addNotification = useCallback((message, type = 'info', persistent = false) => {
@@ -204,7 +204,6 @@ export function useSimulation() {
 
   // Handle WebSocket tick events from backend
   const handleTickEvent = useCallback((event) => {
-    simLogger.info(`Tick recibido: día=${event.simulatedDay}, hora=${event.simulatedTime}`)
     // Use the full ISO datetime from the backend (UTC) when available; fall back to legacy HH:mm parsing
     let simTime
     if (event.simulatedIso) {
@@ -217,13 +216,22 @@ export function useSimulation() {
 
     // Compute simulated-time speed from consecutive ticks for smooth interpolation
     const now = Date.now()
-    if (lastTickSimTimeRef.current && lastTickRealTimeRef.current) {
+    const realDeltaMs = lastTickRealTimeRef.current ? now - lastTickRealTimeRef.current : null
+    if (lastTickSimTimeRef.current && realDeltaMs != null) {
       const simDeltaMs = simTime.getTime() - lastTickSimTimeRef.current.getTime()
-      const realDeltaMs = now - lastTickRealTimeRef.current
       if (realDeltaMs > 500 && simDeltaMs > 0) {
         simMsPerRealMsRef.current = simDeltaMs / realDeltaMs
       }
     }
+
+    simLogger.info(
+      `[TICK] day=${event.simulatedDay} t=${event.simulatedTime}` +
+      ` | realInterval=${realDeltaMs != null ? realDeltaMs.toFixed(0) + 'ms' : 'first'}` +
+      ` | simRatio=${simMsPerRealMsRef.current != null ? (simMsPerRealMsRef.current * 1000).toFixed(0) + 'ms-sim/s-real' : 'n/a'}` +
+      ` | flights=${event.flights?.length ?? 0} airports=${event.airports?.length ?? 0}` +
+      ` | backendElapsed=${event.elapsedRealSeconds}s`
+    )
+
     lastTickSimTimeRef.current = simTime
     lastTickRealTimeRef.current = now
 
@@ -326,6 +334,11 @@ export function useSimulation() {
   }, [])
 
   const handlePlanProgress = useCallback((snap) => {
+    simLogger.info(
+      `[PLAN] phase="${snap.phase}" iter=${snap.iteration}/${snap.maxIterations}` +
+      ` batches=${snap.assignedBatches}/${snap.totalBatches}` +
+      ` obj=${snap.currentObjective != null ? snap.currentObjective.toFixed(2) : 'n/a'}`
+    )
     if (snap.phase === 'BLOCK_START') {
       setPlanningProgress(prev => ({
         ...prev,

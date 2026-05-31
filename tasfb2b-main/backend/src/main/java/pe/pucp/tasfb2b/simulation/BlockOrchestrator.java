@@ -102,46 +102,60 @@ public class BlockOrchestrator {
 
     // ─── Pipeline ────────────────────────────────────────────────────────────────
 
+    @Value("${tasf.simulation.block-size-hours:2}")
+    private int blockSizeHours;
+
+    @Value("${tasf.simulation.flight-lookahead-hours:48}")
+    private int flightLookaheadHours;
+
     private void runPipeline(Long simId) {
         try {
             Simulation sim = simulationRepo.findById(simId).orElseThrow();
             int totalDays = sim.getPeriodDays() != null ? sim.getPeriodDays() : 5;
-            LocalDateTime simEnd = sim.getStartDate().atStartOfDay().plusDays(totalDays);
+            LocalDateTime simStart = sim.getStartDate().atStartOfDay();
+            LocalDateTime simEnd = simStart.plusDays(totalDays);
+            int totalBlocks = totalDays * (24 / blockSizeHours);
 
-            for (int day = 0; day < totalDays; day++) {
+            long pipelineWall = System.currentTimeMillis();
+            for (int block = 0; block < totalBlocks; block++) {
                 OrchestratorState state = states.get(simId);
                 if (state == null || state.stopped) break;
 
-                LocalDateTime blockStart = sim.getStartDate().atStartOfDay().plusDays(day);
-                LocalDateTime blockEnd = blockStart.plusDays(1);
+                LocalDateTime blockStart = simStart.plusHours((long) block * blockSizeHours);
+                LocalDateTime blockEnd = blockStart.plusHours(blockSizeHours);
 
-                SimulationBlock block;
+                long blockWall = System.currentTimeMillis();
+                SimulationBlock simBlock;
 
-                if (day == 0) {
+                if (block == 0) {
                     // First block must be planned synchronously — nothing to play yet.
-                    log.info("Simulación {}: BUFFERING bloque 0 (día 1 de {})", simId, totalDays);
+                    log.info("Simulación {}: BUFFERING bloque 0 de {}", simId, totalBlocks);
                     setStatus(simId, SimulationStatus.BUFFERING);
-                    webSocketPublisher.publishBlockStart(simId, 0, totalDays);
-                    block = planBlock(simId, sim, blockStart, blockEnd, 0, simEnd);
+                    webSocketPublisher.publishBlockStart(simId, 0, totalBlocks);
+                    simBlock = planBlock(simId, sim, blockStart, blockEnd, 0, simEnd);
                 } else {
                     // Subsequent blocks were planned in background during the previous playback.
                     // Resolve the future — should already be done; log a warning if we had to wait.
-                    block = resolveNextBlock(state, day, blockStart, blockEnd);
+                    simBlock = resolveNextBlock(state, block, blockStart, blockEnd);
                 }
 
                 state = states.get(simId);
                 if (state == null || state.stopped) break;
 
-                log.info("Simulación {}: PLAYING bloque {} ({} lotes planificados)", simId, day, block.batchesPlanned());
+                log.info("Simulación {}: PLAYING bloque {} ({} lotes planificados)", simId, block, simBlock.batchesPlanned());
                 setStatus(simId, SimulationStatus.PLAYING);
 
                 // Submit planning of the NEXT block in background BEFORE starting playback of current block.
-                // This way ALNS and visualization run in parallel — no freeze between days.
-                if (day + 1 < totalDays) {
-                    submitBackgroundPlanning(simId, sim, day + 1, totalDays, simEnd, state);
+                // This way ALNS and visualization run in parallel — no freeze between blocks.
+                if (block + 1 < totalBlocks) {
+                    submitBackgroundPlanning(simId, sim, block + 1, totalBlocks, simEnd, state);
                 }
 
-                playBlock(simId, block, state);
+                playBlock(simId, simBlock, state);
+
+                log.info("[ORCH-{}] block {} total wallMs={} (since pipeline start: {}ms)",
+                        simId, block, System.currentTimeMillis() - blockWall,
+                        System.currentTimeMillis() - pipelineWall);
             }
 
             OrchestratorState state = states.remove(simId);
@@ -173,16 +187,16 @@ public class BlockOrchestrator {
      * ALNS will still push OPTIMIZING events that update the progress bar without
      * changing the main simulation status.
      */
-    private void submitBackgroundPlanning(Long simId, Simulation sim, int nextDay, int totalDays,
+    private void submitBackgroundPlanning(Long simId, Simulation sim, int nextBlock, int totalBlocks,
                                           LocalDateTime simEnd, OrchestratorState state) {
-        LocalDateTime nextStart = sim.getStartDate().atStartOfDay().plusDays(nextDay);
-        LocalDateTime nextEnd   = nextStart.plusDays(1);
+        LocalDateTime nextStart = sim.getStartDate().atStartOfDay().plusHours((long) nextBlock * blockSizeHours);
+        LocalDateTime nextEnd   = nextStart.plusHours(blockSizeHours);
 
-        log.info("Simulación {}: lanzando planificación en segundo plano del bloque {} (día {} de {})",
-                simId, nextDay, nextDay + 1, totalDays);
+        log.info("Simulación {}: lanzando planificación en segundo plano del bloque {} de {}",
+                simId, nextBlock, totalBlocks);
 
         state.nextBlockFuture = state.plannerExecutor.submit(
-                () -> planBlock(simId, sim, nextStart, nextEnd, nextDay, simEnd)
+                () -> planBlock(simId, sim, nextStart, nextEnd, nextBlock, simEnd)
         );
     }
 
@@ -224,13 +238,19 @@ public class BlockOrchestrator {
     private SimulationBlock planBlock(Long simId, Simulation sim, LocalDateTime blockStart,
                                       LocalDateTime blockEnd, int blockIndex, LocalDateTime simEnd) {
         try {
-            List<BaggageBatch> pending = batchRepo.findPendingBatches(blockEnd);
+            // Only plan batches not yet routed that become available within this block.
+            // Using findUnroutedBatches prevents re-planning batches already assigned in prior blocks
+            // (their BaggageBatch.status stays IN_ORIGIN until the flight departs).
+            List<BaggageBatch> pending = batchRepo.findUnroutedBatches(blockEnd);
             if (pending.isEmpty()) {
-                log.info("Simulación {}: sin lotes pendientes en bloque {}", simId, blockIndex);
+                log.info("Simulación {}: sin lotes sin ruta en bloque {}", simId, blockIndex);
                 return new SimulationBlock(blockIndex, blockStart, blockEnd, 0);
             }
 
-            List<Flight> flights = flightRepo.findScheduledBetween(blockStart, simEnd);
+            // Lookahead window: enough for multi-hop routes extending beyond this block.
+            LocalDateTime flightLookahead = blockStart.plusHours(flightLookaheadHours)
+                    .isAfter(simEnd) ? simEnd : blockStart.plusHours(flightLookaheadHours);
+            List<Flight> flights = flightRepo.findScheduledBetween(blockStart, flightLookahead);
             List<Airport> airports = airportRepo.findAll();
             AlnsParams alnsParams = buildAlnsParams(sim);
 
@@ -261,6 +281,11 @@ public class BlockOrchestrator {
     private void playBlock(Long simId, SimulationBlock block, OrchestratorState state)
             throws InterruptedException {
         LocalDateTime blockEnd = block.end();
+        long playWallStart = System.currentTimeMillis();
+        int ticksInBlock = 0;
+
+        log.info("[ORCH-{}] block {} playback start | simWindow={} → {}",
+                simId, block.blockIndex(), block.start(), blockEnd);
 
         while (true) {
             if (state.stopped) break;
@@ -270,11 +295,17 @@ public class BlockOrchestrator {
 
             LocalDateTime simNow = simulationEngine.tick(simId);
             if (simNow == null) break;
+            ticksInBlock++;
 
             if (!simNow.isBefore(blockEnd)) break;
 
             Thread.sleep(tickIntervalMs);
         }
+
+        long playDurationMs = System.currentTimeMillis() - playWallStart;
+        log.info("[ORCH-{}] block {} playback done | ticks={} wallMs={} avgMs/tick={}",
+                simId, block.blockIndex(), ticksInBlock, playDurationMs,
+                ticksInBlock > 0 ? playDurationMs / ticksInBlock : 0);
     }
 
     private void waitIfPaused(OrchestratorState state) throws InterruptedException {

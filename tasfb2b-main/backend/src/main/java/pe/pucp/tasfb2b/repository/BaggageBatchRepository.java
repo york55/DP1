@@ -1,6 +1,7 @@
 package pe.pucp.tasfb2b.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import pe.pucp.tasfb2b.domain.BaggageBatch;
@@ -38,4 +39,8 @@ public interface BaggageBatchRepository extends JpaRepository<BaggageBatch, Long
 
     @Query("SELECT COALESCE(SUM(b.quantity), 0) FROM BaggageBatch b")
     long sumAllQuantity();
+
+    @Modifying
+    @Query("UPDATE BaggageBatch b SET b.status = 'IN_ORIGIN'")
+    void resetAllToInOrigin();
 }
