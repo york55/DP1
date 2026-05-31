@@ -301,6 +301,7 @@ public class SimulationEngine {
                                 .flights(availableFlights)
                                 .pendingBatches(affectedBatches)
                                 .simulatedNow(simNow)
+                                .alnsParams(plannerService.buildAlnsParams(sim))
                                 .build();
 
                         long replanStart = System.currentTimeMillis();
