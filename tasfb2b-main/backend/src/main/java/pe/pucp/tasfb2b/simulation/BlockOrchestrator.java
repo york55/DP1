@@ -163,6 +163,7 @@ public class BlockOrchestrator {
                 state.plannerExecutor.shutdown();
                 setStatus(simId, SimulationStatus.FINISHED);
                 simulationEngine.removeState(simId);
+                webSocketPublisher.publishFinished(simId);
                 log.info("Simulación {} completada (pipeline finalizado)", simId);
             }
 

@@ -50,8 +50,9 @@ function FlightRoute({ flight, airports = [], simulatedTime }) {
     // Simple planar angle for the icon rotation
     const rot = Math.atan2(lat2 - lat1, lon2 - lon1) * (180 / Math.PI)
     
-    if (!isInFlight) return { progressPosition: null, angle: rot }
-    
+    // Only show plane when it's clearly between airports (not sitting on origin/destination dot)
+    if (!isInFlight || progress < 0.02 || progress > 0.98) return { progressPosition: null, angle: rot }
+
     return {
       progressPosition: [lerp(lat1, lat2, progress), lerp(lon1, lon2, progress)],
       angle: rot
