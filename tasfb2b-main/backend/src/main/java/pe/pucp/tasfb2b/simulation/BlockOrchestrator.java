@@ -11,7 +11,6 @@ import pe.pucp.tasfb2b.domain.Flight;
 import pe.pucp.tasfb2b.domain.Simulation;
 import pe.pucp.tasfb2b.domain.enums.SimulationStatus;
 import pe.pucp.tasfb2b.planner.SimulationContext;
-import pe.pucp.tasfb2b.planner.alns.AlnsParams;
 import pe.pucp.tasfb2b.repository.AirportRepository;
 import pe.pucp.tasfb2b.repository.BaggageBatchRepository;
 import pe.pucp.tasfb2b.repository.FlightRepository;
@@ -253,14 +252,13 @@ public class BlockOrchestrator {
                     .isAfter(simEnd) ? simEnd : blockStart.plusHours(flightLookaheadHours);
             List<Flight> flights = flightRepo.findScheduledBetween(blockStart, flightLookahead);
             List<Airport> airports = airportRepo.findAll();
-            AlnsParams alnsParams = buildAlnsParams(sim);
 
             SimulationContext context = SimulationContext.builder()
                     .airports(airports)
                     .flights(flights)
                     .pendingBatches(pending)
                     .simulatedNow(blockStart)
-                    .alnsParams(alnsParams)
+                    .alnsParams(plannerService.buildAlnsParams(sim))
                     .progressCallback(snap -> webSocketPublisher.publishPlanProgress(simId, snap))
                     .build();
 
@@ -326,19 +324,6 @@ public class BlockOrchestrator {
             s.setStatus(status);
             simulationRepo.save(s);
         });
-    }
-
-    private AlnsParams buildAlnsParams(Simulation sim) {
-        AlnsParams defaults = AlnsParams.defaults();
-        return new AlnsParams(
-                sim.getT0() != null ? sim.getT0() : defaults.t0(),
-                sim.getAlphaSa() != null ? sim.getAlphaSa() : defaults.alpha(),
-                sim.getQPct() != null ? sim.getQPct() : defaults.qPct(),
-                sim.getMaxIterations() != null ? sim.getMaxIterations() : defaults.maxIterations(),
-                defaults.segLen(), defaults.sigma1(), defaults.sigma2(), defaults.sigma3(),
-                defaults.rho(), defaults.pNoise(), defaults.w1(), defaults.w2(), defaults.w3(),
-                defaults.kRegret()
-        );
     }
 
     // ─── State ────────────────────────────────────────────────────────────────────
