@@ -11,9 +11,9 @@ import pe.pucp.tasfb2b.planner.OptimizationResult;
 import pe.pucp.tasfb2b.planner.RouteOptimizer;
 import pe.pucp.tasfb2b.planner.SimulationContext;
 import pe.pucp.tasfb2b.planner.alns.AlnsEngine;
-import pe.pucp.tasfb2b.planner.alns.AlnsParams;
 import pe.pucp.tasfb2b.repository.*;
 
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Service
@@ -26,7 +26,6 @@ public class PlannerService {
     private final RouteLegRepository routeLegRepo;
     private final ShipmentRepository shipmentRepo;
 
-    @Transactional
     public OptimizationResult plan(SimulationContext context, String algorithm) {
         RouteOptimizer optimizer = selectOptimizer(algorithm);
         log.info("Iniciando planificación con {}: {} lotes pendientes",
@@ -40,7 +39,6 @@ public class PlannerService {
         }
     }
 
-    @Transactional
     public OptimizationResult replan(List<BaggageBatch> affected, SimulationContext context,
                                       String algorithm) {
         RouteOptimizer optimizer = selectOptimizer(algorithm);
@@ -55,10 +53,16 @@ public class PlannerService {
         }
     }
 
+    @Transactional
     public void persistRoutes(OptimizationResult result) {
         for (Route route : result.routes()) {
             Shipment shipment = route.getShipment();
             shipment.setStatus(ShipmentStatus.PLANNED);
+
+            BaggageBatch batch = shipment.getBaggageBatch();
+            boolean sameContinent = batch.isSameContinent();
+            shipment.setDeadline(batch.getAvailableFrom()
+                    .plus(sameContinent ? 1 : 2, ChronoUnit.DAYS));
 
             Shipment saved = shipmentRepo.save(shipment);
             route.setShipment(saved);
@@ -70,19 +74,6 @@ public class PlannerService {
                 routeLegRepo.save(leg);
             }
         }
-    }
-
-    public AlnsParams buildAlnsParams(Simulation sim) {
-        AlnsParams defaults = AlnsParams.defaults();
-        return new AlnsParams(
-                sim.getT0() != null ? sim.getT0() : defaults.t0(),
-                sim.getAlphaSa() != null ? sim.getAlphaSa() : defaults.alpha(),
-                sim.getQPct() != null ? sim.getQPct() : defaults.qPct(),
-                sim.getMaxIterations() != null ? sim.getMaxIterations() : defaults.maxIterations(),
-                defaults.segLen(), defaults.sigma1(), defaults.sigma2(), defaults.sigma3(),
-                defaults.rho(), defaults.pNoise(), defaults.w1(), defaults.w2(), defaults.w3(),
-                defaults.kRegret()
-        );
     }
 
     private RouteOptimizer selectOptimizer(String algorithm) {
