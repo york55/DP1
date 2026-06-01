@@ -239,7 +239,7 @@ export function useSimulation() {
     setSimulationState(prev => {
       let nextStatus = prev.status;
       if (prev.status !== 'paused' && prev.status !== 'finished') {
-        nextStatus = event.simulationStatus === 'FINISHED' ? 'finished' : 'running';
+        nextStatus = event.status === 'FINISHED' ? 'finished' : 'running';
       }
 
       return {

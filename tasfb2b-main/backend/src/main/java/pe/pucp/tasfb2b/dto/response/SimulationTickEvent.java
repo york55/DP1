@@ -10,7 +10,6 @@ import java.util.List;
 public class SimulationTickEvent {
 
     private Long simulationId;
-    private String simulationStatus; // BUFFERING | PLAYING | PAUSED | FINISHED
     private int simulatedDay;
     private String simulatedTime;
     private String simulatedIso;   // full UTC ISO-8601: "2026-05-11T14:30:00"
