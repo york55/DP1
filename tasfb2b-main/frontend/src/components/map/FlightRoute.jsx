@@ -13,9 +13,9 @@ function lerp(a, b, t) {
 
 const createPlaneIcon = (angle) => L.divIcon({
   className: '',
-  html: `<div style="transform: rotate(${angle}deg); font-size:14px; line-height:1; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.4)); color: #1F3864;">✈️</div>`,
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
+  html: `<div style="transform:rotate(${angle}deg);line-height:0;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.5));"><svg xmlns='http://www.w3.org/2000/svg' viewBox='-10 -10 20 20' width='22' height='22'><path d='M0,-9 L1.5,-6 L1.5,-2 L8,2 L8,4 L1.5,2 L1.5,6 L3,8 L3,9 L0,7.5 L-3,9 L-3,8 L1.5,6' fill='none'/><path d='M0,-9 L1.5,-6 L1.5,-2 L8,2 L8,4 L1.5,2 L1.5,6 L3,8.5 L0,7.5 L-3,8.5 L-1.5,6 L-1.5,2 L-8,4 L-8,2 L-1.5,-2 L-1.5,-6 Z' fill='#1F3864' stroke='white' stroke-width='0.6'/></svg></div>`,
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
 })
 
 /**
@@ -47,8 +47,8 @@ function FlightRoute({ flight, airports = [], simulatedTime }) {
     const lat2 = destAirport.lat
     const lon2 = destAirport.lon
     
-    // Simple planar angle for the icon rotation
-    const rot = Math.atan2(lat2 - lat1, lon2 - lon1) * (180 / Math.PI)
+    // Compass bearing: 0° = north, 90° = east (clockwise). SVG plane points north at 0°.
+    const rot = Math.atan2(lon2 - lon1, lat2 - lat1) * (180 / Math.PI)
     
     // Only show plane when it's clearly between airports (not sitting on origin/destination dot)
     if (!isInFlight || progress < 0.02 || progress > 0.98) return { progressPosition: null, angle: rot }

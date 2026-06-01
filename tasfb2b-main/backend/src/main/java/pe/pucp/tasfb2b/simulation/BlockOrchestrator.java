@@ -296,9 +296,9 @@ public class BlockOrchestrator {
             if (simNow == null) break;
             ticksInBlock++;
 
-            if (!simNow.isBefore(blockEnd)) break;
-
+            boolean blockDone = !simNow.isBefore(blockEnd);
             Thread.sleep(tickIntervalMs);
+            if (blockDone) break;
         }
 
         long playDurationMs = System.currentTimeMillis() - playWallStart;

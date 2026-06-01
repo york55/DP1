@@ -10,7 +10,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import pe.pucp.tasfb2b.domain.*;
 import pe.pucp.tasfb2b.domain.enums.*;
 import pe.pucp.tasfb2b.dto.response.SimulationTickEvent;
-import pe.pucp.tasfb2b.planner.OptimizationResult;
 import pe.pucp.tasfb2b.planner.SimulationContext;
 import pe.pucp.tasfb2b.repository.*;
 import pe.pucp.tasfb2b.service.AirportService;
@@ -23,6 +22,8 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 @Service
@@ -58,15 +59,20 @@ public class SimulationEngine {
     // Runtime state per simulation (not persisted)
     private final ConcurrentHashMap<Long, SimulationRuntimeState> runtimeStates = new ConcurrentHashMap<>();
 
+    // Single-threaded executor for post-cancellation replanning so it never blocks a tick
+    private final ExecutorService replanExecutor = Executors.newSingleThreadExecutor(
+            r -> new Thread(r, "replan-bg"));
+
+
     public void initSimulation(Long simulationId) {
         Simulation sim = simulationRepo.findById(simulationId).orElseThrow();
-        LocalDateTime start = sim.getSimulatedTime() != null
-                ? sim.getSimulatedTime()
-                : sim.getStartDate().atStartOfDay();
-        SimulationClock clock = new SimulationClock(start, tickDurationMinutes);
+        LocalDateTime simStart = sim.getStartDate().atStartOfDay();
+        LocalDateTime resumeFrom = sim.getSimulatedTime() != null ? sim.getSimulatedTime() : simStart;
+        SimulationClock clock = new SimulationClock(simStart, resumeFrom, tickDurationMinutes);
         long startNano = System.currentTimeMillis();
         runtimeStates.put(simulationId, new SimulationRuntimeState(clock, startNano, new Random(sim.getSeed())));
-        log.info("Motor de simulación inicializado para simulación {}", simulationId);
+        log.info("Motor de simulación inicializado para simulación {} (simStart={} resumeFrom={})",
+                simulationId, simStart, resumeFrom);
     }
 
     @Transactional
@@ -292,33 +298,48 @@ public class SimulationEngine {
                         routeLegRepo.save(leg);
                     }
 
-                    try {
-                        List<Flight> availableFlights = flightRepo.findByStatus(FlightStatus.SCHEDULED);
-                        List<Airport> airports = airportRepo.findAll();
+                    // Snapshot everything the background task needs before the transaction closes
+                    final Long flightId = flight.getId();
+                    final List<BaggageBatch> batchesForReplan = List.copyOf(affectedBatches);
+                    final String algorithm = sim.getAlgorithm();
+                    final var alnsParams = plannerService.buildAlnsParams(sim);
+                    final LocalDateTime replanNow = simNow;
 
-                        SimulationContext ctx = SimulationContext.builder()
-                                .airports(airports)
-                                .flights(availableFlights)
-                                .pendingBatches(affectedBatches)
-                                .simulatedNow(simNow)
-                                .alnsParams(plannerService.buildAlnsParams(sim))
-                                .build();
+                    // Publish the alert immediately (still inside the transaction so it fires after commit)
+                    eventPublisher.publishAlert(simulationId,
+                            new WebSocketEventPublisher.AlertEvent(
+                                    "CANCELLATION", null, flightId, null,
+                                    "Vuelo cancelado. Replanificando " + batchesForReplan.size() + " lotes.",
+                                    simNow.format(TIME_FMT)
+                            ));
 
-                        long replanStart = System.currentTimeMillis();
-                        plannerService.replan(affectedBatches, ctx, sim.getAlgorithm());
-                        log.info("[SIM-{}] replan for cancelled flight {} batches={} in {}ms",
-                                simulationId, flight.getId(), affectedBatches.size(),
-                                System.currentTimeMillis() - replanStart);
-
-                        eventPublisher.publishAlert(simulationId,
-                                new WebSocketEventPublisher.AlertEvent(
-                                        "CANCELLATION", null, flight.getId(), null,
-                                        "Vuelo cancelado. Replanificando " + affectedBatches.size() + " lotes.",
-                                        simNow.format(TIME_FMT)
-                                ));
-                    } catch (Exception e) {
-                        log.error("Error en replanificación tras cancelación de vuelo {}: {}", flight.getId(), e.getMessage());
-                    }
+                    // Run ALNS replan in background so it does NOT block the current tick thread
+                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            replanExecutor.submit(() -> {
+                                try {
+                                    List<Flight> availableFlights = flightRepo.findByStatus(FlightStatus.SCHEDULED);
+                                    List<Airport> airports = airportRepo.findAll();
+                                    SimulationContext ctx = SimulationContext.builder()
+                                            .airports(airports)
+                                            .flights(availableFlights)
+                                            .pendingBatches(batchesForReplan)
+                                            .simulatedNow(replanNow)
+                                            .alnsParams(alnsParams)
+                                            .build();
+                                    long replanStart = System.currentTimeMillis();
+                                    plannerService.replan(batchesForReplan, ctx, algorithm);
+                                    log.info("[SIM-{}] replan for cancelled flight {} batches={} in {}ms",
+                                            simulationId, flightId, batchesForReplan.size(),
+                                            System.currentTimeMillis() - replanStart);
+                                } catch (Exception e) {
+                                    log.error("Error en replanificación tras cancelación de vuelo {}: {}",
+                                            flightId, e.getMessage());
+                                }
+                            });
+                        }
+                    });
                 }
             } catch (Exception e) {
                 log.error("Error crítico al procesar cancelación del vuelo {}: {}", flight.getId(), e.getMessage());
@@ -467,7 +488,7 @@ public class SimulationEngine {
         SimulationTickEvent event = SimulationTickEvent.builder()
                 .simulationId(sim.getId())
                 .simulationStatus(sim.getStatus().name())
-                .simulatedDay(clock.getSimulatedDay())
+                .simulatedDay(Math.min(clock.getSimulatedDay(), sim.getPeriodDays() != null ? sim.getPeriodDays() : 5))
                 .simulatedTime(simNow.format(TIME_FMT) + " UTC")
                 .simulatedIso(simNow.toString())
                 .elapsedRealSeconds(elapsedSec)
