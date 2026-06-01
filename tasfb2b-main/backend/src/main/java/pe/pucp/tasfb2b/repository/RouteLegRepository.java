@@ -26,4 +26,20 @@ public interface RouteLegRepository extends JpaRepository<RouteLeg, Long> {
 
     @Query("SELECT rl FROM RouteLeg rl WHERE rl.route.id = :routeId ORDER BY rl.legOrder")
     List<RouteLeg> findByRouteIdOrderByLegOrder(@Param("routeId") Long routeId);
+
+    /**
+     * Returns the first PENDING leg for each IN_TRANSIT batch that is NOT currently on a plane.
+     * The flight's origin airport is where the batch is physically waiting.
+     */
+    @Query("SELECT rl FROM RouteLeg rl " +
+           "JOIN FETCH rl.flight f " +
+           "JOIN FETCH f.originAirport " +
+           "JOIN FETCH rl.route r " +
+           "JOIN FETCH r.shipment s " +
+           "JOIN FETCH s.baggageBatch b " +
+           "WHERE b.status = 'IN_TRANSIT' " +
+           "AND rl.status = 'PENDING' " +
+           "AND NOT EXISTS (SELECT rl2 FROM RouteLeg rl2 WHERE rl2.route = r AND rl2.status = 'IN_FLIGHT') " +
+           "AND NOT EXISTS (SELECT rl3 FROM RouteLeg rl3 WHERE rl3.route = r AND rl3.status = 'PENDING' AND rl3.legOrder < rl.legOrder)")
+    List<RouteLeg> findFirstPendingLegsOfTransitBagsAtIntermediateStops();
 }

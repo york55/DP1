@@ -114,7 +114,7 @@ public class SimulationEngine {
 
             // 5. Update airport occupancy
             long t4 = System.currentTimeMillis();
-            updateAirportOccupancy();
+            updateAirportOccupancy(simNow);
             log.debug("[SIM-{}] tick#{} occupancy ({}ms)", simulationId, tickNum, System.currentTimeMillis() - t4);
 
             // 6. Persist KPI snapshot
@@ -343,15 +343,22 @@ public class SimulationEngine {
         }
     }
 
-    private void updateAirportOccupancy() {
+    private void updateAirportOccupancy(LocalDateTime simNow) {
         List<Airport> airports = airportRepo.findAll();
 
-        // Bags waiting at origin (not yet dispatched)
-        List<BaggageBatch> waitingBatches = batchRepo.findByStatus(BatchStatus.IN_ORIGIN);
+        // Only count bags physically present at origin (availableFrom has passed) and not yet departed
+        List<BaggageBatch> waitingBatches = batchRepo.findPendingBatches(simNow);
 
-        // All bags delivered to destination — they occupy warehouse space permanently
-        // until the simulation ends (no pickup event is modeled).
-        List<BaggageBatch> deliveredBatches = batchRepo.findByStatus(BatchStatus.DELIVERED);
+        // Bags delivered within the last 4 simulated hours still occupy destination storage
+        List<BaggageBatch> deliveredBatches = batchRepo.findRecentlyDelivered(simNow.minusHours(4));
+
+        // IN_TRANSIT bags sitting at intermediate connecting airports (not on any plane)
+        List<RouteLeg> intermediateLegs = routeLegRepo.findFirstPendingLegsOfTransitBagsAtIntermediateStops();
+        Map<Long, Long> intermediateBagsByAirport = intermediateLegs.stream()
+                .collect(Collectors.groupingBy(
+                        rl -> rl.getFlight().getOriginAirport().getId(),
+                        Collectors.summingLong(rl -> rl.getRoute().getShipment().getBaggageBatch().getQuantity())
+                ));
 
         for (Airport airport : airports) {
             long waiting = waitingBatches.stream()
@@ -362,7 +369,8 @@ public class SimulationEngine {
                     .filter(b -> b.getDestinationAirport().getId().equals(airport.getId()))
                     .mapToLong(BaggageBatch::getQuantity)
                     .sum();
-            int occupancy = (int) Math.min(waiting + delivered, airport.getWarehouseCapacity());
+            long intermediate = intermediateBagsByAirport.getOrDefault(airport.getId(), 0L);
+            int occupancy = (int) Math.min(waiting + delivered + intermediate, airport.getWarehouseCapacity());
             airport.setCurrentOccupancy(occupancy);
 
             double pct = airport.getOccupancyPct();
@@ -428,6 +436,7 @@ public class SimulationEngine {
                 .collect(Collectors.toList());
 
         List<SimulationTickEvent.FlightPayload> flightPayloads = activeFlights.stream()
+                .filter(f -> f.getStatus() != FlightStatus.LANDED)
                 .map(f -> SimulationTickEvent.FlightPayload.builder()
                         .flightId(f.getId())
                         .originIata(f.getOriginAirport().getIataCode())
@@ -457,6 +466,7 @@ public class SimulationEngine {
 
         SimulationTickEvent event = SimulationTickEvent.builder()
                 .simulationId(sim.getId())
+                .simulationStatus(sim.getStatus().name())
                 .simulatedDay(clock.getSimulatedDay())
                 .simulatedTime(simNow.format(TIME_FMT) + " UTC")
                 .simulatedIso(simNow.toString())

@@ -25,6 +25,16 @@ public class WebSocketEventPublisher {
         messagingTemplate.convertAndSend(destination, snapshot);
     }
 
+    public void publishFinished(Long simulationId) {
+        String destination = "/topic/simulation/" + simulationId + "/tick";
+        var event = pe.pucp.tasfb2b.dto.response.SimulationTickEvent.builder()
+                .simulationId(simulationId)
+                .simulationStatus("FINISHED")
+                .build();
+        messagingTemplate.convertAndSend(destination, event);
+        log.info("Publicado evento FINISHED para simulación {}", simulationId);
+    }
+
     public void publishAlert(Long simulationId, AlertEvent event) {
         messagingTemplate.convertAndSend("/topic/alerts", event);
     }
