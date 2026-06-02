@@ -155,7 +155,7 @@ export default function ScenarioSelectorPage() {
             <ScenarioCard
               icon={<CalendarMonthIcon />}
               title="Simulación por Período"
-              description="Simula entre 3, 5 o 7 días completos de operaciones aéreas. Observa el flujo de maletas, la ocupación de aeropuertos y el desempeño de vuelos en tiempo acelerado."
+              description="Simula 5 días completos de operaciones aéreas. Observa el flujo de maletas, la ocupación de aeropuertos y el desempeño de vuelos en tiempo acelerado."
               badge="Disponible"
               onSelect={() => navigate('/simulation/config')}
               disabled={false}
@@ -167,7 +167,7 @@ export default function ScenarioSelectorPage() {
               title="Operaciones en Tiempo Real"
               description="Conecta con datos en vivo del sistema de enrutamiento para monitoreo continuo de operaciones. Integración con APIs externas de aerolíneas."
               badge="Próximamente"
-              onSelect={() => {}}
+              onSelect={() => { }}
               disabled={true}
             />
           </Grid>
@@ -177,7 +177,7 @@ export default function ScenarioSelectorPage() {
               title="Simulación de Colapso"
               description="Evalúa la resiliencia del sistema bajo condiciones extremas: cancelaciones masivas, tormentas, cierres de aeropuertos y acumulación crítica de maletas."
               badge="Próximamente"
-              onSelect={() => {}}
+              onSelect={() => { }}
               disabled={true}
             />
           </Grid>
