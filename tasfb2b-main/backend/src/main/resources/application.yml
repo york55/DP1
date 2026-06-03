@@ -6,12 +6,12 @@ spring:
     name: tasfb2b
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/tasfb2b?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
-    username: ${DB_USER:tasfb2b_user}
-    password: ${DB_PASSWORD:changeme}
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:Abcd.1234#}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
-      ddl-auto: validate # cambiado para mayor seguridad en general
+      ddl-auto: update # cambiado para mayor seguridad en general
     show-sql: false
     properties:
       hibernate:
