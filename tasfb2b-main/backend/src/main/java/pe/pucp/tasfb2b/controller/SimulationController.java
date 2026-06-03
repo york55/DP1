@@ -74,4 +74,11 @@ public class SimulationController {
         log.debug("ACTION get_kpis simulationId={}", id);
         return ResponseEntity.ok(kpiService.findBySimulation(id));
     }
+
+    @DeleteMapping("/reset")
+    public ResponseEntity<Void> resetSimulations() {
+        log.info("ACTION reset_simulations");
+        simulationService.hardReset();
+        return ResponseEntity.ok().build();
+    }
 }

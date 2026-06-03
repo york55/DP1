@@ -496,6 +496,36 @@ export function useSimulation() {
     addNotification('Simulación reanudada.', 'info')
   }, [handleTickEvent, handleAlert, addNotification])
 
+  const resetSimulation = useCallback(() => {
+    setSimulationState({
+      status: 'idle',
+      simulatedTime: null,
+      currentDay: 1,
+      elapsedSeconds: 0,
+      config: { period: 5, startDate: new Date() },
+      simulationId: null,
+    })
+    setSimulationData({
+      airports: [],
+      flights: [],
+      shipments: [],
+      shipmentCounts: {},
+      kpis: {
+        onTimeDeliveryPct: 100,
+        avgFlightOccupancy: 0,
+        avgWarehouseOccupancy: 0,
+        totalDelayedBags: 0,
+        totalBags: 0,
+        deliveredBags: 0,
+        inTransitBags: 0,
+        waitingBags: 0,
+      }
+    })
+    setNotifications([])
+    simIdRef.current = null
+    statusRef.current = 'idle'
+  }, [])
+
   // On mount: reconnect to any active simulation (handles F5 and new clients)
   useEffect(() => {
     async function reconnect() {
@@ -620,6 +650,7 @@ export function useSimulation() {
     startSimulation,
     pauseSimulation,
     resumeSimulation,
+    resetSimulation,
     dismissNotification,
   }
 }
