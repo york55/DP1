@@ -11,7 +11,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
-      ddl-auto: update #para que el ORM no sea tan estricto (interactuar con BD con objetos JAVA)
+      ddl-auto: validate # cambiado para mayor seguridad en general
     show-sql: false
     properties:
       hibernate:
@@ -55,6 +55,6 @@ management:
 
 logging:
   level:
-    pe.pucp.tasfb2b: DEBUG
+    pe.pucp.tasfb2b: INFO
     org.springframework.web.socket: INFO
     org.hibernate.SQL: WARN

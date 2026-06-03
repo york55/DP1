@@ -48,9 +48,13 @@
     <root level="INFO">
         <appender-ref ref="CONSOLE" />
         <appender-ref ref="BACKEND_FILE" />
-        <appender-ref ref="BUFFER" />
     </root>
 
-    <!-- Debug level for our own code -->
-    <logger name="pe.pucp.tasfb2b" level="DEBUG" />
+    <springProfile name="dev | demo">
+        <root level="INFO">
+            <appender-ref ref="BUFFER" />
+        </root>
+        <!-- Debug level for our own code in dev/demo -->
+        <logger name="pe.pucp.tasfb2b" level="DEBUG" />
+    </springProfile>
 </configuration>
