@@ -16,6 +16,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
 import CancelIcon from '@mui/icons-material/Cancel'
+import client from '../../api/client'
 
 export default function FlightPlanPage() {
   const [flights, setFlights]         = useState([])
@@ -26,9 +27,8 @@ export default function FlightPlanPage() {
   const [snack, setSnack]             = useState({ open: false, msg: '', severity: 'success' })
 
   const fetchFlights = () => {
-    fetch('http://localhost:8080/api/flight-ops')
-      .then(res => res.json())
-      .then(data => { setFlights(data); setLoading(false) })
+    client.get('/flight-ops')
+      .then(res => { setFlights(res.data); setLoading(false) })
       .catch(() => setLoading(false))
   }
 
@@ -37,17 +37,11 @@ export default function FlightPlanPage() {
   const handleCancel = async (flightKey) => {
     setCancelling(flightKey)
     try {
-      const res = await fetch(`http://localhost:8080/api/flight-ops/${encodeURIComponent(flightKey)}/cancel`, {
-        method: 'PATCH',
-      })
-      if (res.ok) {
-        setSnack({ open: true, msg: `Vuelo ${flightKey} cancelado`, severity: 'success' })
-        fetchFlights()
-      } else {
-        setSnack({ open: true, msg: 'No se pudo cancelar el vuelo', severity: 'error' })
-      }
+      await client.patch(`/flight-ops/${encodeURIComponent(flightKey)}/cancel`)
+      setSnack({ open: true, msg: `Vuelo ${flightKey} cancelado`, severity: 'success' })
+      fetchFlights()
     } catch {
-      setSnack({ open: true, msg: 'Error de conexión', severity: 'error' })
+      setSnack({ open: true, msg: 'No se pudo cancelar el vuelo', severity: 'error' })
     } finally {
       setCancelling(null)
     }

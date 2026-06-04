@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import Box from '@mui/material/Box'
+import client from '../../api/client'
 
 const parseDMS = (deg, min, sec, dir) => {
   const decimal = deg + min / 60 + sec / 3600
@@ -57,7 +58,6 @@ const getProgress = (depMin, arrMin, nowMin) => {
   return (now - dep) / (arr - dep)
 }
 
-// Ángulo de dirección entre dos puntos (en grados)
 const getBearing = (lat1, lng1, lat2, lng2) => {
   const toRad = (d) => (d * Math.PI) / 180
   const dLng = toRad(lng2 - lng1)
@@ -90,10 +90,9 @@ export default function RealtimeMapPage() {
 
   // Fetch único al montar
   useEffect(() => {
-    fetch('http://localhost:8080/api/flight-ops')
-      .then((r) => r.json())
-      .then((data) => { flightsRef.current = data })
-      .catch((e) => console.error('Error fetching flight-ops:', e))
+    client.get('/flight-ops')
+      .then(res => { flightsRef.current = res.data })
+      .catch(e => console.error('Error fetching flight-ops:', e))
   }, [])
 
   // Inicializar mapa
@@ -152,7 +151,6 @@ export default function RealtimeMapPage() {
         const progress = getProgress(toMinutes(f.departureUtc), toMinutes(f.arrivalUtc), now)
 
         if (progress === null) {
-          // No activo → eliminar si existe
           if (layers[f.flightKey]) {
             layers[f.flightKey].marker.remove()
             layers[f.flightKey].polyline.remove()
@@ -166,7 +164,6 @@ export default function RealtimeMapPage() {
         const bearing = getBearing(orig.lat, orig.lng, dest.lat, dest.lng)
 
         if (!layers[f.flightKey]) {
-          // Crear línea y marcador UNA sola vez
           const polyline = L.polyline(
             [[orig.lat, orig.lng], [dest.lat, dest.lng]],
             { color: '#2E75B6', weight: 1, dashArray: '5 5', opacity: 0.35 }
@@ -181,7 +178,6 @@ export default function RealtimeMapPage() {
 
           layers[f.flightKey] = { marker, polyline }
         } else {
-          // Solo actualizar posición
           layers[f.flightKey].marker.setLatLng([curLat, curLng])
         }
       })
