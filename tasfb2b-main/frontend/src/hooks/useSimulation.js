@@ -526,6 +526,43 @@ export function useSimulation() {
     statusRef.current = 'idle'
   }, [])
 
+  const cancelSimulation = useCallback(async () => {
+    const id = simIdRef.current
+    disconnectSimulationWebSocket()
+    if (shipmentPollRef.current) { clearInterval(shipmentPollRef.current); shipmentPollRef.current = null }
+    if (flightPollRef.current) { clearInterval(flightPollRef.current); flightPollRef.current = null }
+    if (id) {
+      try { await simulationApi.stop(id) } catch (e) { console.error('[cancelSimulation] stop error:', e.message) }
+    }
+    simIdRef.current = null
+    statusRef.current = 'idle'
+    setSimulationState({
+      status: 'idle',
+      simulatedTime: null,
+      currentDay: 1,
+      elapsedSeconds: 0,
+      config: { period: 5, startDate: new Date() },
+      simulationId: null,
+    })
+    setSimulationData({
+      airports: [],
+      flights: [],
+      shipments: [],
+      shipmentCounts: {},
+      kpis: {
+        onTimeDeliveryPct: 100,
+        avgFlightOccupancy: 0,
+        avgWarehouseOccupancy: 0,
+        totalDelayedBags: 0,
+        totalBags: 0,
+        deliveredBags: 0,
+        inTransitBags: 0,
+        waitingBags: 0,
+      }
+    })
+    setNotifications([])
+  }, [])
+
   // On mount: reconnect to any active simulation (handles F5 and new clients)
   useEffect(() => {
     async function reconnect() {
@@ -651,6 +688,7 @@ export function useSimulation() {
     pauseSimulation,
     resumeSimulation,
     resetSimulation,
+    cancelSimulation,
     dismissNotification,
   }
 }
