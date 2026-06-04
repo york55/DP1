@@ -58,3 +58,6 @@ logging:
     pe.pucp.tasfb2b: INFO
     org.springframework.web.socket: INFO
     org.hibernate.SQL: WARN
+    
+envios:
+  directorio: ./envios
