@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useSimulationContext } from '../../context/SimulationContext'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Table from '@mui/material/Table'
@@ -18,7 +19,14 @@ import Alert from '@mui/material/Alert'
 import CancelIcon from '@mui/icons-material/Cancel'
 import client from '../../api/client'
 
+const formatTime = (timeStr) => {
+  if (!timeStr) return '--'
+  const str = String(timeStr)
+  return str.length > 11 ? str.substring(11, 16) : str
+}
+
 export default function FlightPlanPage() {
+  const { simulationState } = useSimulationContext()
   const [flights, setFlights]         = useState([])
   const [loading, setLoading]         = useState(true)
   const [cancelling, setCancelling]   = useState(null) // flightKey en proceso
@@ -26,20 +34,29 @@ export default function FlightPlanPage() {
   const [rowsPerPage, setRowsPerPage] = useState(20)
   const [snack, setSnack]             = useState({ open: false, msg: '', severity: 'success' })
 
-  const fetchFlights = () => {
-    client.get('/flight-ops')
+  const fetchFlights = useCallback((date) => {
+    const dateParam = date ? `?date=${date}` : ''
+    client.get(`/flight-ops${dateParam}`)
       .then(res => { setFlights(res.data); setLoading(false) })
       .catch(() => setLoading(false))
-  }
+  }, [])
 
-  useEffect(() => { fetchFlights() }, [])
+  useEffect(() => {
+    const simDate = simulationState?.config?.startDate
+    const dateStr = simDate
+      ? (simDate instanceof Date ? simDate.toISOString() : String(simDate)).slice(0, 10)
+      : null
+    fetchFlights(dateStr)
+  }, [simulationState?.config?.startDate, fetchFlights])
 
   const handleCancel = async (flightKey) => {
     setCancelling(flightKey)
     try {
       await client.patch(`/flight-ops/${encodeURIComponent(flightKey)}/cancel`)
       setSnack({ open: true, msg: `Vuelo ${flightKey} cancelado`, severity: 'success' })
-      fetchFlights()
+      const simDate = simulationState?.config?.startDate
+      const dateStr = simDate ? (simDate instanceof Date ? simDate.toISOString() : String(simDate)).slice(0, 10) : null
+      fetchFlights(dateStr)
     } catch {
       setSnack({ open: true, msg: 'No se pudo cancelar el vuelo', severity: 'error' })
     } finally {
@@ -59,7 +76,12 @@ export default function FlightPlanPage() {
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 3, gap: 2 }}>
       <Box>
         <Typography variant="h6" sx={{ fontWeight: 700, color: '#1F3864' }}>Plan de Vuelos</Typography>
-        <Typography variant="body2" sx={{ color: '#6B7280' }}>{flights.length} vuelos cargados</Typography>
+        <Typography variant="body2" sx={{ color: '#6B7280' }}>
+          {flights.length} vuelos
+          {simulationState?.config?.startDate
+            ? ` — ${(simulationState.config.startDate instanceof Date ? simulationState.config.startDate.toISOString() : String(simulationState.config.startDate)).slice(0, 10)}`
+            : ''}
+        </Typography>
       </Box>
 
       <Paper elevation={0} sx={{ border: '1px solid #E0E0E0', borderRadius: 2, overflow: 'hidden', flex: 1 }}>
@@ -87,10 +109,10 @@ export default function FlightPlanPage() {
                   <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{page * rowsPerPage + i + 1}</TableCell>
                   <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.origin}</TableCell>
                   <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.destination}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.departureUtc}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.arrivalUtc}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{f.departureLocal}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{f.arrivalLocal}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem' }}>{formatTime(f.departureUtc)}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem' }}>{formatTime(f.arrivalUtc)}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{formatTime(f.departureLocal)}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{formatTime(f.arrivalLocal)}</TableCell>
                   <TableCell sx={{ fontSize: '0.78rem' }}>{f.capacity}</TableCell>
                   <TableCell>
                     <Chip

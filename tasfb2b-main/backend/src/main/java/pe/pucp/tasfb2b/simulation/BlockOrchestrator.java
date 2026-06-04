@@ -35,6 +35,9 @@ public class BlockOrchestrator {
     @Value("${tasf.simulation.tick-interval-ms:1000}")
     private long tickIntervalMs;
 
+    @Value("${tasf.simulation.max-batches-per-block:999}")
+    private int maxBatchesPerBlock;
+
     private final SimulationRepository simulationRepo;
     private final BaggageBatchRepository batchRepo;
     private final FlightRepository flightRepo;
@@ -246,12 +249,24 @@ public class BlockOrchestrator {
                 log.info("Simulación {}: sin lotes sin ruta en bloque {}", simId, blockIndex);
                 return new SimulationBlock(blockIndex, blockStart, blockEnd, 0);
             }
+            if (pending.size() > maxBatchesPerBlock) {
+                log.info("Simulación {}: limitando bloque {} a {} de {} lotes pendientes",
+                        simId, blockIndex, maxBatchesPerBlock, pending.size());
+                pending = pending.subList(0, maxBatchesPerBlock);
+            }
 
             // Lookahead window: enough for multi-hop routes extending beyond this block.
             LocalDateTime flightLookahead = blockStart.plusHours(flightLookaheadHours)
                     .isAfter(simEnd) ? simEnd : blockStart.plusHours(flightLookaheadHours);
             List<Flight> flights = flightRepo.findScheduledBetween(blockStart, flightLookahead);
             List<Airport> airports = airportRepo.findAll();
+
+            log.info("Simulación {}: bloque {} — {} lotes sin ruta, {} vuelos SCHEDULED en [{}, {}]",
+                    simId, blockIndex, pending.size(), flights.size(), blockStart, flightLookahead);
+
+            if (flights.isEmpty()) {
+                log.warn("Simulación {}: bloque {} sin vuelos disponibles — ALNS no puede asignar rutas", simId, blockIndex);
+            }
 
             SimulationContext context = SimulationContext.builder()
                     .airports(airports)

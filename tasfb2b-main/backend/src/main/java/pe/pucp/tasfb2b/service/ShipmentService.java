@@ -51,6 +51,12 @@ public class ShipmentService {
                 .collect(Collectors.toList());
     }
 
+    public List<ShipmentDto> findAllByBatchStatus(BatchStatus status) {
+        return batchRepo.findByStatus(status).stream()
+                .map(shipmentMapper::batchToDto)
+                .collect(Collectors.toList());
+    }
+
     public ShipmentDto findById(Long id) {
         return shipmentRepo.findById(id)
                 .map(shipmentMapper::toDto)
@@ -97,14 +103,14 @@ public class ShipmentService {
             Airport origin = airportRepo.findByIataCode(originIata).orElse(null);
 
             if (origin == null) {
-                sendError("Aeropuerto de origen no encontrado: " + originIata);
+                sendError("Aeropuerto de origen no encontrado: " + originIata, finalOriginIata);
                 return;
             }
 
             Airline airline = airlineRepo.findAll().stream().findFirst().orElse(null);
 
             if (airline == null) {
-                sendError("No hay aerolíneas registradas.");
+                sendError("No hay aerolíneas registradas.", finalOriginIata);
                 return;
             }
 
@@ -266,14 +272,14 @@ public class ShipmentService {
 
             log.error("Error crítico en carga asíncrona", e);
 
-            sendError("Error interno: " + e.getMessage());
+            sendError("Error interno: " + e.getMessage(), finalOriginIata);
         }
     }
     
    
-    private void sendError(String message) {
-        messagingTemplate.convertAndSend("/topic/shipments/progress", 
-            new UploadProgressDto(0, 0, "ERROR", message));
+    private void sendError(String message, String aeropuerto) {
+        messagingTemplate.convertAndSend("/topic/shipments/progress",
+            new UploadProgressDto(0, 0, "ERROR", message, aeropuerto, 0));
     }
 
     private String extractOriginFromFilename(String filename) {

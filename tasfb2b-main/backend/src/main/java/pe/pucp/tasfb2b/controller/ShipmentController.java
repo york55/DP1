@@ -2,14 +2,11 @@ package pe.pucp.tasfb2b.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import pe.pucp.tasfb2b.domain.enums.ShipmentStatus;
+import pe.pucp.tasfb2b.domain.enums.BatchStatus;
 import pe.pucp.tasfb2b.dto.response.ShipmentDto;
 import pe.pucp.tasfb2b.service.ShipmentService;
 
@@ -28,16 +25,16 @@ public class ShipmentController {
     @GetMapping("/shipments")
     public ResponseEntity<?> findShipments(
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) Long simulationId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @RequestParam(required = false) Long simulationId) {
 
-        log.debug("ACTION list_shipments status={} simulationId={} page={}", status, simulationId, page);
+        log.debug("ACTION list_shipments status={} simulationId={}", status, simulationId);
         if (status != null) {
-            Pageable pageable = PageRequest.of(page, size);
-            Page<ShipmentDto> result = shipmentService.findByStatus(
-                    ShipmentStatus.valueOf(status), pageable);
-            return ResponseEntity.ok(result);
+            try {
+                BatchStatus batchStatus = BatchStatus.valueOf(status);
+                return ResponseEntity.ok(shipmentService.findAllByBatchStatus(batchStatus));
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Estado desconocido: " + status));
+            }
         }
         return ResponseEntity.ok(shipmentService.findAll());
     }

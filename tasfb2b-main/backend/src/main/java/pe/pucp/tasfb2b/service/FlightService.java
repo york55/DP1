@@ -44,6 +44,14 @@ public class FlightService {
                 .collect(Collectors.toList());
     }
 
+    public List<FlightDto> findByDate(java.time.LocalDate date) {
+        LocalDateTime from = date.atStartOfDay();
+        LocalDateTime to = from.plusDays(1);
+        return flightRepo.findAllBetween(from, to).stream()
+                .map(flightMapper::toDto)
+                .collect(Collectors.toList());
+    }
+
     public List<FlightDto> findByStatus(FlightStatus status) {
         return flightRepo.findByStatus(status).stream()
                 .map(flightMapper::toDto)

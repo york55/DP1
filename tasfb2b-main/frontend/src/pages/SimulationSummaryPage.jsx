@@ -113,7 +113,7 @@ export default function SimulationSummaryPage() {
 
   const total = shipments.length
   const delivered = shipments.filter(s => s.status === 'DELIVERED').length
-  const inTransit = shipments.filter(s => s.status === 'IN_FLIGHT').length
+  const inTransit = shipments.filter(s => s.status === 'IN_TRANSIT').length
   const waiting = shipments.filter(s => s.status === 'IN_ORIGIN').length
   const delayed = shipments.filter(s => s.status === 'DELAYED').length
 
@@ -149,7 +149,7 @@ export default function SimulationSummaryPage() {
     {
       id: 5,
       label: 'Total de Vuelos Operados',
-      value: `${flights.filter(f => f.status === 'LANDED').length} / ${flights.length}`,
+      value: `${flights.filter(f => f.status !== 'SCHEDULED' && f.status !== 'CANCELLED').length} / ${flights.length}`,
       status: 'Completado',
       statusColor: '#2E75B6',
     },

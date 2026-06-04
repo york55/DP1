@@ -21,7 +21,10 @@ import pe.pucp.tasfb2b.simulation.BlockOrchestrator;
 import pe.pucp.tasfb2b.simulation.SimulationEngine;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -163,32 +166,70 @@ public class SimulationService {
     }
 
     private void resetForSimulation(Simulation sim) {
-        // 1. Delete all shipments so findUnroutedBatches finds batches again
+        // 1. Delete in FK-safe order: history → route_legs → routes → shipments
+        shipmentStatusHistoryRepo.deleteAllInBatch();
+        long legCount = routeLegRepo.count();
+        routeLegRepo.deleteAllInBatch();
+        long routeCount = routeRepo.count();
+        routeRepo.deleteAllInBatch();
         long shipmentCount = shipmentRepo.count();
         shipmentRepo.deleteAllInBatch();
-        log.info("Eliminados {} shipments para simulación {}", shipmentCount, sim.getId());
+        log.info("Eliminados {} route_legs, {} routes, {} shipments para simulación {}",
+                legCount, routeCount, shipmentCount, sim.getId());
 
-        // 2. Reset all batch statuses to IN_ORIGIN
-        batchRepo.resetAllToInOrigin();
-        log.info("Reset {} lotes a IN_ORIGIN para simulación {}", batchRepo.count(), sim.getId());
-
-        // 3. Reset airport occupancies to 0
+        // 2. Reset airport occupancies
         airportRepo.resetAllOccupancies();
 
-        // 4. Reset flights within simulation window
-        LocalDateTime start = sim.getStartDate().atStartOfDay();
-        LocalDateTime end = start.plusDays(sim.getPeriodDays() != null ? sim.getPeriodDays() : 5);
-        List<Flight> flights = flightRepo.findAllBetween(start, end);
-        List<Long> flightIds = flights.stream().map(Flight::getId).toList();
-        if (!flightIds.isEmpty()) {
-            cancellationRepo.deleteByFlightIdIn(flightIds);
+        // 3. Delete instance flights from any previous run (cancellations first due to FK)
+        List<Flight> instances = flightRepo.findByFrequency("INSTANCE");
+        if (!instances.isEmpty()) {
+            cancellationRepo.deleteByFlightIdIn(instances.stream().map(Flight::getId).toList());
+            flightRepo.deleteAllInstances();
+            log.info("Eliminadas {} instancias de vuelo de la ejecución anterior", instances.size());
         }
-        for (Flight f : flights) {
-            f.setStatus(FlightStatus.SCHEDULED);
-            f.setCurrentLoad(0);
+
+        // 4. Reset template flights (frequency=DAILY) to their initial state
+        List<Flight> templates = flightRepo.findByFrequency("DAILY");
+        cancellationRepo.deleteByFlightIdIn(templates.stream().map(Flight::getId).toList());
+        templates.forEach(f -> { f.setStatus(FlightStatus.SCHEDULED); f.setCurrentLoad(0); });
+        flightRepo.saveAll(templates);
+        log.info("Reset {} vuelos plantilla para simulación {}", templates.size(), sim.getId());
+
+        // 5. Expand daily itineraries into per-day instances for the full simulation period
+        expandFlightsForSimulation(sim, templates);
+    }
+
+    private static final LocalDate FLIGHT_TEMPLATE_DATE = LocalDate.of(2026, 5, 10);
+
+    private void expandFlightsForSimulation(Simulation sim, List<Flight> templates) {
+        if (templates.isEmpty()) return;
+        LocalDate simStart = sim.getStartDate();
+        int periodDays = sim.getPeriodDays() != null ? sim.getPeriodDays() : 5;
+        long baseOffset = ChronoUnit.DAYS.between(FLIGHT_TEMPLATE_DATE, simStart);
+
+        List<Flight> instances = new ArrayList<>();
+        for (int day = 0; day < periodDays; day++) {
+            // Day 0 when simStart == template date: use templates directly (they ARE day-0 flights)
+            if (day == 0 && baseOffset == 0) continue;
+            long totalOffset = baseOffset + day;
+            for (Flight tmpl : templates) {
+                Flight inst = new Flight();
+                inst.setOriginAirport(tmpl.getOriginAirport());
+                inst.setDestinationAirport(tmpl.getDestinationAirport());
+                inst.setDepartureTime(tmpl.getDepartureTime().plusDays(totalOffset));
+                inst.setArrivalTime(tmpl.getArrivalTime().plusDays(totalOffset));
+                inst.setBaggageCapacity(tmpl.getBaggageCapacity());
+                inst.setFrequency("INSTANCE");
+                inst.setStatus(FlightStatus.SCHEDULED);
+                inst.setAirline(tmpl.getAirline());
+                instances.add(inst);
+            }
         }
-        flightRepo.saveAll(flights);
-        log.info("Reset {} vuelos para simulación {}", flights.size(), sim.getId());
+        if (!instances.isEmpty()) {
+            flightRepo.saveAll(instances);
+            log.info("Expandidos {} vuelos instancia para simulación {} ({} plantillas × {} días)",
+                    instances.size(), sim.getId(), templates.size(), periodDays - (baseOffset == 0 ? 1 : 0));
+        }
     }
 
     @Transactional

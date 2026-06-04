@@ -17,7 +17,7 @@ public record AlnsParams(
         int kRegret
 ) {
     public static AlnsParams defaults() {
-        return new AlnsParams(100.0, 0.9995, 0.25, 1000, 100,
+        return new AlnsParams(100.0, 0.9995, 0.25, 200, 100,
                 9.0, 3.0, 1.0, 0.1, 0.05,
                 0.7, 0.15, 0.15, 3);
     }

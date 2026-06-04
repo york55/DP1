@@ -18,8 +18,10 @@ import pe.pucp.tasfb2b.websocket.WebSocketEventPublisher;
 
 import java.math.BigDecimal; 
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -87,7 +89,7 @@ public class SimulationEngine {
                 state = runtimeStates.get(simulationId);
             }
 
-            SimulationClock clock = state.clock();
+            SimulationClock clock = state.clock;
             int tickNum = clock.getTickCount(); // before advance
             long tickWall = System.currentTimeMillis();
 
@@ -97,6 +99,15 @@ public class SimulationEngine {
 
             sim.setSimulatedTime(simNow);
             simulationRepo.save(sim);
+
+            // 0. Reset flights at day boundary (recurring daily schedules)
+            LocalDate simDate = simNow.toLocalDate();
+            if (state.lastResetDate == null) {
+                state.lastResetDate = simDate;
+            } else if (simDate.isAfter(state.lastResetDate)) {
+                resetFlightsForNewDay(simDate);
+                state.lastResetDate = simDate;
+            }
 
             // 1. Land arrived flights
             long t0 = System.currentTimeMillis();
@@ -110,7 +121,7 @@ public class SimulationEngine {
 
             // 3. Generate cancellations
             long t2 = System.currentTimeMillis();
-            processCancellations(sim, state.rng(), simNow, simulationId);
+            processCancellations(sim, state.rng, simNow, simulationId);
             log.debug("[SIM-{}] tick#{} cancellations ({}ms)", simulationId, tickNum, System.currentTimeMillis() - t2);
 
             // 4. Check SLA violations
@@ -133,7 +144,7 @@ public class SimulationEngine {
 
             // Log simulated speed ratio every 10 ticks (simulated min advanced / real seconds elapsed)
             if (tickNum > 0 && tickNum % 10 == 0) {
-                long realMs = System.currentTimeMillis() - state.startMillis();
+                long realMs = System.currentTimeMillis() - state.startMillis;
                 long simMs = (long) tickNum * tickDurationMinutes * 60_000L;
                 double ratio = realMs > 0 ? (double) simMs / realMs : 0;
                 log.info("[SIM-{}] speed: {}x realtime | tick#{} simTime={} realElapsed={}s",
@@ -370,8 +381,8 @@ public class SimulationEngine {
         // Only count bags physically present at origin (availableFrom has passed) and not yet departed
         List<BaggageBatch> waitingBatches = batchRepo.findPendingBatches(simNow);
 
-        // Bags delivered within the last 4 simulated hours still occupy destination storage
-        List<BaggageBatch> deliveredBatches = batchRepo.findRecentlyDelivered(simNow.minusHours(4));
+        // Bags delivered within the last 10 simulated minutes still occupy destination storage
+        List<BaggageBatch> deliveredBatches = batchRepo.findRecentlyDelivered(simNow.minusMinutes(10));
 
         // IN_TRANSIT bags sitting at intermediate connecting airports (not on any plane)
         List<RouteLeg> intermediateLegs = routeLegRepo.findFirstPendingLegsOfTransitBagsAtIntermediateStops();
@@ -515,6 +526,23 @@ public class SimulationEngine {
                 System.currentTimeMillis() - pubStart);
     }
 
+    private void resetFlightsForNewDay(LocalDate simDate) {
+        List<Flight> toReset = new ArrayList<>();
+        toReset.addAll(flightRepo.findByStatus(FlightStatus.LANDED));
+        toReset.addAll(flightRepo.findByStatus(FlightStatus.CANCELLED));
+        for (Flight f : toReset) {
+            long days = ChronoUnit.DAYS.between(f.getDepartureTime().toLocalDate(), simDate);
+            if (days > 0) {
+                f.setDepartureTime(f.getDepartureTime().plusDays(days));
+                f.setArrivalTime(f.getArrivalTime().plusDays(days));
+            }
+            f.setStatus(FlightStatus.SCHEDULED);
+            f.setCurrentLoad(0);
+        }
+        flightRepo.saveAll(toReset);
+        log.info("[SIM] Reseteo diario: {} vuelos vuelven a SCHEDULED para {}", toReset.size(), simDate);
+    }
+
     private void recordStatusChange(Shipment shipment, String oldStatus, String newStatus,
                                      Airport airport, LocalDateTime changedAt) {
         ShipmentStatusHistory history = new ShipmentStatusHistory(
@@ -526,7 +554,18 @@ public class SimulationEngine {
         runtimeStates.remove(simulationId);
     }
 
-    record SimulationRuntimeState(SimulationClock clock, long startMillis, Random rng) {
+    static class SimulationRuntimeState {
+        final SimulationClock clock;
+        final long startMillis;
+        final Random rng;
+        LocalDate lastResetDate;
+
+        SimulationRuntimeState(SimulationClock clock, long startMillis, Random rng) {
+            this.clock = clock;
+            this.startMillis = startMillis;
+            this.rng = rng;
+        }
+
         long elapsedRealSeconds() {
             return (System.currentTimeMillis() - startMillis) / 1000;
         }

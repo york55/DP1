@@ -7,7 +7,6 @@ import { useSimulationContext } from '../../context/SimulationContext'
 
 const STATUS_STYLES = {
   IN_ORIGIN: { label: 'En Almacén', color: '#1565C0', bg: '#E3F2FD' },
-  PLANNED: { label: 'Planificado', color: '#6B7280', bg: '#F2F2F2' },
   IN_TRANSIT: { label: 'En Tránsito', color: '#E65100', bg: '#FFF3E0' },
   DELIVERED: { label: 'Entregado', color: '#2E7D32', bg: '#E8F5E9' },
   DELAYED: { label: 'Retrasado', color: '#C62828', bg: '#FFEBEE' },

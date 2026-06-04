@@ -35,7 +35,7 @@ public class Simulation {
     private LocalDate startDate;
 
     @Column(name = "cancellation_rate", nullable = false, precision = 5, scale = 2)
-    private BigDecimal cancellationRate = BigDecimal.valueOf(10.00);
+    private BigDecimal cancellationRate = BigDecimal.valueOf(0.00);
 
     @Column(name = "seed", nullable = false)
     private Long seed;

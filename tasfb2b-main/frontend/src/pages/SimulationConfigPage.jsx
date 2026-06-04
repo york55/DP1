@@ -119,6 +119,7 @@ export default function SimulationConfigPage() {
 
 
   const [loadedFiles, setLoadedFiles] = useState([])
+  const [fileLineCounts, setFileLineCounts] = useState({})
   const [isWaitingToStart, setIsWaitingToStart] = useState(false)
 
   // Resizable panel state
@@ -128,17 +129,7 @@ export default function SimulationConfigPage() {
 
   const stompClientRef = useRef(null)
 
-  const periodFlightCount = useMemo(() => {
-    if (!startDate || !flights.length) return flights.length
-    const start = startDate.toDate ? startDate.toDate() : new Date(startDate)
-    const end = new Date(start)
-    end.setDate(end.getDate() + parseInt(period, 10))
-    return flights.filter((f) => {
-      if (!f.departureTime) return false
-      const dep = new Date(f.departureTime)
-      return dep >= start && dep <= end
-    }).length
-  }, [flights, startDate, period])
+  const periodFlightCount = flights.length
 
   // Resize panel handlers
   const handleResizeStart = (e) => {
@@ -212,7 +203,6 @@ export default function SimulationConfigPage() {
           }))
 
           if (data.status === 'COMPLETED') {
-            setShipmentsCount((prev) => prev + (data.inserted || 0))
             setCompletedCount((prev) => prev + 1)
           }
 
@@ -236,21 +226,44 @@ export default function SimulationConfigPage() {
 
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files)
-    // Reset input so the same file can be re-selected after clearing
     e.target.value = ''
     if (!files.length) return
 
+    const newFiles = files.filter((f) => {
+      return true // deduplication handled below with existing state
+    })
+
     setLoadedFiles((prev) => {
       const existingNames = new Set(prev.map((f) => f.name))
-      const newFiles = files.filter((f) => !existingNames.has(f.name))
-      return [...prev, ...newFiles]
+      return [...prev, ...newFiles.filter((f) => !existingNames.has(f.name))]
+    })
+
+    newFiles.forEach((file) => {
+      const reader = new FileReader()
+      reader.onload = (ev) => {
+        const text = ev.target.result
+        const count = text.split('\n').filter((line) => line.trim().length > 0).length
+        setFileLineCounts((prev) => ({ ...prev, [file.name]: count }))
+        setShipmentsCount((prev) => prev + count)
+      }
+      reader.readAsText(file)
     })
   }
 
   // FIX 2: handleRemoveFile is now wired up to the delete button in the file list
   const handleRemoveFile = (index) => {
     setLoadedFiles((prev) => {
+      const removed = prev[index]
       const updated = prev.filter((_, i) => i !== index)
+      if (removed) {
+        setFileLineCounts((counts) => {
+          const lineCount = counts[removed.name] || 0
+          setShipmentsCount((s) => Math.max(0, s - lineCount))
+          const next = { ...counts }
+          delete next[removed.name]
+          return next
+        })
+      }
       if (updated.length === 0) {
         setShipmentsCount(0)
       }
@@ -296,6 +309,9 @@ export default function SimulationConfigPage() {
     setIsWaitingToStart(true)
 
     try {
+      // Clear all data from any previous run before uploading fresh batches.
+      await apiClient.delete('/simulations/reset')
+
       for (const file of loadedFiles) {
         const formData = new FormData()
         formData.append('file', file)
@@ -447,7 +463,8 @@ export default function SimulationConfigPage() {
               {loadedFiles.length > 0 && (
                 <Box sx={{ mb: 1 }}>
                   {loadedFiles.map((file, index) => {
-                    const airportCode = file.name.split('_')[1]?.split('.')[0]
+                    const _acMatch = file.name.match(/envios_([A-Za-z]{4})_/i)
+                    const airportCode = _acMatch ? _acMatch[1].toUpperCase() : null
                     const progress = uploadProgressMap[airportCode]
 
                     return (
