@@ -4,6 +4,7 @@ import ScenarioSelectorPage from '../pages/ScenarioSelectorPage'
 import SimulationConfigPage from '../pages/SimulationConfigPage'
 import SimulationRunningPage from '../pages/SimulationRunningPage'
 import SimulationSummaryPage from '../pages/SimulationSummaryPage'
+import RealtimeOperationsPage from '../pages/Operacion/OperacionDiaria'
 
 export default function AppRouter() {
   return (
@@ -13,6 +14,7 @@ export default function AppRouter() {
         <Route path="/simulation/config" element={<SimulationConfigPage />} />
         <Route path="/simulation/running" element={<SimulationRunningPage />} />
         <Route path="/simulation/summary" element={<SimulationSummaryPage />} />
+        <Route path="/operacion" element={<RealtimeOperationsPage />} />
         {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
