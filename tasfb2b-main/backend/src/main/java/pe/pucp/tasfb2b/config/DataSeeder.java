@@ -61,13 +61,12 @@ public class DataSeeder implements CommandLineRunner {
             log.info("Airlines table already populated.");
         }
 
+        // Templates should be ~2866 (one per itinerary). More than 3000 means old multi-day replication.
+        long dailyCount = flightRepository.findByFrequency("DAILY").size();
         boolean needFlightReseed = flightRepository.count() > 0 &&
-                flightRepository.findAllBetween(
-                        LocalDateTime.of(2026, 5, 11, 0, 0),
-                        LocalDateTime.of(2026, 5, 12, 0, 0)
-                ).isEmpty();
+                (dailyCount == 0 || dailyCount > 3000);
         if (needFlightReseed) {
-            log.info("Detected single-day flights — re-seeding flights for full simulation period.");
+            log.info("Detected {} legacy/incorrect DAILY flights — re-seeding.", dailyCount);
             flightRepository.deleteAll();
         }
 
@@ -143,7 +142,7 @@ public class DataSeeder implements CommandLineRunner {
         log.info("Successfully loaded {} airlines.", airlineRepository.count());
     }
 
-    private static final int SIMULATION_DAYS = 5;
+    private static final int SIMULATION_DAYS = 1;
 
     private void populateFlights() {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(

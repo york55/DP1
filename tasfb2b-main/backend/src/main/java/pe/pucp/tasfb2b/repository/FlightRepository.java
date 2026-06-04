@@ -1,6 +1,7 @@
 package pe.pucp.tasfb2b.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import pe.pucp.tasfb2b.domain.Flight;
@@ -73,4 +74,10 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
            "JOIN FETCH f.originAirport JOIN FETCH f.destinationAirport " +
            "WHERE EXISTS (SELECT 1 FROM RouteLeg rl WHERE rl.flight = f)")
     List<Flight> findAllWithRouteLegs();
+
+    List<Flight> findByFrequency(String frequency);
+
+    @Modifying
+    @Query("DELETE FROM Flight f WHERE f.frequency = 'INSTANCE'")
+    void deleteAllInstances();
 }

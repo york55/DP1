@@ -261,6 +261,13 @@ public class BlockOrchestrator {
             List<Flight> flights = flightRepo.findScheduledBetween(blockStart, flightLookahead);
             List<Airport> airports = airportRepo.findAll();
 
+            log.info("Simulación {}: bloque {} — {} lotes sin ruta, {} vuelos SCHEDULED en [{}, {}]",
+                    simId, blockIndex, pending.size(), flights.size(), blockStart, flightLookahead);
+
+            if (flights.isEmpty()) {
+                log.warn("Simulación {}: bloque {} sin vuelos disponibles — ALNS no puede asignar rutas", simId, blockIndex);
+            }
+
             SimulationContext context = SimulationContext.builder()
                     .airports(airports)
                     .flights(flights)

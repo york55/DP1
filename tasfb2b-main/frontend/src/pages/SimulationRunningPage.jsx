@@ -42,6 +42,7 @@ export default function SimulationRunningPage() {
     flights,
     shipments,
     planningProgress,
+    firstBatchReady,
   } = useSimulationContext()
 
   const { status, simulatedTime, elapsedSeconds, config, currentDay } = simulationState
@@ -156,8 +157,8 @@ export default function SimulationRunningPage() {
         <Box sx={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <WorldMap airports={airports} flights={flights} simulatedTime={simulatedTime} resizeTrigger={collapsed ? 'collapsed' : panelWidth} />
 
-          {/* Planning overlay — shown while ALNS is computing routes */}
-          {status === 'planning' && (
+          {/* Planning overlay — shown while ALNS is computing routes and until first tick is visualized */}
+          {(status === 'planning' || (status === 'running' && !firstBatchReady)) && (
             <Box sx={{
               position: 'absolute', inset: 0, zIndex: 10,
               backgroundColor: 'rgba(15, 30, 60, 0.72)',

@@ -21,7 +21,7 @@ public class CreateSimulationRequest {
     private String algorithm = "ALNS";
 
     @DecimalMin("0.0") @DecimalMax("100.0")
-    private Double cancellationRate = 10.0;
+    private Double cancellationRate = 0.0;
 
     @NotNull
     private Long seed;

@@ -10,6 +10,7 @@ import pe.pucp.tasfb2b.dto.request.CancelFlightRequest;
 import pe.pucp.tasfb2b.dto.response.FlightDto;
 import pe.pucp.tasfb2b.service.FlightService;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -24,8 +25,12 @@ public class FlightController {
     @GetMapping
     public ResponseEntity<List<FlightDto>> findAll(
             @RequestParam(required = false) String status,
-            @RequestParam(required = false, defaultValue = "false") boolean assignedOnly) {
-        log.debug("ACTION list_flights status={} assignedOnly={}", status, assignedOnly);
+            @RequestParam(required = false, defaultValue = "false") boolean assignedOnly,
+            @RequestParam(required = false) String date) {
+        log.debug("ACTION list_flights status={} assignedOnly={} date={}", status, assignedOnly, date);
+        if (date != null) {
+            return ResponseEntity.ok(flightService.findByDate(LocalDate.parse(date)));
+        }
         if (status != null) {
             return ResponseEntity.ok(assignedOnly
                     ? flightService.findByStatusAssigned(FlightStatus.valueOf(status))

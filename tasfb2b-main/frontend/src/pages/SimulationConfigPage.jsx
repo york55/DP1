@@ -309,6 +309,9 @@ export default function SimulationConfigPage() {
     setIsWaitingToStart(true)
 
     try {
+      // Clear all data from any previous run before uploading fresh batches.
+      await apiClient.delete('/simulations/reset')
+
       for (const file of loadedFiles) {
         const formData = new FormData()
         formData.append('file', file)
@@ -460,7 +463,8 @@ export default function SimulationConfigPage() {
               {loadedFiles.length > 0 && (
                 <Box sx={{ mb: 1 }}>
                   {loadedFiles.map((file, index) => {
-                    const airportCode = file.name.split('_')[1]?.split('.')[0]
+                    const _acMatch = file.name.match(/envios_([A-Za-z]{4})_/i)
+                    const airportCode = _acMatch ? _acMatch[1].toUpperCase() : null
                     const progress = uploadProgressMap[airportCode]
 
                     return (

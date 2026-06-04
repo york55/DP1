@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useSimulationContext } from '../../context/SimulationContext'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Table from '@mui/material/Table'
@@ -20,17 +21,27 @@ const STATUS_COLOR = {
 }
 
 export default function FlightCancellationPage() {
+  const { simulationState } = useSimulationContext()
   const [flights, setFlights]   = useState([])
   const [loading, setLoading]   = useState(true)
   const [page, setPage]         = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(20)
 
-  useEffect(() => {
-    fetch('http://localhost:8080/api/flights')
+  const loadFlights = useCallback((date) => {
+    const dateParam = date ? `?date=${date}` : ''
+    fetch(`http://localhost:8080/api/flights${dateParam}`)
       .then(res => res.json())
       .then(data => { setFlights(data); setLoading(false) })
       .catch(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    const simDate = simulationState?.config?.startDate
+    const dateStr = simDate
+      ? (simDate instanceof Date ? simDate.toISOString() : String(simDate)).slice(0, 10)
+      : null
+    loadFlights(dateStr)
+  }, [simulationState?.config?.startDate, loadFlights])
 
   const paginated = flights.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
 
@@ -44,7 +55,12 @@ export default function FlightCancellationPage() {
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 3, gap: 2 }}>
       <Box>
         <Typography variant="h6" sx={{ fontWeight: 700, color: '#1F3864' }}>Cancelación de Vuelos</Typography>
-        <Typography variant="body2" sx={{ color: '#6B7280' }}>{flights.length} vuelos cargados</Typography>
+        <Typography variant="body2" sx={{ color: '#6B7280' }}>
+          {flights.length} vuelos
+          {simulationState?.config?.startDate
+            ? ` — ${(simulationState.config.startDate instanceof Date ? simulationState.config.startDate.toISOString() : String(simulationState.config.startDate)).slice(0, 10)}`
+            : ''}
+        </Typography>
       </Box>
 
       <Paper elevation={0} sx={{ border: '1px solid #E0E0E0', borderRadius: 2, overflow: 'hidden', flex: 1 }}>

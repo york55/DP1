@@ -57,11 +57,15 @@ export function useSimulation() {
     currentObjective: 0,
   })
 
+  const [firstBatchReady, setFirstBatchReady] = useState(false)
+  const firstBatchReadyRef = useRef(false)
+
   const simTimeRef = useRef(null)
   const statusRef = useRef('idle')
   const simIdRef = useRef(null)
   const shipmentPollRef = useRef(null)
   const flightPollRef = useRef(null)
+  const postPlanningLoadRef = useRef(false)
 
   // Refs for smooth timer interpolation between ticks
   const lastTickSimTimeRef = useRef(null)
@@ -72,6 +76,35 @@ export function useSimulation() {
     simTimeRef.current = simulationState.simulatedTime
     statusRef.current = simulationState.status
   }, [simulationState.simulatedTime, simulationState.status])
+
+  // After ALNS planning completes the status flips to 'running' on the first tick.
+  // Re-fetch assigned flights once at that moment because the initial load fires
+  // before start() is called — no RouteLeg records exist yet at that point.
+  useEffect(() => {
+    if (simulationState.status !== 'running') {
+      postPlanningLoadRef.current = false
+      return
+    }
+    if (postPlanningLoadRef.current) return
+    postPlanningLoadRef.current = true
+    flightApi.getAll(null, true).then(flights => {
+      if (!Array.isArray(flights) || flights.length === 0) return
+      setSimulationData(prev => ({
+        ...prev,
+        flights: flights.map(f => ({
+          ...f,
+          origin: f.originIata,
+          destination: f.destinationIata,
+          departureUTC: f.departureTime ? (String(f.departureTime).endsWith('Z') ? f.departureTime : f.departureTime + 'Z') : null,
+          arrivalUTC: f.arrivalTime ? (String(f.arrivalTime).endsWith('Z') ? f.arrivalTime : f.arrivalTime + 'Z') : null,
+          capacity: f.baggageCapacity,
+          bagsAboard: f.currentLoad,
+          airline: f.airlineName || f.airlineIata || '—',
+          backendId: f.id,
+        })),
+      }))
+    }).catch(() => {})
+  }, [simulationState.status])
 
   // Smooth 1-second timer: increments elapsedSeconds every real second and
   // interpolates simulatedTime between WebSocket ticks so neither jumps.
@@ -180,7 +213,7 @@ export function useSimulation() {
           return {
             ...prev,
             shipments,
-            shipmentCounts: Object.keys(prev.shipmentCounts).length === 0 ? shipmentCounts : prev.shipmentCounts,
+            shipmentCounts,
             kpis: {
               ...prev.kpis,
               totalBags: prev.kpis.totalBags === 0 ? totalBags : prev.kpis.totalBags,
@@ -234,6 +267,11 @@ export function useSimulation() {
 
     lastTickSimTimeRef.current = simTime
     lastTickRealTimeRef.current = now
+
+    if (!firstBatchReadyRef.current) {
+      firstBatchReadyRef.current = true
+      setFirstBatchReady(true)
+    }
 
     // Update state — use Math.max so the locally-running timer never goes backward
     setSimulationState(prev => {
@@ -369,6 +407,8 @@ export function useSimulation() {
 
   const startSimulation = useCallback(async (config) => {
     notifCounter = 0
+    firstBatchReadyRef.current = false
+    setFirstBatchReady(false)
 
     const startDate = config.startDate instanceof Date ? config.startDate : new Date(config.startDate)
     const simStart = new Date(startDate)
@@ -400,7 +440,7 @@ export function useSimulation() {
         periodDays: config.period,
         startDate: simStart.toISOString().slice(0, 10),
         algorithm: config.algorithm || 'ALNS',
-        cancellationRate: config.cancellationRate ?? 10.0,
+        cancellationRate: config.cancellationRate ?? 0.0,
         seed: config.seed ?? 42,
         volumePerDay: config.volumePerDay ?? 10,
       })
@@ -444,8 +484,10 @@ export function useSimulation() {
         flights: nextFlights,
       }))
 
-      await simulationApi.start(simDto.id)
+      // Subscribe to WebSocket BEFORE calling start() so that BLOCK_START and
+      // ALNS progress events are not missed during the planning phase.
       connectSimulationWebSocket(simDto.id, handleTickEvent, handleAlert, handlePlanProgress)
+      await simulationApi.start(simDto.id)
 
       setSimulationState({
         status: 'planning',
@@ -497,6 +539,8 @@ export function useSimulation() {
   }, [handleTickEvent, handleAlert, addNotification])
 
   const resetSimulation = useCallback(() => {
+    firstBatchReadyRef.current = false
+    setFirstBatchReady(false)
     setSimulationState({
       status: 'idle',
       simulatedTime: null,
@@ -527,6 +571,8 @@ export function useSimulation() {
   }, [])
 
   const cancelSimulation = useCallback(async () => {
+    firstBatchReadyRef.current = false
+    setFirstBatchReady(false)
     const id = simIdRef.current
     disconnectSimulationWebSocket()
     if (shipmentPollRef.current) { clearInterval(shipmentPollRef.current); shipmentPollRef.current = null }
@@ -614,6 +660,10 @@ export function useSimulation() {
           : []
 
         setSimulationData(prev => ({ ...prev, airports: nextAirports, flights: nextFlights }))
+        if (frontendStatus !== 'planning') {
+          firstBatchReadyRef.current = true
+          setFirstBatchReady(true)
+        }
         let currentDay = 1;
         if (active.simulatedTime && active.startDate) {
           const start = new Date(active.startDate);
@@ -684,6 +734,7 @@ export function useSimulation() {
     ...simulationData,
     notifications,
     planningProgress,
+    firstBatchReady,
     startSimulation,
     pauseSimulation,
     resumeSimulation,
