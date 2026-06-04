@@ -19,6 +19,7 @@ import WorldMap from '../components/map/WorldMap'
 import DataTable from '../components/common/DataTable'
 import { useSimulationContext } from '../context/SimulationContext'
 import { formatUTCFull, formatElapsed } from '../utils/timeUtils'
+import { simulationApi } from '../api/simulationApi'
 
 function SummaryStatCard({ icon, label, value, color, bgColor }) {
   return (
@@ -84,9 +85,22 @@ const kpiTableColumns = [
 
 export default function SimulationSummaryPage() {
   const navigate = useNavigate()
-  const { simulationState, airports, flights, shipments, kpis } = useSimulationContext()
+  const { simulationState, airports, flights, shipments, kpis, resetSimulation } = useSimulationContext()
 
   const { simulatedTime, elapsedSeconds, config, status } = simulationState
+
+  const handleNewSimulation = async () => {
+    try {
+      await simulationApi.resetDb()
+      resetSimulation()
+      navigate('/')
+    } catch (err) {
+      console.error('Error resetting simulation:', err)
+      // En caso de error, intentamos resetear el estado local de todos modos
+      resetSimulation()
+      navigate('/')
+    }
+  }
 
   React.useEffect(() => {
     const timer = setTimeout(() => {
@@ -158,7 +172,7 @@ export default function SimulationSummaryPage() {
           <Button
             variant="outlined"
             startIcon={<HomeIcon />}
-            onClick={() => navigate('/')}
+            onClick={handleNewSimulation}
             size="small"
             sx={{
               borderColor: '#90CAF9',
@@ -270,7 +284,7 @@ export default function SimulationSummaryPage() {
             variant="contained"
             size="large"
             startIcon={<HomeIcon />}
-            onClick={() => navigate('/')}
+            onClick={handleNewSimulation}
             sx={{
               backgroundColor: '#1F3864',
               fontWeight: 700,

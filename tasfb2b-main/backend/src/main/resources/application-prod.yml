@@ -1,0 +1,11 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+logging:
+  level:
+    pe.pucp.tasfb2b: INFO
+    org.springframework.web.socket: INFO
+    org.hibernate.SQL: WARN

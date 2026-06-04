@@ -16,6 +16,10 @@ public class RegretKInsertion implements RepairOperator {
     public void repair(AlnsSolution solution, List<BaggageBatch> allBatches,
                        List<Flight> availableFlights, int kRegret, Random rng) {
 
+        // Index flights by origin airport to optimize lookup speed
+        Map<String, List<Flight>> flightsByOrigin = availableFlights.stream()
+                .collect(Collectors.groupingBy(f -> f.getOriginAirport().getIataCode()));
+
         Set<Long> bankSnapshot = new LinkedHashSet<>(solution.getBank());
 
         while (!bankSnapshot.isEmpty()) {
@@ -27,7 +31,7 @@ public class RegretKInsertion implements RepairOperator {
                 BaggageBatch batch = solution.getBatchMap().get(batchId);
                 if (batch == null) continue;
 
-                List<List<Long>> candidates = findCandidateSequences(batch, availableFlights, solution);
+                List<List<Long>> candidates = findCandidateSequences(batch, flightsByOrigin, solution);
 
                 double regret;
                 List<Long> chosen;
@@ -66,7 +70,7 @@ public class RegretKInsertion implements RepairOperator {
     }
 
     private List<List<Long>> findCandidateSequences(BaggageBatch batch,
-                                                      List<Flight> flights,
+                                                      Map<String, List<Flight>> flightsByOrigin,
                                                       AlnsSolution solution) {
         String origin = batch.getOriginAirport().getIataCode();
         String dest = batch.getDestinationAirport().getIataCode();
@@ -74,9 +78,10 @@ public class RegretKInsertion implements RepairOperator {
 
         List<List<Long>> candidates = new ArrayList<>();
 
+        List<Flight> departingOrigin = flightsByOrigin.getOrDefault(origin, Collections.emptyList());
+
         // Direct flights
-        for (Flight f : flights) {
-            if (!f.getOriginAirport().getIataCode().equals(origin)) continue;
+        for (Flight f : departingOrigin) {
             if (!f.getDestinationAirport().getIataCode().equals(dest)) continue;
             if (f.getDepartureTime().isBefore(batch.getAvailableFrom())) continue;
             if (!solution.canAssign(f.getId(), qty)) continue;
@@ -84,15 +89,14 @@ public class RegretKInsertion implements RepairOperator {
         }
 
         // 2-hop connections
-        for (Flight f1 : flights) {
-            if (!f1.getOriginAirport().getIataCode().equals(origin)) continue;
+        for (Flight f1 : departingOrigin) {
             if (f1.getDepartureTime().isBefore(batch.getAvailableFrom())) continue;
             if (!solution.canAssign(f1.getId(), qty)) continue;
             String hub = f1.getDestinationAirport().getIataCode();
             if (hub.equals(dest)) continue;
 
-            for (Flight f2 : flights) {
-                if (!f2.getOriginAirport().getIataCode().equals(hub)) continue;
+            List<Flight> departingHub = flightsByOrigin.getOrDefault(hub, Collections.emptyList());
+            for (Flight f2 : departingHub) {
                 if (!f2.getDestinationAirport().getIataCode().equals(dest)) continue;
                 if (!solution.canAssign(f2.getId(), qty)) continue;
                 long gap = Duration.between(f1.getArrivalTime(), f2.getDepartureTime()).toMinutes();

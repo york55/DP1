@@ -11,7 +11,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
-      ddl-auto: update #para que el ORM no sea tan estricto (interactuar con BD con objetos JAVA)
+      ddl-auto: validate # cambiado para mayor seguridad en general
     show-sql: false
     properties:
       hibernate:
@@ -37,11 +37,11 @@ tasf:
     default-threshold-amber: 75
     default-threshold-red: 90
   alns:
-    default-t0: 100.0
-    default-alpha: 0.9995
-    default-q-pct: 0.25
-    default-max-iterations: 1000
-    default-seg-len: 100
+    default-t0: 50.0
+    default-alpha: 0.99
+    default-q-pct: 0.35
+    default-max-iterations: 300
+    default-seg-len: 50
 
 
 management:
@@ -55,6 +55,6 @@ management:
 
 logging:
   level:
-    pe.pucp.tasfb2b: DEBUG
+    pe.pucp.tasfb2b: INFO
     org.springframework.web.socket: INFO
     org.hibernate.SQL: WARN

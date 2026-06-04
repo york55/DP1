@@ -11,6 +11,7 @@ class SimulationEngineTest {
     @Test
     void testTickAdvancesSimulatedClock30Minutes() {
         SimulationClock clock = new SimulationClock(
+                LocalDateTime.of(2026, 5, 10, 0, 0),
                 LocalDateTime.of(2026, 5, 10, 0, 0), 30);
         LocalDateTime before = clock.getCurrent();
         LocalDateTime after = clock.advance();
@@ -20,6 +21,7 @@ class SimulationEngineTest {
     @Test
     void testMultipleTicksAccumulateCorrectly() {
         SimulationClock clock = new SimulationClock(
+                LocalDateTime.of(2026, 5, 10, 0, 0),
                 LocalDateTime.of(2026, 5, 10, 0, 0), 30);
         for (int i = 0; i < 48; i++) {
             clock.advance();
@@ -46,6 +48,7 @@ class SimulationEngineTest {
     @Test
     void testSimulationDayCalculation() {
         SimulationClock clock = new SimulationClock(
+                LocalDateTime.of(2026, 5, 10, 0, 0),
                 LocalDateTime.of(2026, 5, 10, 0, 0), 30);
         // Day 1
         assertThat(clock.getSimulatedDay()).isEqualTo(1);

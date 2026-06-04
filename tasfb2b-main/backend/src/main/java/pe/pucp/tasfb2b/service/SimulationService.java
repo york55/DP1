@@ -40,6 +40,11 @@ public class SimulationService {
     private final KpiService kpiService;
     private final SimulationMapper simulationMapper;
 
+    private final RouteRepository routeRepo;
+    private final RouteLegRepository routeLegRepo;
+    private final ShipmentStatusHistoryRepository shipmentStatusHistoryRepo;
+    private final KpiSnapshotRepository kpiSnapshotRepo;
+
     @Transactional
     public SimulationDto createSimulation(CreateSimulationRequest req) {
         Simulation sim = new Simulation();
@@ -184,5 +189,44 @@ public class SimulationService {
         }
         flightRepo.saveAll(flights);
         log.info("Reset {} vuelos para simulación {}", flights.size(), sim.getId());
+    }
+
+    @Transactional
+    public void hardReset() {
+        log.info("ACTION hard_reset limpiando BD para nueva simulación");
+
+        // Detener simulaciones activas si las hay
+        blockOrchestrator.pause(0L); // Optional, might not do anything if id=0, but safe. 
+
+        // 1. Eliminar historial y patas de ruta para liberar dependencias
+        shipmentStatusHistoryRepo.deleteAllInBatch();
+        routeLegRepo.deleteAllInBatch();
+        routeRepo.deleteAllInBatch();
+
+        // 2. Eliminar Shipments
+        shipmentRepo.deleteAllInBatch();
+
+        // 3. Eliminar BaggageBatches antiguos
+        batchRepo.deleteAllInBatch();
+
+        // 4. Eliminar KPIs y cancelaciones
+        kpiSnapshotRepo.deleteAllInBatch();
+        cancellationRepo.deleteAllInBatch();
+
+        // 5. Eliminar simulaciones
+        simulationRepo.deleteAllInBatch();
+
+        // 6. Reset Airport
+        airportRepo.resetAllOccupancies();
+
+        // 7. Reset Flight
+        List<Flight> flights = flightRepo.findAll();
+        for (Flight f : flights) {
+            f.setStatus(FlightStatus.SCHEDULED);
+            f.setCurrentLoad(0);
+        }
+        flightRepo.saveAll(flights);
+
+        log.info("ACTION hard_reset COMPLETADO");
     }
 }

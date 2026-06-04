@@ -12,6 +12,8 @@ import java.util.*;
 
 public class RegretKInsertion implements RepairOperator {
 
+    private static final long TRANSFER_MINUTES = 60;
+
     @Override
     public void repair(Solution solution, List<String> unassignedPool, Scenario scenario, AlnsParams params) {
         int k = params.k();
@@ -19,6 +21,7 @@ public class RegretKInsertion implements RepairOperator {
 
         Map<String, pe.pucp.tasfb2b.domain.Shipment> envioMap = buildEnvioMap(scenario);
         Map<String, List<Flight>> flightIndex = buildFlightIndex(scenario);
+        Map<String, List<Flight>> flightsByOrigin = buildFlightsByOriginIndex(scenario);
         Map<String, Integer> shipmentBags = buildShipmentBagsMap(scenario);
         Map<String, Integer> flightCapacityUsed = calculateFlightUsage(solution, shipmentBags);
 
@@ -30,7 +33,7 @@ public class RegretKInsertion implements RepairOperator {
             for (String shipmentId : remaining) {
                 var envio = envioMap.get(shipmentId);
                 if (envio == null) continue;
-                List<InsertionOption> options = evaluateOptions(envio, flightIndex, flightCapacityUsed, solution);
+                List<InsertionOption> options = evaluateOptions(envio, flightIndex, flightsByOrigin, flightCapacityUsed, solution);
 
                 if (options.isEmpty()) continue;
 
@@ -84,6 +87,15 @@ public class RegretKInsertion implements RepairOperator {
         return index;
     }
 
+    private Map<String, List<Flight>> buildFlightsByOriginIndex(Scenario scenario) {
+        Map<String, List<Flight>> index = new HashMap<>();
+        for (Flight f : scenario.vuelos()) {
+            if (f.cancelado()) continue;
+            index.computeIfAbsent(f.iataOrigen(), k -> new ArrayList<>()).add(f);
+        }
+        return index;
+    }
+
     private Map<String, Integer> buildShipmentBagsMap(Scenario scenario) {
         Map<String, Integer> map = new HashMap<>();
         for (var s : scenario.envios()) {
@@ -106,21 +118,39 @@ public class RegretKInsertion implements RepairOperator {
     }
 
     private List<InsertionOption> evaluateOptions(pe.pucp.tasfb2b.domain.Shipment envio,
-            Map<String, List<Flight>> flightIndex, Map<String, Integer> flightCapacityUsed, Solution currentSol) {
+            Map<String, List<Flight>> flightIndex, Map<String, List<Flight>> flightsByOrigin,
+            Map<String, Integer> flightCapacityUsed, Solution currentSol) {
         List<InsertionOption> options = new ArrayList<>();
-        String key = envio.iataOrigen() + "->" + envio.iataDestino();
-        List<Flight> candidates = flightIndex.get(key);
-        if (candidates == null) return options;
-
         int bags = envio.cantidadMaletas();
         var availability = envio.horaDisponibilidadUtc();
 
-        for (Flight v : candidates) {
+        // Direct (1-hop) routes — cost = total time from availability to arrival
+        String directKey = envio.iataOrigen() + "->" + envio.iataDestino();
+        for (Flight v : flightIndex.getOrDefault(directKey, List.of())) {
             if (v.horaSalidaUtc().isBefore(availability)) continue;
             int used = flightCapacityUsed.getOrDefault(v.idVuelo(), 0);
             if (used + bags <= v.capacidadMaletas()) {
-                long cost = Math.max(0, Duration.between(availability, v.horaSalidaUtc()).toMinutes());
+                long cost = Math.max(0, Duration.between(availability, v.horaLlegadaUtc()).toMinutes());
                 options.add(new InsertionOption(new Route(List.of(v)), cost));
+            }
+        }
+
+        // 2-hop routes through an intermediate airport C — cost = availability to final arrival
+        for (Flight leg1 : flightsByOrigin.getOrDefault(envio.iataOrigen(), List.of())) {
+            if (leg1.iataDestino().equals(envio.iataDestino())) continue;
+            if (leg1.horaSalidaUtc().isBefore(availability)) continue;
+            int used1 = flightCapacityUsed.getOrDefault(leg1.idVuelo(), 0);
+            if (used1 + bags > leg1.capacidadMaletas()) continue;
+
+            java.time.Instant earliestLeg2 = leg1.horaLlegadaUtc().plusSeconds(TRANSFER_MINUTES * 60L);
+            String leg2Key = leg1.iataDestino() + "->" + envio.iataDestino();
+            for (Flight leg2 : flightIndex.getOrDefault(leg2Key, List.of())) {
+                if (leg2.horaSalidaUtc().isBefore(earliestLeg2)) continue;
+                int used2 = flightCapacityUsed.getOrDefault(leg2.idVuelo(), 0);
+                if (used2 + bags > leg2.capacidadMaletas()) continue;
+
+                long cost = Math.max(0, Duration.between(availability, leg2.horaLlegadaUtc()).toMinutes());
+                options.add(new InsertionOption(new Route(List.of(leg1, leg2)), cost));
             }
         }
 
