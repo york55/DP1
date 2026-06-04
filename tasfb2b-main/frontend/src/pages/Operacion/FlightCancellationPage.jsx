@@ -9,20 +9,49 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TablePagination from '@mui/material/TablePagination'
 import Paper from '@mui/material/Paper'
+import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
+import Snackbar from '@mui/material/Snackbar'
+import Alert from '@mui/material/Alert'
+import CancelIcon from '@mui/icons-material/Cancel'
 
 export default function FlightPlanPage() {
   const [flights, setFlights]         = useState([])
   const [loading, setLoading]         = useState(true)
+  const [cancelling, setCancelling]   = useState(null) // flightKey en proceso
   const [page, setPage]               = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(20)
+  const [snack, setSnack]             = useState({ open: false, msg: '', severity: 'success' })
 
-  useEffect(() => {
-    fetch('http://localhost:8080/api/flight-plans')
+  const fetchFlights = () => {
+    fetch('http://localhost:8080/api/flight-ops')
       .then(res => res.json())
       .then(data => { setFlights(data); setLoading(false) })
       .catch(() => setLoading(false))
-  }, [])
+  }
+
+  useEffect(() => { fetchFlights() }, [])
+
+  const handleCancel = async (flightKey) => {
+    setCancelling(flightKey)
+    try {
+      const res = await fetch(`http://localhost:8080/api/flight-ops/${encodeURIComponent(flightKey)}/cancel`, {
+        method: 'PATCH',
+      })
+      if (res.ok) {
+        setSnack({ open: true, msg: `Vuelo ${flightKey} cancelado`, severity: 'success' })
+        fetchFlights()
+      } else {
+        setSnack({ open: true, msg: 'No se pudo cancelar el vuelo', severity: 'error' })
+      }
+    } catch {
+      setSnack({ open: true, msg: 'Error de conexión', severity: 'error' })
+    } finally {
+      setCancelling(null)
+    }
+  }
 
   const paginated = flights.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
 
@@ -44,7 +73,7 @@ export default function FlightPlanPage() {
           <Table stickyHeader size="small">
             <TableHead>
               <TableRow>
-                {['#', 'Origen', 'Destino', 'Salida', 'Llegada', 'Capacidad'].map(col => (
+                {['#', 'Origen', 'Destino', 'Salida UTC', 'Llegada UTC', 'Salida Local', 'Llegada Local', 'Capacidad', 'Estado', 'Acción'].map(col => (
                   <TableCell key={col} sx={{ backgroundColor: '#1F3864', color: '#FFFFFF', fontWeight: 700, fontSize: '0.78rem' }}>
                     {col}
                   </TableCell>
@@ -53,13 +82,53 @@ export default function FlightPlanPage() {
             </TableHead>
             <TableBody>
               {paginated.map((f, i) => (
-                <TableRow key={i} sx={{ backgroundColor: i % 2 === 0 ? '#FFFFFF' : '#F9FAFB', '&:hover': { backgroundColor: '#E8EEF7' } }}>
+                <TableRow
+                  key={f.flightKey}
+                  sx={{
+                    backgroundColor: f.cancelled ? '#FFF3F3' : i % 2 === 0 ? '#FFFFFF' : '#F9FAFB',
+                    '&:hover': { backgroundColor: f.cancelled ? '#FFE5E5' : '#E8EEF7' },
+                    opacity: f.cancelled ? 0.75 : 1,
+                  }}
+                >
                   <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{page * rowsPerPage + i + 1}</TableCell>
                   <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.origin}</TableCell>
                   <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.destination}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.departureTime}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.arrivalTime}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.departureUtc}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.arrivalUtc}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{f.departureLocal}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{f.arrivalLocal}</TableCell>
                   <TableCell sx={{ fontSize: '0.78rem' }}>{f.capacity}</TableCell>
+                  <TableCell>
+                    <Chip
+                      label={f.cancelled ? 'Cancelado' : 'Activo'}
+                      size="small"
+                      sx={{
+                        backgroundColor: f.cancelled ? '#FFEBEE' : '#E8F5E9',
+                        color: f.cancelled ? '#C62828' : '#2E7D32',
+                        fontWeight: 700,
+                        fontSize: '0.65rem',
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    {!f.cancelled && (
+                      <Tooltip title="Cancelar vuelo">
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleCancel(f.flightKey)}
+                            disabled={cancelling === f.flightKey}
+                            sx={{ color: '#C62828', '&:hover': { backgroundColor: '#FFEBEE' } }}
+                          >
+                            {cancelling === f.flightKey
+                              ? <CircularProgress size={16} sx={{ color: '#C62828' }} />
+                              : <CancelIcon fontSize="small" />
+                            }
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -77,6 +146,17 @@ export default function FlightPlanPage() {
           sx={{ borderTop: '1px solid #E0E0E0' }}
         />
       </Paper>
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={3000}
+        onClose={() => setSnack(s => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={snack.severity} onClose={() => setSnack(s => ({ ...s, open: false }))} sx={{ borderRadius: '10px' }}>
+          {snack.msg}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }
