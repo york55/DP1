@@ -167,8 +167,8 @@ export default function ScenarioSelectorPage() {
               title="Operaciones en Tiempo Real"
               description="Conecta con datos en vivo del sistema de enrutamiento para monitoreo continuo de operaciones. Integración con APIs externas de aerolíneas."
               badge="Próximamente"
-              onSelect={() => { }}
-              disabled={true}
+              onSelect={() => navigate('/operacion')}
+              disabled={false}
             />
           </Grid>
           <Grid item xs={12} sm={6} md={4}>
