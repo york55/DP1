@@ -66,8 +66,8 @@ export default function FlightCancellationPage() {
                   <TableCell sx={{ fontSize: '0.78rem' }}>{f.airlineName}</TableCell>
                   <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.originIata}</TableCell>
                   <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.destinationIata}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{new Date(f.departureTime).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{new Date(f.arrivalTime).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.departureTime ? String(f.departureTime).substring(11, 16) : '--'}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.arrivalTime ? String(f.arrivalTime).substring(11, 16) : '--'}</TableCell>
                   <TableCell sx={{ fontSize: '0.78rem' }}>{f.baggageCapacity}</TableCell>
                   <TableCell sx={{ fontSize: '0.78rem' }}>{f.currentLoad}</TableCell>
                   <TableCell>
