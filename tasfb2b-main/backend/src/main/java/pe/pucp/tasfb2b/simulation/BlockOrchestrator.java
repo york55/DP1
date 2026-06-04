@@ -35,6 +35,9 @@ public class BlockOrchestrator {
     @Value("${tasf.simulation.tick-interval-ms:1000}")
     private long tickIntervalMs;
 
+    @Value("${tasf.simulation.max-batches-per-block:999}")
+    private int maxBatchesPerBlock;
+
     private final SimulationRepository simulationRepo;
     private final BaggageBatchRepository batchRepo;
     private final FlightRepository flightRepo;
@@ -245,6 +248,11 @@ public class BlockOrchestrator {
             if (pending.isEmpty()) {
                 log.info("Simulación {}: sin lotes sin ruta en bloque {}", simId, blockIndex);
                 return new SimulationBlock(blockIndex, blockStart, blockEnd, 0);
+            }
+            if (pending.size() > maxBatchesPerBlock) {
+                log.info("Simulación {}: limitando bloque {} a {} de {} lotes pendientes",
+                        simId, blockIndex, maxBatchesPerBlock, pending.size());
+                pending = pending.subList(0, maxBatchesPerBlock);
             }
 
             // Lookahead window: enough for multi-hop routes extending beyond this block.
