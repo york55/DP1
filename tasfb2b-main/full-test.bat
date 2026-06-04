@@ -70,7 +70,7 @@ REM ---- [3/4] Start backend (H2 dev profile) ----
 echo [3/4] Starting backend on port 8080 (H2 embedded DB)...
 echo       Backend log: %BACKEND_LOG%
 
-start "TASF.B2B Backend [dev]" cmd /k ""%JAVA_HOME%\bin\java.exe" -jar "%BACKEND_DIR%\target\tasfb2b.jar" --spring.profiles.active=dev"
+start "TASF.B2B Backend [dev]" cmd /k "%ROOT_DIR%start-backend.bat"
 
 echo       Waiting 20s for backend startup...
 timeout /t 20 /nobreak >nul
