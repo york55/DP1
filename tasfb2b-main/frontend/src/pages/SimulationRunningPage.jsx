@@ -8,6 +8,8 @@ import Divider from '@mui/material/Divider'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
+import LinearProgress from '@mui/material/LinearProgress'
+import CircularProgress from '@mui/material/CircularProgress'
 import LuggageIcon from '@mui/icons-material/Luggage'
 import AccessTimeIcon from '@mui/icons-material/AccessTime'
 import TimerIcon from '@mui/icons-material/Timer'
@@ -153,6 +155,64 @@ export default function SimulationRunningPage() {
         {/* Map — fills remaining space */}
         <Box sx={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <WorldMap airports={airports} flights={flights} simulatedTime={simulatedTime} resizeTrigger={collapsed ? 'collapsed' : panelWidth} />
+
+          {/* Planning overlay — shown while ALNS is computing routes */}
+          {status === 'planning' && (
+            <Box sx={{
+              position: 'absolute', inset: 0, zIndex: 10,
+              backgroundColor: 'rgba(15, 30, 60, 0.72)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Box sx={{
+                backgroundColor: '#1F3864', borderRadius: 2, p: 4,
+                maxWidth: 420, width: '90%', textAlign: 'center',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+              }}>
+                <CircularProgress size={48} sx={{ color: '#90CAF9', mb: 2 }} />
+                <Typography variant="h6" sx={{ color: '#FFFFFF', fontWeight: 700, mb: 0.5 }}>
+                  Calculando rutas iniciales
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#90CAF9', mb: 2.5, fontSize: '0.82rem' }}>
+                  El optimizador ALNS está asignando rutas a los envíos.
+                  La simulación comenzará automáticamente al terminar.
+                </Typography>
+
+                {planningProgress?.totalBatches > 0 && (
+                  <Box sx={{ mb: 1.5 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Typography variant="caption" sx={{ color: '#90CAF9', fontSize: '0.72rem' }}>
+                        {planningProgress.phase || 'Optimizando…'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#90CAF9', fontSize: '0.72rem' }}>
+                        {planningProgress.assignedBatches} / {planningProgress.totalBatches} lotes
+                      </Typography>
+                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={planningProgress.maxIterations > 0
+                        ? (planningProgress.iteration / planningProgress.maxIterations) * 100
+                        : 0}
+                      sx={{
+                        height: 6, borderRadius: 3,
+                        backgroundColor: 'rgba(255,255,255,0.15)',
+                        '& .MuiLinearProgress-bar': { backgroundColor: '#90CAF9' },
+                      }}
+                    />
+                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.68rem', mt: 0.5, display: 'block' }}>
+                      Iteración {planningProgress.iteration} de {planningProgress.maxIterations}
+                    </Typography>
+                  </Box>
+                )}
+
+                {(!planningProgress?.totalBatches) && (
+                  <LinearProgress sx={{
+                    backgroundColor: 'rgba(255,255,255,0.15)',
+                    '& .MuiLinearProgress-bar': { backgroundColor: '#90CAF9' },
+                  }} />
+                )}
+              </Box>
+            </Box>
+          )}
         </Box>
 
         {/* Drag handle + collapse toggle button */}
