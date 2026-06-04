@@ -12,24 +12,30 @@ import TablePagination from '@mui/material/TablePagination'
 import Paper from '@mui/material/Paper'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
+import Snackbar from '@mui/material/Snackbar'
+import Alert from '@mui/material/Alert'
+import CancelIcon from '@mui/icons-material/Cancel'
 
-const STATUS_COLOR = {
-  SCHEDULED:  { bg: '#E8EEF7', color: '#1F3864' },
-  IN_FLIGHT:  { bg: '#E8F5E9', color: '#2E7D32' },
-  LANDED:     { bg: '#F3E5F5', color: '#6A1B9A' },
-  CANCELLED:  { bg: '#FFEBEE', color: '#C62828' },
+const formatTime = (timeStr) => {
+  if (!timeStr) return '--'
+  const str = String(timeStr)
+  return str.length > 11 ? str.substring(11, 16) : str
 }
 
-export default function FlightCancellationPage() {
+export default function FlightPlanPage() {
   const { simulationState } = useSimulationContext()
-  const [flights, setFlights]   = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [page, setPage]         = useState(0)
+  const [flights, setFlights]         = useState([])
+  const [loading, setLoading]         = useState(true)
+  const [cancelling, setCancelling]   = useState(null) // flightKey en proceso
+  const [page, setPage]               = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(20)
+  const [snack, setSnack]             = useState({ open: false, msg: '', severity: 'success' })
 
-  const loadFlights = useCallback((date) => {
+  const fetchFlights = useCallback((date) => {
     const dateParam = date ? `?date=${date}` : ''
-    fetch(`http://localhost:8080/api/flights${dateParam}`)
+    fetch(`http://localhost:8080/api/flight-ops${dateParam}`)
       .then(res => res.json())
       .then(data => { setFlights(data); setLoading(false) })
       .catch(() => setLoading(false))
@@ -40,8 +46,33 @@ export default function FlightCancellationPage() {
     const dateStr = simDate
       ? (simDate instanceof Date ? simDate.toISOString() : String(simDate)).slice(0, 10)
       : null
-    loadFlights(dateStr)
-  }, [simulationState?.config?.startDate, loadFlights])
+    fetchFlights(dateStr)
+  }, [simulationState?.config?.startDate, fetchFlights])
+
+  const handleCancel = async (flightKey) => {
+    setCancelling(flightKey)
+    try {
+      const res = await fetch(`http://localhost:8080/api/flight-ops/${encodeURIComponent(flightKey)}/cancel`, {
+        method: 'PATCH',
+      })
+      if (res.ok) {
+        setSnack({ open: true, msg: `Vuelo ${flightKey} cancelado`, severity: 'success' })
+        
+        // Recargar con la fecha de simulacion actual
+        const simDate = simulationState?.config?.startDate
+        const dateStr = simDate
+          ? (simDate instanceof Date ? simDate.toISOString() : String(simDate)).slice(0, 10)
+          : null
+        fetchFlights(dateStr)
+      } else {
+        setSnack({ open: true, msg: 'No se pudo cancelar el vuelo', severity: 'error' })
+      }
+    } catch {
+      setSnack({ open: true, msg: 'Error de conexión', severity: 'error' })
+    } finally {
+      setCancelling(null)
+    }
+  }
 
   const paginated = flights.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
 
@@ -54,7 +85,7 @@ export default function FlightCancellationPage() {
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 3, gap: 2 }}>
       <Box>
-        <Typography variant="h6" sx={{ fontWeight: 700, color: '#1F3864' }}>Cancelación de Vuelos</Typography>
+        <Typography variant="h6" sx={{ fontWeight: 700, color: '#1F3864' }}>Plan de Vuelos</Typography>
         <Typography variant="body2" sx={{ color: '#6B7280' }}>
           {flights.length} vuelos
           {simulationState?.config?.startDate
@@ -68,7 +99,7 @@ export default function FlightCancellationPage() {
           <Table stickyHeader size="small">
             <TableHead>
               <TableRow>
-                {['ID', 'Aerolínea', 'Origen', 'Destino', 'Salida', 'Llegada', 'Capacidad', 'Carga', 'Estado'].map(col => (
+                {['#', 'Origen', 'Destino', 'Salida UTC', 'Llegada UTC', 'Salida Local', 'Llegada Local', 'Capacidad', 'Estado', 'Acción'].map(col => (
                   <TableCell key={col} sx={{ backgroundColor: '#1F3864', color: '#FFFFFF', fontWeight: 700, fontSize: '0.78rem' }}>
                     {col}
                   </TableCell>
@@ -77,26 +108,52 @@ export default function FlightCancellationPage() {
             </TableHead>
             <TableBody>
               {paginated.map((f, i) => (
-                <TableRow key={f.id} sx={{ backgroundColor: i % 2 === 0 ? '#FFFFFF' : '#F9FAFB', '&:hover': { backgroundColor: '#E8EEF7' } }}>
-                  <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{f.id}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.airlineName}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.originIata}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.destinationIata}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.departureTime ? String(f.departureTime).substring(11, 16) : '--'}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.arrivalTime ? String(f.arrivalTime).substring(11, 16) : '--'}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.baggageCapacity}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.currentLoad}</TableCell>
+                <TableRow
+                  key={f.flightKey}
+                  sx={{
+                    backgroundColor: f.cancelled ? '#FFF3F3' : i % 2 === 0 ? '#FFFFFF' : '#F9FAFB',
+                    '&:hover': { backgroundColor: f.cancelled ? '#FFE5E5' : '#E8EEF7' },
+                    opacity: f.cancelled ? 0.75 : 1,
+                  }}
+                >
+                  <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{page * rowsPerPage + i + 1}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.origin}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.destination}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem' }}>{formatTime(f.departureUtc)}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem' }}>{formatTime(f.arrivalUtc)}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{formatTime(f.departureLocal)}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{formatTime(f.arrivalLocal)}</TableCell>
+                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.capacity}</TableCell>
                   <TableCell>
                     <Chip
-                      label={f.status}
+                      label={f.cancelled ? 'Cancelado' : 'Activo'}
                       size="small"
                       sx={{
-                        backgroundColor: STATUS_COLOR[f.status]?.bg ?? '#F2F2F2',
-                        color: STATUS_COLOR[f.status]?.color ?? '#333',
+                        backgroundColor: f.cancelled ? '#FFEBEE' : '#E8F5E9',
+                        color: f.cancelled ? '#C62828' : '#2E7D32',
                         fontWeight: 700,
                         fontSize: '0.65rem',
                       }}
                     />
+                  </TableCell>
+                  <TableCell>
+                    {!f.cancelled && (
+                      <Tooltip title="Cancelar vuelo">
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleCancel(f.flightKey)}
+                            disabled={cancelling === f.flightKey}
+                            sx={{ color: '#C62828', '&:hover': { backgroundColor: '#FFEBEE' } }}
+                          >
+                            {cancelling === f.flightKey
+                              ? <CircularProgress size={16} sx={{ color: '#C62828' }} />
+                              : <CancelIcon fontSize="small" />
+                            }
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -115,6 +172,17 @@ export default function FlightCancellationPage() {
           sx={{ borderTop: '1px solid #E0E0E0' }}
         />
       </Paper>
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={3000}
+        onClose={() => setSnack(s => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={snack.severity} onClose={() => setSnack(s => ({ ...s, open: false }))} sx={{ borderRadius: '10px' }}>
+          {snack.msg}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }
