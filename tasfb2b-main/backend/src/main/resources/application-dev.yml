@@ -11,15 +11,20 @@ spring:
   jpa:
     hibernate:
       ddl-auto: none
-    show-sql: true
+    show-sql: false
   flyway:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
     clean-disabled: true
 
+tasf:
+  simulation:
+    tick-interval-ms: 8000
+    max-batches-per-block: 50
+
 logging:
   level:
-    pe.pucp.tasfb2b: DEBUG
-    org.flywaydb: DEBUG
-    org.hibernate.SQL: DEBUG
+    pe.pucp.tasfb2b: INFO
+    org.flywaydb: INFO
+    org.hibernate.SQL: WARN
