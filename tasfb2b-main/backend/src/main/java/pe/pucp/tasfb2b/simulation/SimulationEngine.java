@@ -381,8 +381,8 @@ public class SimulationEngine {
         // Only count bags physically present at origin (availableFrom has passed) and not yet departed
         List<BaggageBatch> waitingBatches = batchRepo.findPendingBatches(simNow);
 
-        // Bags delivered within the last 4 simulated hours still occupy destination storage
-        List<BaggageBatch> deliveredBatches = batchRepo.findRecentlyDelivered(simNow.minusHours(4));
+        // Bags delivered within the last 10 simulated minutes still occupy destination storage
+        List<BaggageBatch> deliveredBatches = batchRepo.findRecentlyDelivered(simNow.minusMinutes(10));
 
         // IN_TRANSIT bags sitting at intermediate connecting airports (not on any plane)
         List<RouteLeg> intermediateLegs = routeLegRepo.findFirstPendingLegsOfTransitBagsAtIntermediateStops();
