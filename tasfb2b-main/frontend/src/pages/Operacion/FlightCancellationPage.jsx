@@ -17,6 +17,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
 import CancelIcon from '@mui/icons-material/Cancel'
+import client from '../../api/client'
 
 const formatTime = (timeStr) => {
   if (!timeStr) return '--'
@@ -35,9 +36,8 @@ export default function FlightPlanPage() {
 
   const fetchFlights = useCallback((date) => {
     const dateParam = date ? `?date=${date}` : ''
-    fetch(`http://localhost:8080/api/flight-ops${dateParam}`)
-      .then(res => res.json())
-      .then(data => { setFlights(data); setLoading(false) })
+    client.get(`/flight-ops${dateParam}`)
+      .then(res => { setFlights(res.data); setLoading(false) })
       .catch(() => setLoading(false))
   }, [])
 
@@ -52,23 +52,13 @@ export default function FlightPlanPage() {
   const handleCancel = async (flightKey) => {
     setCancelling(flightKey)
     try {
-      const res = await fetch(`http://localhost:8080/api/flight-ops/${encodeURIComponent(flightKey)}/cancel`, {
-        method: 'PATCH',
-      })
-      if (res.ok) {
-        setSnack({ open: true, msg: `Vuelo ${flightKey} cancelado`, severity: 'success' })
-        
-        // Recargar con la fecha de simulacion actual
-        const simDate = simulationState?.config?.startDate
-        const dateStr = simDate
-          ? (simDate instanceof Date ? simDate.toISOString() : String(simDate)).slice(0, 10)
-          : null
-        fetchFlights(dateStr)
-      } else {
-        setSnack({ open: true, msg: 'No se pudo cancelar el vuelo', severity: 'error' })
-      }
+      await client.patch(`/flight-ops/${encodeURIComponent(flightKey)}/cancel`)
+      setSnack({ open: true, msg: `Vuelo ${flightKey} cancelado`, severity: 'success' })
+      const simDate = simulationState?.config?.startDate
+      const dateStr = simDate ? (simDate instanceof Date ? simDate.toISOString() : String(simDate)).slice(0, 10) : null
+      fetchFlights(dateStr)
     } catch {
-      setSnack({ open: true, msg: 'Error de conexión', severity: 'error' })
+      setSnack({ open: true, msg: 'No se pudo cancelar el vuelo', severity: 'error' })
     } finally {
       setCancelling(null)
     }
