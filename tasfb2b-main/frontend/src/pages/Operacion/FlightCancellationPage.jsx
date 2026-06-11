@@ -29,7 +29,7 @@ export default function FlightPlanPage() {
   const { simulationState } = useSimulationContext()
   const [flights, setFlights]         = useState([])
   const [loading, setLoading]         = useState(true)
-  const [cancelling, setCancelling]   = useState(null) // flightKey en proceso
+  const [cancelling, setCancelling]   = useState(null)
   const [page, setPage]               = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(20)
   const [snack, setSnack]             = useState({ open: false, msg: '', severity: 'success' })
@@ -49,13 +49,15 @@ export default function FlightPlanPage() {
     fetchFlights(dateStr)
   }, [simulationState?.config?.startDate, fetchFlights])
 
-  const handleCancel = async (flightKey) => {
-    setCancelling(flightKey)
+  const handleCancel = async (id) => {
+    setCancelling(id)
     try {
-      await client.patch(`/flight-ops/${encodeURIComponent(flightKey)}/cancel`)
-      setSnack({ open: true, msg: `Vuelo ${flightKey} cancelado`, severity: 'success' })
+      await client.patch(`/flight-ops/${id}/cancel`)
+      setSnack({ open: true, msg: `Vuelo ${id} cancelado`, severity: 'success' })
       const simDate = simulationState?.config?.startDate
-      const dateStr = simDate ? (simDate instanceof Date ? simDate.toISOString() : String(simDate)).slice(0, 10) : null
+      const dateStr = simDate
+        ? (simDate instanceof Date ? simDate.toISOString() : String(simDate)).slice(0, 10)
+        : null
       fetchFlights(dateStr)
     } catch {
       setSnack({ open: true, msg: 'No se pudo cancelar el vuelo', severity: 'error' })
@@ -79,7 +81,9 @@ export default function FlightPlanPage() {
         <Typography variant="body2" sx={{ color: '#6B7280' }}>
           {flights.length} vuelos
           {simulationState?.config?.startDate
-            ? ` — ${(simulationState.config.startDate instanceof Date ? simulationState.config.startDate.toISOString() : String(simulationState.config.startDate)).slice(0, 10)}`
+            ? ` — ${(simulationState.config.startDate instanceof Date
+                ? simulationState.config.startDate.toISOString()
+                : String(simulationState.config.startDate)).slice(0, 10)}`
             : ''}
         </Typography>
       </Box>
@@ -99,7 +103,7 @@ export default function FlightPlanPage() {
             <TableBody>
               {paginated.map((f, i) => (
                 <TableRow
-                  key={f.flightKey}
+                  key={f.id}
                   sx={{
                     backgroundColor: f.cancelled ? '#FFF3F3' : i % 2 === 0 ? '#FFFFFF' : '#F9FAFB',
                     '&:hover': { backgroundColor: f.cancelled ? '#FFE5E5' : '#E8EEF7' },
@@ -132,11 +136,11 @@ export default function FlightPlanPage() {
                         <span>
                           <IconButton
                             size="small"
-                            onClick={() => handleCancel(f.flightKey)}
-                            disabled={cancelling === f.flightKey}
+                            onClick={() => handleCancel(f.id)}
+                            disabled={cancelling === f.id}
                             sx={{ color: '#C62828', '&:hover': { backgroundColor: '#FFEBEE' } }}
                           >
-                            {cancelling === f.flightKey
+                            {cancelling === f.id
                               ? <CircularProgress size={16} sx={{ color: '#C62828' }} />
                               : <CancelIcon fontSize="small" />
                             }
