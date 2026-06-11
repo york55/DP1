@@ -1,22 +1,34 @@
 package pe.pucp.tasfb2b.service;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import pe.pucp.tasfb2b.domain.OpsAirport;
+import pe.pucp.tasfb2b.domain.OpsShipment;
+import pe.pucp.tasfb2b.repository.OpsAirportRepository;
+import pe.pucp.tasfb2b.repository.OpsShipmentRepository;
 
-import java.io.*;
+import java.io.BufferedWriter;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class EnvioService {
 
-    /**
-     * Directorio donde se guardan los archivos de envíos.
-     * Configurable vía application.properties: envios.directorio=./envios
-     */
+    // ── BD ──────────────────────────────────────────────────────────────────
+    private final OpsShipmentRepository shipmentRepo;
+    private final OpsAirportRepository  airportRepo;
+
+    // ── Archivo ──────────────────────────────────────────────────────────────
     @Value("${envios.directorio:./envios}")
     private String directorioEnvios;
 
@@ -24,44 +36,62 @@ public class EnvioService {
     private static final DateTimeFormatter HORA_FMT  = DateTimeFormatter.ofPattern("HH-mm");
 
     /**
-     * Registra un nuevo envío en el archivo correspondiente al almacén origen.
+     * Registra un envío:
+     *  1. Persiste en la BD (tabla ops_shipment).
+     *  2. Escribe la línea en el archivo _envios_<ORIGEN>_.txt.
      *
-     * @param almacenOrigen   Código del almacén origen  (ej. "SKBO")
-     * @param almacenDestino  Código del almacén destino (ej. "SEQM")
-     * @param cantidadMaletas Cadena de 3 dígitos        (ej. "025")
-     * @return La línea completa que se escribió en el archivo.
+     * @return La línea completa escrita en el archivo (igual que antes).
      */
-    public String registrarEnvio(String almacenOrigen, String almacenDestino, String cantidadMaletas)
-            throws IOException {
+    @Transactional
+    public String registrarEnvio(String almacenOrigen,
+                                  String almacenDestino,
+                                  String cantidadMaletas) throws IOException {
 
-        // Asegurar que el directorio existe
-        Path dir = Paths.get(directorioEnvios);
+        LocalDateTime now = LocalDateTime.now();
+
+        // ── 1. Persistencia en BD ─────────────────────────────────────────
+        OpsAirport origin = airportRepo.findByIataCode(almacenOrigen)
+            .orElseThrow(() -> new IllegalArgumentException(
+                "Aeropuerto origen no encontrado: " + almacenOrigen));
+        OpsAirport dest = airportRepo.findByIataCode(almacenDestino)
+            .orElseThrow(() -> new IllegalArgumentException(
+                "Aeropuerto destino no encontrado: " + almacenDestino));
+
+        boolean sameContinent = origin.getContinent().equals(dest.getContinent());
+        LocalDateTime deadline = sameContinent ? now.plusHours(24) : now.plusHours(48);
+
+        String dateStr    = now.format(FECHA_FMT);
+        String uid        = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+        String externalId = "ENV-" + dateStr + "-" + uid;
+
+        OpsShipment shipment = new OpsShipment();
+        shipment.setExternalId(externalId);
+        shipment.setRegisteredAt(now);
+        shipment.setOriginIata(almacenOrigen);
+        shipment.setDestIata(almacenDestino);
+        shipment.setBagCount(Integer.parseInt(cantidadMaletas));
+        shipment.setStatus("PENDING");
+        shipment.setDeadlineUtc(deadline);
+        shipment.setLastUpdated(now);
+
+        OpsShipment saved = shipmentRepo.save(shipment);
+        log.info("Envío persistido en BD: {} ({} → {}, {} maletas, deadline: {})",
+            externalId, almacenOrigen, almacenDestino, cantidadMaletas, deadline);
+
+        // ── 2. Escritura en archivo ───────────────────────────────────────
+        Path dir     = Paths.get(directorioEnvios);
         Files.createDirectories(dir);
-
-        // Archivo destino: _envios_SKBO_.txt
         Path archivo = dir.resolve("_envios_" + almacenOrigen + "_.txt");
 
-        // Calcular el próximo id de envío
         long proximoId = calcularProximoId(archivo);
-
-        // Fecha y hora actuales
-        LocalDateTime ahora = LocalDateTime.now();
-        String fecha = ahora.format(FECHA_FMT);   // aaaammdd
-        String hora  = ahora.format(HORA_FMT);    // hh-mm
-
-        // IdCliente: 7 dígitos, derivado del id de envío (puedes reemplazar con lógica real)
+        String fecha   = now.format(FECHA_FMT);
+        String hora    = now.format(HORA_FMT);
         String idCliente = generarIdCliente(proximoId);
 
-        // Formatear línea: 000000001-20260102-06-30-SEQM-025-0012500
+        // Formato: 000000001-20260102-06-30-SEQM-025-0012500
         String linea = String.format("%09d-%s-%s-%s-%s-%s",
-                proximoId,
-                fecha,
-                hora,
-                almacenDestino,
-                cantidadMaletas,
-                idCliente);
+                proximoId, fecha, hora, almacenDestino, cantidadMaletas, idCliente);
 
-        // Escribir al final del archivo (append), con salto de línea
         try (BufferedWriter writer = Files.newBufferedWriter(
                 archivo,
                 StandardCharsets.UTF_8,
@@ -71,45 +101,31 @@ public class EnvioService {
             writer.newLine();
         }
 
+        log.info("Envío escrito en archivo: {}", linea);
         return linea;
     }
 
-    /**
-     * Lee el archivo existente y devuelve el id del último registro + 1.
-     * Si el archivo no existe o está vacío, retorna 1.
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helpers (sin cambios respecto a la versión original)
+    // ─────────────────────────────────────────────────────────────────────────
+
     private long calcularProximoId(Path archivo) throws IOException {
         if (!Files.exists(archivo)) return 1L;
-
         List<String> lineas = Files.readAllLines(archivo, StandardCharsets.UTF_8);
-
-        // Buscar la última línea no vacía
         for (int i = lineas.size() - 1; i >= 0; i--) {
             String linea = lineas.get(i).trim();
             if (!linea.isEmpty()) {
-                // El id es la primera parte antes del primer '-'
                 String[] partes = linea.split("-");
                 if (partes.length > 0) {
-                    try {
-                        return Long.parseLong(partes[0]) + 1;
-                    } catch (NumberFormatException ignored) {
-                        // línea malformada, ignorar
-                    }
+                    try { return Long.parseLong(partes[0]) + 1; }
+                    catch (NumberFormatException ignored) {}
                 }
             }
         }
         return 1L;
     }
 
-    /**
-     * Genera el IdCliente de 7 dígitos.
-     * Por defecto: simplemente el id de envío como 7 dígitos.
-     * Reemplaza esta lógica con la real de tu dominio.
-     */
     private String generarIdCliente(long idEnvio) {
-        // Ejemplo: id × 500 (igual que en el archivo de muestra: id=1 → 0012500 = 25×500)
-        // Ajusta según tu lógica de negocio real
-        long idCliente = idEnvio * 500L;
-        return String.format("%07d", idCliente);
+        return String.format("%07d", idEnvio * 500L);
     }
 }

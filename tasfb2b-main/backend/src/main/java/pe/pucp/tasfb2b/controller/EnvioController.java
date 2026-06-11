@@ -10,7 +10,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/envios")
-@CrossOrigin(origins = "*") // Ajusta el origen en producción
+@CrossOrigin(origins = "*")
 public class EnvioController {
 
     private final EnvioService envioService;
@@ -26,19 +26,14 @@ public class EnvioController {
     @PostMapping("/registrar")
     public ResponseEntity<?> registrarEnvio(@RequestBody EnvioRequest request) {
 
-        // Validaciones básicas
-        if (request.getAlmacenOrigen() == null || request.getAlmacenOrigen().isBlank()) {
+        if (request.getAlmacenOrigen() == null || request.getAlmacenOrigen().isBlank())
             return ResponseEntity.badRequest().body("El almacén origen es obligatorio.");
-        }
-        if (request.getAlmacenDestino() == null || request.getAlmacenDestino().isBlank()) {
+        if (request.getAlmacenDestino() == null || request.getAlmacenDestino().isBlank())
             return ResponseEntity.badRequest().body("El almacén destino es obligatorio.");
-        }
-        if (request.getAlmacenOrigen().equals(request.getAlmacenDestino())) {
+        if (request.getAlmacenOrigen().equals(request.getAlmacenDestino()))
             return ResponseEntity.badRequest().body("El almacén origen y destino no pueden ser iguales.");
-        }
-        if (!request.getCantidadMaletas().matches("\\d{3}") || request.getCantidadMaletas().equals("000")) {
+        if (!request.getCantidadMaletas().matches("\\d{3}") || request.getCantidadMaletas().equals("000"))
             return ResponseEntity.badRequest().body("La cantidad de maletas debe ser entre 001 y 999.");
-        }
 
         try {
             String lineaRegistrada = envioService.registrarEnvio(
@@ -47,7 +42,9 @@ public class EnvioController {
                     request.getCantidadMaletas()
             );
 
-            // Extraer el id de la línea generada (primera parte)
+            // idEnvio: primera parte de la línea (secuencial del archivo)
+            // El externalId de BD (ENV-YYYYMMDD-XXXXXX) está en el log; si lo necesitas
+            // en la respuesta, expón también un método getLastExternalId() en el service.
             String idEnvio = lineaRegistrada.split("-")[0];
 
             return ResponseEntity.ok(Map.of(
@@ -56,6 +53,9 @@ public class EnvioController {
                     "registro", lineaRegistrada
             ));
 
+        } catch (IllegalArgumentException e) {
+            // Aeropuerto no encontrado en BD
+            return ResponseEntity.badRequest().body(e.getMessage());
         } catch (IOException e) {
             return ResponseEntity.internalServerError()
                     .body("Error al escribir el archivo de envíos: " + e.getMessage());
