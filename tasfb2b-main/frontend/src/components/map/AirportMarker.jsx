@@ -2,6 +2,7 @@ import React from 'react'
 import { CircleMarker, Popup } from 'react-leaflet'
 import { getSemaphoreColor } from '../../utils/semaphoreUtils'
 import AirportPopup from './AirportPopup'
+import { useSimulationContext } from '../../context/SimulationContext'
 
 /**
  * AirportMarker — renders a colored CircleMarker for an airport on the map.
@@ -10,6 +11,15 @@ import AirportPopup from './AirportPopup'
 function AirportMarker({ airport, flights = [] }) {
   const { lat, lon, occupancy, iata } = airport
   const color = getSemaphoreColor(occupancy)
+
+  let context = null
+  try {
+    context = useSimulationContext()
+  } catch (e) {
+    // context not available
+  }
+  const setSelectedAirportCode = context ? context.setSelectedAirportCode : null
+  const setActivePanelTab = context ? context.setActivePanelTab : null
 
   const incomingFlights = flights.filter(
     f => f.destination === iata && (f.status === 'SCHEDULED' || f.status === 'IN_FLIGHT')
@@ -28,6 +38,14 @@ function AirportMarker({ airport, flights = [] }) {
         weight: 2,
         fillColor: color,
         fillOpacity: 0.85,
+      }}
+      eventHandlers={{
+        click: () => {
+          if (setSelectedAirportCode && setActivePanelTab) {
+            setSelectedAirportCode(iata)
+            setActivePanelTab(2) // 2 corresponds to Warehouses Tab
+          }
+        }
       }}
     >
       <Popup>

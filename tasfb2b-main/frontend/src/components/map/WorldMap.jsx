@@ -4,6 +4,47 @@ import Box from '@mui/material/Box'
 import AirportMarker from './AirportMarker'
 import FlightRoute from './FlightRoute'
 import MapLegend from './MapLegend'
+import { useSimulationContext } from '../../context/SimulationContext'
+
+function MapFocusController() {
+  const map = useMap()
+  let context = null
+  try {
+    context = useSimulationContext()
+  } catch (e) {
+    // context not available
+  }
+  if (!context) return null
+
+  const { selectedAirportCode, selectedFlightId, airportsWithTimes, flights } = context
+
+  useEffect(() => {
+    if (selectedAirportCode) {
+      const ap = airportsWithTimes.find(a => (a.iata || a.iataCode) === selectedAirportCode)
+      if (ap && ap.lat != null && ap.lon != null) {
+        map.setView([ap.lat, ap.lon], 5)
+      }
+    }
+  }, [selectedAirportCode, airportsWithTimes, map])
+
+  useEffect(() => {
+    if (selectedFlightId) {
+      const fl = flights.find(f => String(f.id) === String(selectedFlightId))
+      if (fl) {
+        const orig = airportsWithTimes.find(a => (a.iata || a.iataCode) === fl.origin)
+        const dest = airportsWithTimes.find(a => (a.iata || a.iataCode) === fl.destination)
+        if (orig && dest) {
+          const lat = (orig.lat + dest.lat) / 2
+          const lon = (orig.lon + dest.lon) / 2
+          map.setView([lat, lon], 4)
+        }
+      }
+    }
+  }, [selectedFlightId, flights, airportsWithTimes, map])
+
+  return null
+}
+
 
 function MapResizer({ trigger }) {
   const map = useMap()
@@ -36,7 +77,17 @@ function AirportPaneSetup() {
  * @param {Date|null} simulatedTime - current simulated time for progress calculation
  * @param {*} resizeTrigger - any value whose change signals a container resize
  */
-function WorldMap({ airports = [], flights = [], simulatedTime = null, resizeTrigger }) {
+function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], simulatedTime = null, resizeTrigger }) {
+  let context = null
+  try {
+    context = useSimulationContext()
+  } catch (e) {
+    // context not available
+  }
+
+  const airports = context ? context.filteredAirports : propsAirports
+  const flights = context ? context.filteredFlights : propsFlights
+
   // Show all IN_FLIGHT flights with valid airport assignments.
   const visibleFlights = useMemo(() =>
     flights.filter(f => f.status === 'IN_FLIGHT'),
@@ -129,6 +180,7 @@ function WorldMap({ airports = [], flights = [], simulatedTime = null, resizeTri
         />
         <MapResizer trigger={resizeTrigger} />
         <AirportPaneSetup />
+        <MapFocusController />
 
         {/* Flight routes and Planes */}
         {visibleFlights.map(flight => (

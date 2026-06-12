@@ -43,11 +43,22 @@ function FlightStatusChip({ status }) {
 }
 
 export default function FlightsTab() {
-  const { flights, shipments } = useSimulationContext()
-  const [search, setSearch] = useState('')
-  const [originFilter, setOriginFilter] = useState('ALL')
-  const [destFilter, setDestFilter] = useState('ALL')
-  const [selectedFlight, setSelectedFlight] = useState(null)
+  const {
+    flights,
+    shipments,
+    selectedFlightId,
+    setSelectedFlightId,
+    flightSearch,
+    setFlightSearch,
+    flightOrigin,
+    setFlightOrigin,
+    flightDest,
+    setFlightDest,
+    flightSemaphore,
+    setFlightSemaphore,
+    filteredFlights,
+  } = useSimulationContext()
+
   const [detailTab, setDetailTab] = useState(0)
 
   // Get unique airports for filters
@@ -61,16 +72,10 @@ export default function FlightsTab() {
     return Array.from(set).sort()
   }, [flights])
 
-  // Filtered flights
-  const filteredFlights = useMemo(() => {
-    return flights.filter(f => {
-      const matchesSearch = f.id.toLowerCase().includes(search.toLowerCase()) ||
-        `${f.origin}-${f.destination}`.toLowerCase().includes(search.toLowerCase())
-      const matchesOrigin = originFilter === 'ALL' || f.origin === originFilter
-      const matchesDest = destFilter === 'ALL' || f.destination === destFilter
-      return matchesSearch && matchesOrigin && matchesDest
-    })
-  }, [flights, search, originFilter, destFilter])
+  const selectedFlight = useMemo(() => {
+    if (!selectedFlightId) return null
+    return flights.find(f => String(f.id) === String(selectedFlightId)) || null
+  }, [selectedFlightId, flights])
 
   // Shipments aboard the selected flight
   const flightShipments = useMemo(() => {
@@ -159,17 +164,17 @@ export default function FlightsTab() {
           size="small"
           label="Buscar vuelo o tramo"
           placeholder="Ej. SKBO"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={flightSearch}
+          onChange={(e) => setFlightSearch(e.target.value)}
           sx={{ flex: 1, minWidth: '150px' }}
         />
         <TextField
           select
           size="small"
           label="Origen"
-          value={originFilter}
-          onChange={(e) => setOriginFilter(e.target.value)}
-          sx={{ width: '100px' }}
+          value={flightOrigin}
+          onChange={(e) => setFlightOrigin(e.target.value)}
+          sx={{ width: '90px' }}
         >
           <MenuItem value="ALL">Todos</MenuItem>
           {origins.map(code => (
@@ -180,14 +185,29 @@ export default function FlightsTab() {
           select
           size="small"
           label="Destino"
-          value={destFilter}
-          onChange={(e) => setDestFilter(e.target.value)}
-          sx={{ width: '100px' }}
+          value={flightDest}
+          onChange={(e) => setFlightDest(e.target.value)}
+          sx={{ width: '90px' }}
         >
           <MenuItem value="ALL">Todos</MenuItem>
           {destinations.map(code => (
             <MenuItem key={code} value={code}>{code}</MenuItem>
           ))}
+        </TextField>
+        <TextField
+          select
+          size="small"
+          label="Semáforo"
+          value={flightSemaphore}
+          onChange={(e) => setFlightSemaphore(e.target.value)}
+          sx={{ width: '120px' }}
+        >
+          <MenuItem value="ALL">Todos</MenuItem>
+          <MenuItem value="EMPTY">Vacío (0%)</MenuItem>
+          <MenuItem value="LOW">Bajo (&lt;25%)</MenuItem>
+          <MenuItem value="MEDIUM">Mod. (25-50%)</MenuItem>
+          <MenuItem value="HIGH">Alto (50-90%)</MenuItem>
+          <MenuItem value="CRITICAL">Crítico (≥90%)</MenuItem>
         </TextField>
       </Box>
 
@@ -197,7 +217,7 @@ export default function FlightsTab() {
           rows={filteredFlights}
           columns={columns}
           onRowClick={(params) => {
-            setSelectedFlight(params.row)
+            setSelectedFlightId(params.row.id)
             setDetailTab(0)
           }}
         />
@@ -207,7 +227,7 @@ export default function FlightsTab() {
       <Drawer
         anchor="right"
         open={Boolean(selectedFlight)}
-        onClose={() => setSelectedFlight(null)}
+        onClose={() => setSelectedFlightId(null)}
         PaperProps={{ sx: { width: 360, p: 2 } }}
       >
         {selectedFlight && (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React from 'react'
 import Box from '@mui/material/Box'
 import Tabs from '@mui/material/Tabs'
 import Tab from '@mui/material/Tab'
@@ -13,6 +13,7 @@ import FlightsTab from './FlightsTab'
 import WarehousesTab from './WarehousesTab'
 import BagsTab from './BagsTab'
 import KpiPanel from './KpiPanel'
+import { useSimulationContext } from '../../context/SimulationContext'
 
 function TabLabel({ icon, text }) {
   return (
@@ -40,10 +41,10 @@ function TabPanel({ children, value, index }) {
 }
 
 export default function SimulationPanel() {
-  const [tab, setTab] = useState(0)
+  const { activePanelTab, setActivePanelTab } = useSimulationContext()
 
   const handleChange = (event, newValue) => {
-    setTab(newValue)
+    setActivePanelTab(newValue)
   }
 
   return (
@@ -58,7 +59,7 @@ export default function SimulationPanel() {
       }}
     >
       <Tabs
-        value={tab}
+        value={activePanelTab}
         onChange={handleChange}
         variant="fullWidth"
         sx={{
@@ -89,19 +90,19 @@ export default function SimulationPanel() {
       </Tabs>
 
       <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
-        <TabPanel value={tab} index={0}>
+        <TabPanel value={activePanelTab} index={0}>
           <ShipmentsTab />
         </TabPanel>
-        <TabPanel value={tab} index={1}>
+        <TabPanel value={activePanelTab} index={1}>
           <FlightsTab />
         </TabPanel>
-        <TabPanel value={tab} index={2}>
+        <TabPanel value={activePanelTab} index={2}>
           <WarehousesTab />
         </TabPanel>
-        <TabPanel value={tab} index={3}>
+        <TabPanel value={activePanelTab} index={3}>
           <BagsTab />
         </TabPanel>
-        <TabPanel value={tab} index={4}>
+        <TabPanel value={activePanelTab} index={4}>
           <KpiPanel />
         </TabPanel>
       </Box>

@@ -19,10 +19,22 @@ import { useSimulationContext } from '../../context/SimulationContext'
 import { formatFlightTime } from '../../utils/timeUtils'
 
 export default function WarehousesTab() {
-  const { airports, flights, shipments } = useSimulationContext()
-  const [search, setSearch] = useState('')
-  const [regionFilter, setRegionFilter] = useState('ALL')
-  const [selectedWarehouse, setSelectedWarehouse] = useState(null)
+  const {
+    airports,
+    flights,
+    shipments,
+    selectedAirportCode,
+    setSelectedAirportCode,
+    warehouseSearch,
+    setWarehouseSearch,
+    warehouseRegion,
+    setWarehouseRegion,
+    warehouseSemaphore,
+    setWarehouseSemaphore,
+    filteredAirports,
+    airportsWithTimes,
+  } = useSimulationContext()
+
   const [detailTab, setDetailTab] = useState(0)
 
   // Get unique continents/regions
@@ -31,49 +43,10 @@ export default function WarehousesTab() {
     return Array.from(set).sort()
   }, [airports])
 
-  // Compute next departure and arrival for each airport
-  const airportsWithTimes = useMemo(() => {
-    return airports.map(a => {
-      const airportCode = a.iata || a.iataCode
-
-      // Next departing flight
-      const departingFlights = flights.filter(f => f.origin === airportCode && f.status !== 'LANDED' && f.status !== 'CANCELLED')
-      const nextDepFlight = departingFlights.reduce((acc, f) => {
-        if (!acc || new Date(f.departureUTC) < new Date(acc.departureUTC)) return f
-        return acc
-      }, null)
-
-      // Next arriving flight
-      const arrivingFlights = flights.filter(f => f.destination === airportCode && f.status !== 'LANDED' && f.status !== 'CANCELLED')
-      const nextArrFlight = arrivingFlights.reduce((acc, f) => {
-        if (!acc || new Date(f.arrivalUTC) < new Date(acc.arrivalUTC)) return f
-        return acc
-      }, null)
-
-      return {
-        ...a,
-        id: airportCode, // Ensure it has a unique id field for DataGrid
-        nextDeparture: nextDepFlight ? nextDepFlight.departureUTC : null,
-        nextDepartureFlight: nextDepFlight ? nextDepFlight.id : null,
-        nextArrival: nextArrFlight ? nextArrFlight.arrivalUTC : null,
-        nextArrivalFlight: nextArrFlight ? nextArrFlight.id : null,
-      }
-    })
-  }, [airports, flights])
-
-  // Filtered warehouses
-  const filteredWarehouses = useMemo(() => {
-    return airportsWithTimes.filter(a => {
-      const name = a.iata || a.iataCode || ''
-      const city = a.city || ''
-      const country = a.country || ''
-      const matchesSearch = name.toLowerCase().includes(search.toLowerCase()) ||
-        city.toLowerCase().includes(search.toLowerCase()) ||
-        country.toLowerCase().includes(search.toLowerCase())
-      const matchesRegion = regionFilter === 'ALL' || a.continent === regionFilter
-      return matchesSearch && matchesRegion
-    })
-  }, [airportsWithTimes, search, regionFilter])
+  const selectedWarehouse = useMemo(() => {
+    if (!selectedAirportCode) return null
+    return airportsWithTimes.find(a => (a.iata || a.iataCode) === selectedAirportCode) || null
+  }, [selectedAirportCode, airportsWithTimes])
 
   // Warehouse detailed lists
   const warehouseDetails = useMemo(() => {
@@ -140,32 +113,47 @@ export default function WarehousesTab() {
           size="small"
           label="Buscar almacén"
           placeholder="Ej. LIM, Lima"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={warehouseSearch}
+          onChange={(e) => setWarehouseSearch(e.target.value)}
           sx={{ flex: 1, minWidth: '150px' }}
         />
         <TextField
           select
           size="small"
           label="Región"
-          value={regionFilter}
-          onChange={(e) => setRegionFilter(e.target.value)}
-          sx={{ width: '130px' }}
+          value={warehouseRegion}
+          onChange={(e) => setWarehouseRegion(e.target.value)}
+          sx={{ width: '110px' }}
         >
           <MenuItem value="ALL">Todas</MenuItem>
           {regions.map(r => (
             <MenuItem key={r} value={r}>{r}</MenuItem>
           ))}
         </TextField>
+        <TextField
+          select
+          size="small"
+          label="Semáforo"
+          value={warehouseSemaphore}
+          onChange={(e) => setWarehouseSemaphore(e.target.value)}
+          sx={{ width: '120px' }}
+        >
+          <MenuItem value="ALL">Todos</MenuItem>
+          <MenuItem value="EMPTY">Vacío (0%)</MenuItem>
+          <MenuItem value="LOW">Bajo (&lt;25%)</MenuItem>
+          <MenuItem value="MEDIUM">Mod. (25-50%)</MenuItem>
+          <MenuItem value="HIGH">Alto (50-90%)</MenuItem>
+          <MenuItem value="CRITICAL">Crítico (≥90%)</MenuItem>
+        </TextField>
       </Box>
 
       {/* Warehouses Table */}
       <Box sx={{ flexGrow: 1, minHeight: 0 }}>
         <DataTable
-          rows={filteredWarehouses}
+          rows={filteredAirports}
           columns={columns}
           onRowClick={(params) => {
-            setSelectedWarehouse(params.row)
+            setSelectedAirportCode(params.row.id)
             setDetailTab(0)
           }}
         />
@@ -175,7 +163,7 @@ export default function WarehousesTab() {
       <Drawer
         anchor="right"
         open={Boolean(selectedWarehouse)}
-        onClose={() => setSelectedWarehouse(null)}
+        onClose={() => setSelectedAirportCode(null)}
         PaperProps={{ sx: { width: 360, p: 2 } }}
       >
         {selectedWarehouse && (

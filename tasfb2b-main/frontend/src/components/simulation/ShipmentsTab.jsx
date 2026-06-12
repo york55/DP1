@@ -34,7 +34,15 @@ function StatusChip({ status }) {
 }
 
 export default function ShipmentsTab() {
-  const { shipments, flights, simulationState, shipmentCounts = {} } = useSimulationContext()
+  const {
+    shipments,
+    flights,
+    simulationState,
+    shipmentCounts = {},
+    setSelectedShipmentId,
+    setSelectedAirportCode,
+    setSelectedFlightId
+  } = useSimulationContext()
   const { simulatedTime } = simulationState
 
   const [search, setSearch] = useState('')
@@ -233,6 +241,17 @@ export default function ShipmentsTab() {
         <DataTable
           rows={filteredShipments}
           columns={columns}
+          onRowClick={(params) => {
+            const shipment = params.row
+            setSelectedShipmentId(shipment.id)
+            if (shipment.status === 'IN_ORIGIN') {
+              setSelectedAirportCode(shipment.origin)
+            } else if (shipment.status === 'DELIVERED') {
+              setSelectedAirportCode(shipment.destination)
+            } else if (shipment.status === 'IN_TRANSIT' && shipment.currentFlight) {
+              setSelectedFlightId(shipment.currentFlight)
+            }
+          }}
         />
       </Box>
     </Box>
