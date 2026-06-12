@@ -14,6 +14,7 @@ import StreamIcon from '@mui/icons-material/Stream'
 import WarningIcon from '@mui/icons-material/Warning'
 import LuggageIcon from '@mui/icons-material/Luggage'
 import FlightIcon from '@mui/icons-material/Flight'
+import SettingsIcon from '@mui/icons-material/Settings'
 
 function ScenarioCard({ icon, title, description, badge, onSelect, disabled }) {
   return (
@@ -140,17 +141,18 @@ export default function ScenarioSelectorPage() {
       </Box>
 
       {/* Scenario Cards */}
-      <Container maxWidth="lg">
+      <Container maxWidth="xl">
         <Box sx={{ mb: 3, textAlign: 'center' }}>
           <Typography variant="h5" sx={{ color: '#FFFFFF', fontWeight: 700, mb: 0.5 }}>
             Seleccionar Escenario de Simulación
           </Typography>
           <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)' }}>
-            Elige el modo de operación para iniciar la simulación
+            Elige el modo de operación para iniciar la simulación o gestiona la infraestructura
           </Typography>
         </Box>
 
         <Grid container spacing={3} justifyContent="center">
+          {/* Simulaciones */}
           <Grid item xs={12} sm={6} md={4}>
             <ScenarioCard
               icon={<CalendarMonthIcon />}
@@ -179,6 +181,28 @@ export default function ScenarioSelectorPage() {
               badge="Próximamente"
               onSelect={() => { }}
               disabled={true}
+            />
+          </Grid>
+
+          {/* Mantenimientos */}
+          <Grid item xs={12} sm={6} md={4}>
+            <ScenarioCard
+              icon={<SettingsIcon />}
+              title="Mantenimiento de Almacenes"
+              description="Administra la red de almacenes de paso (aeropuertos). Agrega nuevos almacenes, actualiza sus coordenadas, capacidad máxima y huso horario."
+              badge="Nuevo"
+              onSelect={() => navigate('/almacenes')}
+              disabled={false}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <ScenarioCard
+              icon={<FlightIcon />}
+              title="Mantenimiento de UT (Vuelos)"
+              description="Administra las Unidades de Transporte (vuelos). Permite ingresar nuevos vuelos, modificar la capacidad de equipaje, origen, destino y horarios."
+              badge="Nuevo"
+              onSelect={() => navigate('/vuelos')}
+              disabled={false}
             />
           </Grid>
         </Grid>

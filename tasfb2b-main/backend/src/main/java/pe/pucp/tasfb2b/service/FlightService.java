@@ -12,6 +12,7 @@ import pe.pucp.tasfb2b.domain.Airport;
 import pe.pucp.tasfb2b.domain.Flight;
 import pe.pucp.tasfb2b.domain.FlightCancellation;
 import pe.pucp.tasfb2b.domain.enums.FlightStatus;
+import pe.pucp.tasfb2b.dto.request.FlightRequest;
 import pe.pucp.tasfb2b.dto.response.FlightDto;
 import pe.pucp.tasfb2b.exception.SimulationNotFoundException;
 import pe.pucp.tasfb2b.mapper.FlightMapper;
@@ -42,6 +43,85 @@ public class FlightService {
         return flightRepo.findAllWithAirports().stream()
                 .map(flightMapper::toDto)
                 .collect(Collectors.toList());
+    }
+
+    public FlightDto findById(Long id) {
+        Flight flight = flightRepo.findById(id)
+                .orElseThrow(() -> new SimulationNotFoundException(id));
+        return flightMapper.toDto(flight);
+    }
+
+    @Transactional
+    public FlightDto create(FlightRequest req) {
+        if (req.getArrivalTime().isBefore(req.getDepartureTime())) {
+            throw new IllegalArgumentException("La hora de llegada no puede ser anterior a la hora de salida");
+        }
+        
+        Airport origin = airportRepo.findByIataCode(req.getOriginIata().toUpperCase())
+                .orElseThrow(() -> new IllegalArgumentException("Aeropuerto de origen no encontrado: " + req.getOriginIata()));
+        
+        Airport dest = airportRepo.findByIataCode(req.getDestinationIata().toUpperCase())
+                .orElseThrow(() -> new IllegalArgumentException("Aeropuerto de destino no encontrado: " + req.getDestinationIata()));
+
+        Flight flight = new Flight();
+        flight.setOriginAirport(origin);
+        flight.setDestinationAirport(dest);
+        flight.setDepartureTime(req.getDepartureTime());
+        flight.setArrivalTime(req.getArrivalTime());
+        flight.setBaggageCapacity(req.getBaggageCapacity());
+        flight.setFrequency(req.getFrequency());
+        
+        if (req.getStatus() != null && !req.getStatus().isEmpty()) {
+            flight.setStatus(FlightStatus.valueOf(req.getStatus().toUpperCase()));
+        } else {
+            flight.setStatus(FlightStatus.SCHEDULED);
+        }
+
+        Flight saved = flightRepo.save(flight);
+        return flightMapper.toDto(saved);
+    }
+
+    @Transactional
+    public FlightDto update(Long id, FlightRequest req) {
+        Flight flight = flightRepo.findById(id)
+                .orElseThrow(() -> new SimulationNotFoundException(id));
+
+        if (req.getArrivalTime().isBefore(req.getDepartureTime())) {
+            throw new IllegalArgumentException("La hora de llegada no puede ser anterior a la hora de salida");
+        }
+
+        Airport origin = airportRepo.findByIataCode(req.getOriginIata().toUpperCase())
+                .orElseThrow(() -> new IllegalArgumentException("Aeropuerto de origen no encontrado: " + req.getOriginIata()));
+        
+        Airport dest = airportRepo.findByIataCode(req.getDestinationIata().toUpperCase())
+                .orElseThrow(() -> new IllegalArgumentException("Aeropuerto de destino no encontrado: " + req.getDestinationIata()));
+
+        flight.setOriginAirport(origin);
+        flight.setDestinationAirport(dest);
+        flight.setDepartureTime(req.getDepartureTime());
+        flight.setArrivalTime(req.getArrivalTime());
+        flight.setBaggageCapacity(req.getBaggageCapacity());
+        flight.setFrequency(req.getFrequency());
+        
+        if (req.getStatus() != null && !req.getStatus().isEmpty()) {
+            flight.setStatus(FlightStatus.valueOf(req.getStatus().toUpperCase()));
+        }
+
+        Flight saved = flightRepo.save(flight);
+        return flightMapper.toDto(saved);
+    }
+
+    @Transactional
+    public void delete(Long id) {
+        Flight flight = flightRepo.findById(id)
+                .orElseThrow(() -> new SimulationNotFoundException(id));
+        
+        // Remove any cancellations linked to this flight first
+        cancellationRepo.findAll().stream()
+                .filter(c -> c.getFlight().getId().equals(id))
+                .forEach(cancellationRepo::delete);
+
+        flightRepo.delete(flight);
     }
 
     public List<FlightDto> findByDate(java.time.LocalDate date) {

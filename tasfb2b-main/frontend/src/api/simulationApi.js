@@ -14,6 +14,10 @@ export const simulationApi = {
 
 export const airportApi = {
   getAll: () => client.get('/airports').then(r => r.data),
+  getById: (id) => client.get(`/airports/${id}`).then(r => r.data),
+  create: (data) => client.post('/airports', data).then(r => r.data),
+  update: (id, data) => client.put(`/airports/${id}`, data).then(r => r.data),
+  delete: (id) => client.delete(`/airports/${id}`).then(r => r.data),
 }
 
 export const flightApi = {
@@ -21,6 +25,10 @@ export const flightApi = {
     const params = { ...(status ? { status } : {}), ...(assignedOnly ? { assignedOnly: true } : {}) }
     return client.get('/flights', { params }).then(r => r.data)
   },
+  getById: (id) => client.get(`/flights/${id}`).then(r => r.data),
+  create: (data) => client.post('/flights', data).then(r => r.data),
+  update: (id, data) => client.put(`/flights/${id}`, data).then(r => r.data),
+  delete: (id) => client.delete(`/flights/${id}`).then(r => r.data),
   cancel: (id, reason) => client.post(`/flights/${id}/cancel`, { reason }).then(r => r.data),
 }
 
