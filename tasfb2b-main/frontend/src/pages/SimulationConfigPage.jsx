@@ -28,7 +28,7 @@ import LinearProgress from '@mui/material/LinearProgress'
 import Backdrop from '@mui/material/Backdrop'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
-import { DatePicker } from '@mui/x-date-pickers/DatePicker'
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import WorldMap from '../components/map/WorldMap'
 import { useSimulationContext } from '../context/SimulationContext'
 import { useClock } from '../hooks/useClock'
@@ -316,10 +316,21 @@ export default function SimulationConfigPage() {
         const formData = new FormData()
         formData.append('file', file)
         formData.append('periodo', period)
-        const dateStr = startDate instanceof Date
-          ? startDate.toISOString().slice(0, 10)
-          : String(startDate).slice(0, 10)
-        formData.append('startDate', dateStr + 'T00:00:00')
+        
+        let dateStr = ''
+        if (startDate instanceof Date) {
+          const pad = (num) => String(num).padStart(2, '0')
+          const year = startDate.getFullYear()
+          const month = pad(startDate.getMonth() + 1)
+          const day = pad(startDate.getDate())
+          const hours = pad(startDate.getHours())
+          const minutes = pad(startDate.getMinutes())
+          const seconds = pad(startDate.getSeconds())
+          dateStr = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`
+        } else {
+          dateStr = String(startDate)
+        }
+        formData.append('startDate', dateStr)
 
         await apiClient.post('/batches/upload', formData, {
           headers: { 'Content-Type': undefined },
@@ -437,7 +448,7 @@ export default function SimulationConfigPage() {
               >
                 Fecha de inicio
               </FormLabel>
-              <DatePicker
+              <DateTimePicker
                 value={startDate}
                 onChange={(newVal) => setStartDate(newVal)}
                 slotProps={{
@@ -557,6 +568,21 @@ export default function SimulationConfigPage() {
                 <SummaryCard label="Aeropuertos" value={airports.length} color="#1F3864" />
                 <SummaryCard label="Vuelos" value={periodFlightCount} color="#2E75B6" />
                 <SummaryCard label="Envíos" value={shipmentsCount} color="#2E7D32" />
+              </Box>
+            </Box>
+
+            {/* Summary of ALNS Parameters */}
+            <Box sx={{ mb: 2.5 }}>
+              <Typography
+                variant="caption"
+                sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}
+              >
+                Resumen de Valores
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <SummaryCard label="Ta" value="8000 ms" color="#374151" />
+                <SummaryCard label="Sa" value="120 min" color="#374151" />
+                <SummaryCard label="Sc" value="2 h" color="#374151" />
               </Box>
             </Box>
 

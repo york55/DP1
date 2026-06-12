@@ -412,7 +412,6 @@ export function useSimulation() {
 
     const startDate = config.startDate instanceof Date ? config.startDate : new Date(config.startDate)
     const simStart = new Date(startDate)
-    simStart.setUTCHours(0, 0, 0, 0)
     simTimeRef.current = simStart
     statusRef.current = 'running'
 
