@@ -5,10 +5,12 @@ import Tab from '@mui/material/Tab'
 import Paper from '@mui/material/Paper'
 import LocalShippingIcon from '@mui/icons-material/LocalShipping'
 import FlightIcon from '@mui/icons-material/Flight'
+import WarehouseIcon from '@mui/icons-material/Warehouse'
 import LuggageIcon from '@mui/icons-material/Luggage'
 import BarChartIcon from '@mui/icons-material/BarChart'
 import ShipmentsTab from './ShipmentsTab'
 import FlightsTab from './FlightsTab'
+import WarehousesTab from './WarehousesTab'
 import BagsTab from './BagsTab'
 import KpiPanel from './KpiPanel'
 
@@ -63,8 +65,9 @@ export default function SimulationPanel() {
           backgroundColor: '#1F3864',
           '& .MuiTab-root': {
             color: '#90CAF9',
-            fontSize: '0.72rem',
+            fontSize: '0.70rem',
             minHeight: 44,
+            px: 0.5,
             py: 0.5,
             textTransform: 'none',
           },
@@ -78,10 +81,11 @@ export default function SimulationPanel() {
           },
         }}
       >
-        <Tab label={<TabLabel icon={<LocalShippingIcon sx={{ fontSize: 16 }} />} text="Envíos" />} />
-        <Tab label={<TabLabel icon={<FlightIcon sx={{ fontSize: 16 }} />} text="Vuelos" />} />
-        <Tab label={<TabLabel icon={<LuggageIcon sx={{ fontSize: 16 }} />} text="Maletas" />} />
-        <Tab label={<TabLabel icon={<BarChartIcon sx={{ fontSize: 16 }} />} text="KPIs" />} />
+        <Tab label={<TabLabel icon={<LocalShippingIcon sx={{ fontSize: 15 }} />} text="Envíos" />} />
+        <Tab label={<TabLabel icon={<FlightIcon sx={{ fontSize: 15 }} />} text="Vuelos" />} />
+        <Tab label={<TabLabel icon={<WarehouseIcon sx={{ fontSize: 15 }} />} text="Almacenes" />} />
+        <Tab label={<TabLabel icon={<LuggageIcon sx={{ fontSize: 15 }} />} text="Maletas" />} />
+        <Tab label={<TabLabel icon={<BarChartIcon sx={{ fontSize: 15 }} />} text="KPIs" />} />
       </Tabs>
 
       <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
@@ -92,12 +96,16 @@ export default function SimulationPanel() {
           <FlightsTab />
         </TabPanel>
         <TabPanel value={tab} index={2}>
-          <BagsTab />
+          <WarehousesTab />
         </TabPanel>
         <TabPanel value={tab} index={3}>
+          <BagsTab />
+        </TabPanel>
+        <TabPanel value={tab} index={4}>
           <KpiPanel />
         </TabPanel>
       </Box>
     </Paper>
   )
 }
+
