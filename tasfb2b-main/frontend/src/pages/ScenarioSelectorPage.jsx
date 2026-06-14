@@ -15,6 +15,7 @@ import WarningIcon from '@mui/icons-material/Warning'
 import LuggageIcon from '@mui/icons-material/Luggage'
 import FlightIcon from '@mui/icons-material/Flight'
 import SettingsIcon from '@mui/icons-material/Settings'
+import InventoryIcon from '@mui/icons-material/Inventory'
 
 function ScenarioCard({ icon, title, description, badge, onSelect, disabled }) {
   return (
@@ -202,6 +203,16 @@ export default function ScenarioSelectorPage() {
               description="Administra las Unidades de Transporte (vuelos). Permite ingresar nuevos vuelos, modificar la capacidad de equipaje, origen, destino y horarios."
               badge="Nuevo"
               onSelect={() => navigate('/vuelos')}
+              disabled={false}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <ScenarioCard
+              icon={<InventoryIcon />}
+              title="Gestión de Envíos"
+              description="Carga los archivos de envíos (_envios_IATA_.txt) en memoria. Los datos persisten entre simulaciones y se filtran por fecha al iniciar cada corrida."
+              badge="Nuevo"
+              onSelect={() => navigate('/envios')}
               disabled={false}
             />
           </Grid>

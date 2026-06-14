@@ -15,6 +15,8 @@ import pe.pucp.tasfb2b.dto.response.ShipmentDto;
 import pe.pucp.tasfb2b.dto.response.UploadProgressDto;
 import pe.pucp.tasfb2b.mapper.ShipmentMapper;
 import pe.pucp.tasfb2b.repository.*;
+import pe.pucp.tasfb2b.simulation.EnvioStore;
+import pe.pucp.tasfb2b.simulation.RawEnvio;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -39,6 +41,7 @@ public class ShipmentService {
     private final AirportRepository airportRepo;
     private final ShipmentMapper shipmentMapper;
     private final SimpMessagingTemplate messagingTemplate;
+    private final EnvioStore envioStore;
 
     public Page<ShipmentDto> findByStatus(ShipmentStatus status, Pageable pageable) {
         return shipmentRepo.findByStatus(status, pageable)
@@ -276,7 +279,96 @@ public class ShipmentService {
         }
     }
     
-   
+    @Async
+    @Transactional
+    public void crearBatchesDesdeStoreAsync(int periodo, LocalDateTime startDate) {
+        LocalDateTime endDate = startDate.plusDays(periodo);
+        log.info("Creando batches desde store. Rango: {} -> {}", startDate, endDate);
+
+        if (!envioStore.isLoaded()) {
+            sendError("El store de envíos no está cargado. Cargue los datos primero.", "__STORE__");
+            return;
+        }
+
+        List<RawEnvio> enviosEnRango = envioStore.queryRange(startDate, endDate);
+        log.info("Envíos encontrados en rango: {}", enviosEnRango.size());
+
+        if (enviosEnRango.isEmpty()) {
+            // nothing to do — signal completion immediately
+            messagingTemplate.convertAndSend("/topic/shipments/progress",
+                    new UploadProgressDto(0, 0, "ALL_COMPLETED",
+                            "Sin envíos en el rango seleccionado.", "__ALL__", 0));
+            return;
+        }
+
+        Airline airline = airlineRepo.findAll().stream().findFirst().orElse(null);
+        if (airline == null) {
+            sendError("No hay aerolíneas registradas.", "__STORE__");
+            return;
+        }
+
+        // group by origin to emit per-airport progress
+        Map<String, List<RawEnvio>> byOrigin = new LinkedHashMap<>();
+        for (RawEnvio e : enviosEnRango) {
+            byOrigin.computeIfAbsent(e.getOriginIata(), k -> new ArrayList<>()).add(e);
+        }
+
+        Map<String, Airport> airportCache = new HashMap<>();
+        int batchSize = 1000;
+        List<BaggageBatch> buffer = new ArrayList<>(batchSize);
+        int totalInserted = 0;
+
+        for (Map.Entry<String, List<RawEnvio>> entry : byOrigin.entrySet()) {
+            String originIata = entry.getKey();
+            List<RawEnvio> grupo = entry.getValue();
+            int insertedForOrigin = 0;
+
+            messagingTemplate.convertAndSend("/topic/shipments/progress",
+                    new UploadProgressDto(0, grupo.size(), "IN_PROGRESS",
+                            "Procesando " + originIata + "...", originIata, 0));
+
+            for (RawEnvio envio : grupo) {
+                Airport origin = airportCache.computeIfAbsent(envio.getOriginIata(),
+                        k -> airportRepo.findByIataCode(k).orElse(null));
+                Airport dest = airportCache.computeIfAbsent(envio.getDestinationIata(),
+                        k -> airportRepo.findByIataCode(k).orElse(null));
+
+                if (origin != null && dest != null) {
+                    BaggageBatch batch = new BaggageBatch();
+                    batch.setAirline(airline);
+                    batch.setOriginAirport(origin);
+                    batch.setDestinationAirport(dest);
+                    batch.setQuantity(envio.getQuantity());
+                    batch.setAvailableFrom(envio.getAvailableFrom());
+                    batch.setStatus(BatchStatus.IN_ORIGIN);
+                    buffer.add(batch);
+                    insertedForOrigin++;
+                }
+
+                if (buffer.size() >= batchSize) {
+                    batchRepo.saveAll(buffer);
+                    buffer.clear();
+                }
+            }
+
+            totalInserted += insertedForOrigin;
+
+            messagingTemplate.convertAndSend("/topic/shipments/progress",
+                    new UploadProgressDto(grupo.size(), grupo.size(), "COMPLETED",
+                            "Completado: " + insertedForOrigin + " batches", originIata, insertedForOrigin));
+        }
+
+        if (!buffer.isEmpty()) {
+            batchRepo.saveAll(buffer);
+        }
+
+        messagingTemplate.convertAndSend("/topic/shipments/progress",
+                new UploadProgressDto(totalInserted, totalInserted, "ALL_COMPLETED",
+                        "Todos los batches creados: " + totalInserted, "__ALL__", totalInserted));
+
+        log.info("Batches creados desde store: {}", totalInserted);
+    }
+
     private void sendError(String message, String aeropuerto) {
         messagingTemplate.convertAndSend("/topic/shipments/progress",
             new UploadProgressDto(0, 0, "ERROR", message, aeropuerto, 0));
