@@ -68,7 +68,7 @@ public class SimulationEngine {
 
     public void initSimulation(Long simulationId) {
         Simulation sim = simulationRepo.findById(simulationId).orElseThrow();
-        LocalDateTime simStart = sim.getStartDate().atStartOfDay();
+        LocalDateTime simStart = sim.getStartDate();
         LocalDateTime resumeFrom = sim.getSimulatedTime() != null ? sim.getSimulatedTime() : simStart;
         SimulationClock clock = new SimulationClock(simStart, resumeFrom, tickDurationMinutes);
         long startNano = System.currentTimeMillis();

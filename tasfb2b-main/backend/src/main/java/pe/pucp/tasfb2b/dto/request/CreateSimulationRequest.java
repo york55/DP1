@@ -3,7 +3,7 @@ package pe.pucp.tasfb2b.dto.request;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Data
 public class CreateSimulationRequest {
@@ -15,7 +15,7 @@ public class CreateSimulationRequest {
     private Integer periodDays;
 
     @NotNull
-    private LocalDate startDate;
+    private LocalDateTime startDate;
 
     @NotBlank
     private String algorithm = "ALNS";

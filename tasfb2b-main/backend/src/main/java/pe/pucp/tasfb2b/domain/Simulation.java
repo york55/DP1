@@ -10,7 +10,6 @@ import pe.pucp.tasfb2b.domain.enums.ScenarioType;
 import pe.pucp.tasfb2b.domain.enums.SimulationStatus;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -32,7 +31,7 @@ public class Simulation {
     private Integer periodDays;
 
     @Column(name = "start_date", nullable = false)
-    private LocalDate startDate;
+    private LocalDateTime startDate;
 
     @Column(name = "cancellation_rate", nullable = false, precision = 5, scale = 2)
     private BigDecimal cancellationRate = BigDecimal.valueOf(0.00);

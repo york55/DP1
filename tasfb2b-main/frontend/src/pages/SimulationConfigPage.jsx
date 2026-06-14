@@ -241,7 +241,9 @@ export default function SimulationConfigPage() {
       await apiClient.delete('/simulations/reset')
 
       let dateStr = ''
-      if (startDate instanceof Date) {
+      if (startDate && startDate.format) {
+        dateStr = startDate.format('YYYY-MM-DDTHH:mm:ss')
+      } else if (startDate instanceof Date) {
         const pad = (n) => String(n).padStart(2, '0')
         dateStr = `${startDate.getFullYear()}-${pad(startDate.getMonth() + 1)}-${pad(startDate.getDate())}T${pad(startDate.getHours())}:${pad(startDate.getMinutes())}:${pad(startDate.getSeconds())}`
       } else {
