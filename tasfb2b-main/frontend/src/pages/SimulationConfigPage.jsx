@@ -108,6 +108,7 @@ export default function SimulationConfigPage() {
   const [flightsExpanded, setFlightsExpanded] = useState(false)
   const [airports, setAirports] = useState([])
   const [flights, setFlights] = useState([])
+  const [flightScheduleCount, setFlightScheduleCount] = useState(0)
   const [loadingData, setLoadingData] = useState(true)
   const [starting, setStarting] = useState(false)
   const [creatingBatches, setCreatingBatches] = useState(false)
@@ -122,7 +123,7 @@ export default function SimulationConfigPage() {
   const containerRef = useRef(null)
   const stompClientRef = useRef(null)
 
-  const periodFlightCount = flights.length
+  const periodFlightCount = flightScheduleCount
 
   const handleResizeStart = (e) => {
     e.preventDefault()
@@ -149,10 +150,11 @@ export default function SimulationConfigPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [airportsRes, flightsRes, storeRes] = await Promise.all([
+        const [airportsRes, flightsRes, storeRes, flightPlansRes] = await Promise.all([
           apiClient.get('/airports'),
           apiClient.get('/flights'),
           apiClient.get('/envios/estado'),
+          apiClient.get('/flight-plans'),
         ])
 
         setAirports(airportsRes.data.map((a) => ({
@@ -160,6 +162,7 @@ export default function SimulationConfigPage() {
           maxCapacity: a.warehouseCapacity, occupancy: a.currentOccupancy,
         })))
         setFlights(flightsRes.data)
+        setFlightScheduleCount(flightPlansRes.data.length)
         setStoreStatus(storeRes.data)
       } catch (err) {
         console.error('Error fetching simulation data:', err)
