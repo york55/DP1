@@ -71,7 +71,7 @@ echo ============================================================
 echo.
 
 pushd "%BACKEND_DIR%"
-powershell -NoProfile -Command "& { $ErrorActionPreference='Continue'; & '%JAVA_HOME%\bin\java.exe' -jar target\tasfb2b.war --spring.profiles.active=dev 2>&1 | Tee-Object -FilePath '%BACKEND_LOG%' }"
+powershell -NoProfile -Command "& { $ErrorActionPreference='Continue'; & '%JAVA_HOME%\bin\java.exe' -jar target\tasfb2b.war --spring.profiles.active=local 2>&1 | Tee-Object -FilePath '%BACKEND_LOG%' }"
 popd
 
 echo.
