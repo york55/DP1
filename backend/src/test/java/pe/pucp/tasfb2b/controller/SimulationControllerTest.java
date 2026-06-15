@@ -16,6 +16,7 @@ import pe.pucp.tasfb2b.service.KpiService;
 import pe.pucp.tasfb2b.service.SimulationService;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collections;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -46,7 +47,7 @@ class SimulationControllerTest {
         CreateSimulationRequest req = new CreateSimulationRequest();
         req.setScenarioType("PERIOD");
         req.setPeriodDays(3);
-        req.setStartDate(LocalDate.of(2026, 5, 10));
+        req.setStartDate(LocalDateTime.of(2026, 5, 10, 0, 0));
         req.setAlgorithm("ALNS");
         req.setCancellationRate(10.0);
         req.setSeed(42L);

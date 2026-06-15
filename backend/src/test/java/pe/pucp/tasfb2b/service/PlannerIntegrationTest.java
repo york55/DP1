@@ -72,7 +72,7 @@ class PlannerIntegrationTest {
         Simulation sim = new Simulation();
         sim.setScenarioType(ScenarioType.PERIOD);
         sim.setPeriodDays(5);
-        sim.setStartDate(LocalDate.of(2026, 5, 10));
+        sim.setStartDate(LocalDateTime.of(2026, 5, 10,0,0));
         sim.setCancellationRate(BigDecimal.valueOf(0.0));
         sim.setSeed(42L);
         sim.setAlgorithm("ALNS");
