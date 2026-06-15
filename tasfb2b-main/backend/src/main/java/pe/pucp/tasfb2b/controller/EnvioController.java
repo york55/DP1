@@ -61,4 +61,9 @@ public class EnvioController {
                     .body("Error al escribir el archivo de envíos: " + e.getMessage());
         }
     }
+	
+	@GetMapping
+	public ResponseEntity<?> listarEnvios() {
+		return ResponseEntity.ok(envioService.listarEnvios());
+	}
 }

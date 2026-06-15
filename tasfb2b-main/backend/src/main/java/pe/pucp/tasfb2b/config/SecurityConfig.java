@@ -29,7 +29,7 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/ws/**", "/api/**", "/actuator/**").permitAll()
+                .requestMatchers("/ws/**", "/api/**", "/actuator/**","/h2-console/**","/ops/**","/flight-ops/**").permitAll()
                 .anyRequest().authenticated()
             );
         return http.build();
@@ -44,7 +44,7 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/ws/**", "/api/**", "/actuator/**", "/h2-console/**").permitAll()
+                .requestMatchers("/ws/**", "/api/**", "/actuator/**", "/ops/**", "/flight-ops/**").permitAll()
                 .anyRequest().authenticated()
             );
         return http.build();

@@ -16,7 +16,10 @@ import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
+import TextField from '@mui/material/TextField'
+import InputAdornment from '@mui/material/InputAdornment'
 import CancelIcon from '@mui/icons-material/Cancel'
+import SearchIcon from '@mui/icons-material/Search'
 import client from '../../api/client'
 
 const formatTime = (timeStr) => {
@@ -32,6 +35,7 @@ export default function FlightPlanPage() {
   const [cancelling, setCancelling]   = useState(null)
   const [page, setPage]               = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(20)
+  const [filtroOrigen, setFiltroOrigen] = useState('')
   const [snack, setSnack]             = useState({ open: false, msg: '', severity: 'success' })
 
   const fetchFlights = useCallback((date) => {
@@ -66,7 +70,11 @@ export default function FlightPlanPage() {
     }
   }
 
-  const paginated = flights.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+  const filtered = filtroOrigen
+    ? flights.filter(f => f.origin?.toUpperCase().includes(filtroOrigen.toUpperCase()))
+    : flights
+
+  const paginated = filtered.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
 
   if (loading) return (
     <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -76,10 +84,13 @@ export default function FlightPlanPage() {
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 3, gap: 2 }}>
+
+      {/* Título */}
       <Box>
         <Typography variant="h6" sx={{ fontWeight: 700, color: '#1F3864' }}>Plan de Vuelos</Typography>
         <Typography variant="body2" sx={{ color: '#6B7280' }}>
-          {flights.length} vuelos
+          {filtered.length} vuelos
+          {filtroOrigen && ` (filtrado de ${flights.length})`}
           {simulationState?.config?.startDate
             ? ` — ${(simulationState.config.startDate instanceof Date
                 ? simulationState.config.startDate.toISOString()
@@ -88,8 +99,34 @@ export default function FlightPlanPage() {
         </Typography>
       </Box>
 
+      {/* Filtro */}
+      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+        <TextField
+          size="small"
+          placeholder="Filtrar por origen (ej: SKBO)"
+          value={filtroOrigen}
+          onChange={e => { setFiltroOrigen(e.target.value); setPage(0) }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ fontSize: 18, color: '#6B7280' }} />
+              </InputAdornment>
+            ),
+          }}
+          sx={{
+            width: 280,
+            '& .MuiOutlinedInput-root': {
+              borderRadius: '8px',
+              backgroundColor: '#F8FAFF',
+              '&.Mui-focused fieldset': { borderColor: '#1F3864' },
+            },
+          }}
+        />
+      </Box>
+
+      {/* Tabla */}
       <Paper elevation={0} sx={{ border: '1px solid #E0E0E0', borderRadius: 2, overflow: 'hidden', flex: 1 }}>
-        <TableContainer sx={{ maxHeight: 'calc(100vh - 220px)' }}>
+        <TableContainer sx={{ maxHeight: 'calc(100vh - 260px)' }}>
           <Table stickyHeader size="small">
             <TableHead>
               <TableRow>
@@ -101,7 +138,13 @@ export default function FlightPlanPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {paginated.map((f, i) => (
+              {paginated.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={10} sx={{ textAlign: 'center', py: 4, color: '#9CA3AF' }}>
+                    No hay vuelos que coincidan con el filtro.
+                  </TableCell>
+                </TableRow>
+              ) : paginated.map((f, i) => (
                 <TableRow
                   key={f.id}
                   sx={{
@@ -156,7 +199,7 @@ export default function FlightPlanPage() {
         </TableContainer>
         <TablePagination
           component="div"
-          count={flights.length}
+          count={filtered.length}
           page={page}
           onPageChange={(_, p) => setPage(p)}
           rowsPerPage={rowsPerPage}
