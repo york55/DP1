@@ -2,9 +2,9 @@ services:
 
   demo-mysql:
     image: mysql:8
-    container_name: demo-mysql
+    container_name: tasfb2b-mysql
     environment:
-      MYSQL_DATABASE: demo
+      MYSQL_DATABASE: tasfb2b
       MYSQL_ROOT_PASSWORD: Abcd.1234#
     ports:
       - "3306:3306"
@@ -17,7 +17,7 @@ services:
   backend:
     build:
       context: ./backend
-    container_name: demo-backend
+    container_name: tasfb2b-backend
     depends_on:
       demo-mysql:
         condition: service_healthy
@@ -27,7 +27,7 @@ services:
   frontend:
     build:
       context: ./frontend
-    container_name: demo-frontend
+    container_name: tasfb2b-frontend
     depends_on:
       - backend
     ports:

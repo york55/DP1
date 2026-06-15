@@ -11,7 +11,7 @@ RUN mvn clean package -DskipTests
 
 FROM tomcat:10-jdk21
 
-COPY --from=build /app/target/tasb2b.war /usr/local/tomcat/webapps/
+COPY --from=build /app/target/tasfb2b.war /usr/local/tomcat/webapps/
 
 EXPOSE 8080
 
