@@ -18,6 +18,8 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Sort;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -128,4 +130,8 @@ public class EnvioService {
     private String generarIdCliente(long idEnvio) {
         return String.format("%07d", idEnvio * 500L);
     }
+	
+	public List<OpsShipment> listarEnvios() {
+		return shipmentRepo.findAll(Sort.by(Sort.Direction.DESC, "registeredAt"));
+	}
 }
