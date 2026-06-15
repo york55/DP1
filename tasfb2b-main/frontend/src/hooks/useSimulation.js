@@ -427,7 +427,9 @@ export function useSimulation() {
     firstBatchReadyRef.current = false
     setFirstBatchReady(false)
 
-    const startDate = config.startDate instanceof Date ? config.startDate : new Date(config.startDate)
+    const startDate = config.startDate instanceof Date
+      ? config.startDate
+      : (config.startDate && config.startDate.toDate ? config.startDate.toDate() : new Date(config.startDate))
     const simStart = new Date(startDate)
     simTimeRef.current = simStart
     statusRef.current = 'running'
@@ -454,7 +456,7 @@ export function useSimulation() {
       const simDto = await simulationApi.create({
         scenarioType: 'PERIOD',
         periodDays: config.period,
-        startDate: simStart.toISOString().slice(0, 10),
+        startDate: simStart.toISOString().replace('Z', ''),
         algorithm: config.algorithm || 'ALNS',
         cancellationRate: config.cancellationRate ?? 0.0,
         seed: config.seed ?? 42,

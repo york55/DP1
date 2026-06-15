@@ -111,6 +111,7 @@ export default function SimulationConfigPage() {
   const [flightsExpanded, setFlightsExpanded] = useState(false)
   const [airports, setAirports] = useState([])
   const [flights, setFlights] = useState([])
+  const [flightScheduleCount, setFlightScheduleCount] = useState(0)
   const [loadingData, setLoadingData] = useState(true)
   const [shipmentsCount, setShipmentsCount] = useState(0)
   const [starting, setStarting] = useState(false)
@@ -129,9 +130,10 @@ export default function SimulationConfigPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [airportsRes, flightsRes] = await Promise.all([
+        const [airportsRes, flightsRes, flightPlansRes] = await Promise.all([
           apiClient.get('/airports'),
           apiClient.get('/flights'),
+          apiClient.get('/flight-plans'),
         ])
 
         const mappedAirports = airportsRes.data.map((a) => ({
@@ -150,6 +152,7 @@ export default function SimulationConfigPage() {
 
         setAirports(mappedAirports)
         setFlights(mappedFlights)
+        setFlightScheduleCount(flightPlansRes.data.length)
       } catch (err) {
         console.error('Error fetching simulation data:', err)
       } finally {
@@ -480,7 +483,7 @@ export default function SimulationConfigPage() {
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                 <SummaryCard label="Aeropuertos" value={airports.length} color="#1F3864" />
-                <SummaryCard label="Vuelos" value={flights.length} color="#2E75B6" />
+                <SummaryCard label="Vuelos" value={flightScheduleCount} color="#2E75B6" />
                 <SummaryCard label="Envíos" value={shipmentsCount} color="#2E7D32" />
               </Box>
             </Box>

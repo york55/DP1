@@ -114,7 +114,7 @@ public class BlockOrchestrator {
         try {
             Simulation sim = simulationRepo.findById(simId).orElseThrow();
             int totalDays = sim.getPeriodDays() != null ? sim.getPeriodDays() : 5;
-            LocalDateTime simStart = sim.getStartDate().atStartOfDay();
+            LocalDateTime simStart = sim.getStartDate();
             LocalDateTime simEnd = simStart.plusDays(totalDays);
             int totalBlocks = totalDays * (24 / blockSizeHours);
 
@@ -192,7 +192,7 @@ public class BlockOrchestrator {
      */
     private void submitBackgroundPlanning(Long simId, Simulation sim, int nextBlock, int totalBlocks,
                                           LocalDateTime simEnd, OrchestratorState state) {
-        LocalDateTime nextStart = sim.getStartDate().atStartOfDay().plusHours((long) nextBlock * blockSizeHours);
+        LocalDateTime nextStart = sim.getStartDate().plusHours((long) nextBlock * blockSizeHours);
         LocalDateTime nextEnd   = nextStart.plusHours(blockSizeHours);
 
         log.info("Simulación {}: lanzando planificación en segundo plano del bloque {} de {}",

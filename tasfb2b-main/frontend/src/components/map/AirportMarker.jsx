@@ -31,7 +31,7 @@ function AirportMarker({ airport, flights = [] }) {
   return (
     <CircleMarker
       center={[lat, lon]}
-      radius={12}
+      radius={6}
       pane="airportPane"
       pathOptions={{
         color: '#FFFFFF',

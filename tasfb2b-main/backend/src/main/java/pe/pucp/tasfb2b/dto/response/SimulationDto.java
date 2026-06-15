@@ -2,7 +2,6 @@ package pe.pucp.tasfb2b.dto.response;
 
 import lombok.Data;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
@@ -11,7 +10,7 @@ public class SimulationDto {
     private Long id;
     private String scenarioType;
     private Integer periodDays;
-    private LocalDate startDate;
+    private LocalDateTime startDate;
     private String status;
     private String algorithm;
     private Double cancellationRate;

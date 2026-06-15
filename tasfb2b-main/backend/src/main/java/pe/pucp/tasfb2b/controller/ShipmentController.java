@@ -57,6 +57,18 @@ public class ShipmentController {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
     }*/
+    @PostMapping("/batches/from-store")
+    public ResponseEntity<Map<String, Object>> fromStore(
+            @RequestParam("periodo") int periodo,
+            @RequestParam("startDate")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            LocalDateTime startDate) {
+
+        log.info("ACTION from_store periodo={} startDate={}", periodo, startDate);
+        shipmentService.crearBatchesDesdeStoreAsync(periodo, startDate);
+        return ResponseEntity.status(202).body(Map.of("mensaje", "Creación de batches iniciada"));
+    }
+
    @PostMapping("/batches/upload")
     public ResponseEntity<Map<String, Object>> uploadBatches(
             @RequestParam("file") MultipartFile file,

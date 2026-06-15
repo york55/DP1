@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import apiClient from '../api/client'
 import Box from '@mui/material/Box'
@@ -14,15 +14,14 @@ import Collapse from '@mui/material/Collapse'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
+import Alert from '@mui/material/Alert'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import LuggageIcon from '@mui/icons-material/Luggage'
-import CloudUploadIcon from '@mui/icons-material/CloudUpload'
-import CheckCircleIcon from '@mui/icons-material/CheckCircle'
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
-import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined'
+import InventoryIcon from '@mui/icons-material/Inventory'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import CircularProgress from '@mui/material/CircularProgress'
 import LinearProgress from '@mui/material/LinearProgress'
 import Backdrop from '@mui/material/Backdrop'
@@ -109,29 +108,23 @@ export default function SimulationConfigPage() {
   const [flightsExpanded, setFlightsExpanded] = useState(false)
   const [airports, setAirports] = useState([])
   const [flights, setFlights] = useState([])
+  const [flightScheduleCount, setFlightScheduleCount] = useState(0)
   const [loadingData, setLoadingData] = useState(true)
-  const [shipmentsCount, setShipmentsCount] = useState(0)
   const [starting, setStarting] = useState(false)
-  const [uploading, setUploading] = useState(false)
-
-  const [uploadProgressMap, setUploadProgressMap] = useState({})
-  const [completedCount, setCompletedCount] = useState(0)  // ← nuevo
-
-
-  const [loadedFiles, setLoadedFiles] = useState([])
-  const [fileLineCounts, setFileLineCounts] = useState({})
+  const [creatingBatches, setCreatingBatches] = useState(false)
   const [isWaitingToStart, setIsWaitingToStart] = useState(false)
 
+  const [storeStatus, setStoreStatus] = useState(null)
+  const [batchProgressMap, setBatchProgressMap] = useState({})
+
   // Resizable panel state
-  const [panelWidth, setPanelWidth] = useState(30) // percentage
+  const [panelWidth, setPanelWidth] = useState(30)
   const isResizing = useRef(false)
   const containerRef = useRef(null)
-
   const stompClientRef = useRef(null)
 
-  const periodFlightCount = flights.length
+  const periodFlightCount = flightScheduleCount
 
-  // Resize panel handlers
   const handleResizeStart = (e) => {
     e.preventDefault()
     isResizing.current = true
@@ -157,23 +150,20 @@ export default function SimulationConfigPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [airportsRes, flightsRes] = await Promise.all([
+        const [airportsRes, flightsRes, storeRes, flightPlansRes] = await Promise.all([
           apiClient.get('/airports'),
           apiClient.get('/flights'),
+          apiClient.get('/envios/estado'),
+          apiClient.get('/flight-plans'),
         ])
 
-        const mappedAirports = airportsRes.data.map((a) => ({
-          ...a,
-          lat: a.latitude,
-          lon: a.longitude,
-          maxCapacity: a.warehouseCapacity,
-          occupancy: a.currentOccupancy,
-        }))
-
-        const mappedFlights = flightsRes.data.map((f) => ({ ...f }))
-
-        setAirports(mappedAirports)
-        setFlights(mappedFlights)
+        setAirports(airportsRes.data.map((a) => ({
+          ...a, lat: a.latitude, lon: a.longitude,
+          maxCapacity: a.warehouseCapacity, occupancy: a.currentOccupancy,
+        })))
+        setFlights(flightsRes.data)
+        setFlightScheduleCount(flightPlansRes.data.length)
+        setStoreStatus(storeRes.data)
       } catch (err) {
         console.error('Error fetching simulation data:', err)
       } finally {
@@ -188,102 +178,41 @@ export default function SimulationConfigPage() {
     const socket = new SockJS(wsUrl)
     const stompClient = new Client({
       webSocketFactory: () => socket,
-      debug: (str) => console.debug('[STOMP]', str),
+      debug: () => {},
       onConnect: () => {
-        console.log('STOMP connected')
         stompClient.subscribe('/topic/shipments/progress', (message) => {
           const data = JSON.parse(message.body)
-          console.log('Mensaje:', data)
 
-          const airportCode = data.aeropuerto
-
-          setUploadProgressMap((prev) => ({
-            ...prev,
-            [airportCode]: data,
-          }))
-
-          if (data.status === 'COMPLETED') {
-            setCompletedCount((prev) => prev + 1)
+          if (data.status === 'ALL_COMPLETED') {
+            setCreatingBatches(false)
+            setIsWaitingToStart(true)
+            return
           }
 
           if (data.status === 'ERROR') {
-            alert(`Error en aeropuerto ${airportCode}: ${data.message}`)
-            setUploading(false)
+            alert(`Error procesando envíos: ${data.message}`)
+            setCreatingBatches(false)
             setIsWaitingToStart(false)
+            return
           }
+
+          setBatchProgressMap((prev) => ({ ...prev, [data.aeropuerto]: data }))
         })
       },
-      onStompError: (frame) => {
-        console.error('STOMP error', frame.headers['message'])
-      },
+      onStompError: (frame) => console.error('STOMP error', frame.headers['message']),
     })
     stompClient.activate()
     stompClientRef.current = stompClient
-    return () => {
-      stompClient.deactivate()
-    }
+    return () => stompClient.deactivate()
   }, [])
-
-  const handleFileUpload = (e) => {
-    const files = Array.from(e.target.files)
-    e.target.value = ''
-    if (!files.length) return
-
-    const newFiles = files.filter((f) => {
-      return true // deduplication handled below with existing state
-    })
-
-    setLoadedFiles((prev) => {
-      const existingNames = new Set(prev.map((f) => f.name))
-      return [...prev, ...newFiles.filter((f) => !existingNames.has(f.name))]
-    })
-
-    newFiles.forEach((file) => {
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        const text = ev.target.result
-        const count = text.split('\n').filter((line) => line.trim().length > 0).length
-        setFileLineCounts((prev) => ({ ...prev, [file.name]: count }))
-        setShipmentsCount((prev) => prev + count)
-      }
-      reader.readAsText(file)
-    })
-  }
-
-  // FIX 2: handleRemoveFile is now wired up to the delete button in the file list
-  const handleRemoveFile = (index) => {
-    setLoadedFiles((prev) => {
-      const removed = prev[index]
-      const updated = prev.filter((_, i) => i !== index)
-      if (removed) {
-        setFileLineCounts((counts) => {
-          const lineCount = counts[removed.name] || 0
-          setShipmentsCount((s) => Math.max(0, s - lineCount))
-          const next = { ...counts }
-          delete next[removed.name]
-          return next
-        })
-      }
-      if (updated.length === 0) {
-        setShipmentsCount(0)
-      }
-      return updated
-    })
-  }
 
   useEffect(() => {
     if (!isWaitingToStart) return
-    if (loadedFiles.length === 0) return
-    if (completedCount < loadedFiles.length) return  // espera a que todos completen
 
     const run = async () => {
       try {
-        setUploading(false)
         setStarting(true)
-        await startSimulation({
-          period: parseInt(period, 10),
-          startDate: startDate,
-        })
+        await startSimulation({ period: parseInt(period, 10), startDate })
         navigate('/simulation/running')
       } catch (err) {
         console.error('Error al arrancar:', err)
@@ -292,71 +221,53 @@ export default function SimulationConfigPage() {
       }
     }
     run()
-  }, [completedCount, isWaitingToStart, loadedFiles.length])
-  // ↑ dependencias mínimas: solo reacciona cuando cambia el contador
+  }, [isWaitingToStart])
 
   const handleStart = async () => {
     if (!startDate) {
       alert('Por favor, seleccione la fecha de inicio.')
       return
     }
-    if (loadedFiles.length === 0) {
-      alert('Por favor, cargue al menos un archivo de envíos antes de iniciar.')
+    if (!storeStatus?.loaded) {
+      alert('No hay envíos cargados en memoria. Ve al módulo de Gestión de Envíos y carga los archivos primero.')
       return
     }
 
-    setUploading(true)
-    setIsWaitingToStart(true)
+    setBatchProgressMap({})
+    setCreatingBatches(true)
+    setIsWaitingToStart(false)
 
     try {
-      // Clear all data from any previous run before uploading fresh batches.
       await apiClient.delete('/simulations/reset')
 
-      for (const file of loadedFiles) {
-        const formData = new FormData()
-        formData.append('file', file)
-        formData.append('periodo', period)
-        
-        let dateStr = ''
-        if (startDate instanceof Date) {
-          const pad = (num) => String(num).padStart(2, '0')
-          const year = startDate.getFullYear()
-          const month = pad(startDate.getMonth() + 1)
-          const day = pad(startDate.getDate())
-          const hours = pad(startDate.getHours())
-          const minutes = pad(startDate.getMinutes())
-          const seconds = pad(startDate.getSeconds())
-          dateStr = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`
-        } else {
-          dateStr = String(startDate)
-        }
-        formData.append('startDate', dateStr)
-
-        await apiClient.post('/batches/upload', formData, {
-          headers: { 'Content-Type': undefined },
-        })
+      let dateStr = ''
+      if (startDate && startDate.format) {
+        dateStr = startDate.format('YYYY-MM-DDTHH:mm:ss')
+      } else if (startDate instanceof Date) {
+        const pad = (n) => String(n).padStart(2, '0')
+        dateStr = `${startDate.getFullYear()}-${pad(startDate.getMonth() + 1)}-${pad(startDate.getDate())}T${pad(startDate.getHours())}:${pad(startDate.getMinutes())}:${pad(startDate.getSeconds())}`
+      } else {
+        dateStr = String(startDate)
       }
+
+      await apiClient.post(`/batches/from-store?periodo=${period}&startDate=${dateStr}`)
     } catch (err) {
-      console.error('Error al subir archivos:', err)
-      const detail = err.response?.data?.error || err.response?.data?.message || err.message || 'Error de red'
-      alert(`Error al cargar los archivos:\n${detail}`)
-      setUploading(false)
+      console.error('Error iniciando:', err)
+      const detail = err.response?.data?.error || err.response?.data?.mensaje || err.message
+      alert(`Error:\n${detail}`)
+      setCreatingBatches(false)
       setIsWaitingToStart(false)
     }
   }
+
+  const batchProgressEntries = Object.entries(batchProgressMap)
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#F2F2F2' }}>
       {/* AppBar */}
       <AppBar position="static" sx={{ backgroundColor: '#1F3864', zIndex: 10 }}>
         <Toolbar variant="dense">
-          <IconButton
-            edge="start"
-            color="inherit"
-            onClick={() => navigate('/')}
-            sx={{ mr: 1 }}
-            size="small"
-          >
+          <IconButton edge="start" color="inherit" onClick={() => navigate('/')} sx={{ mr: 1 }} size="small">
             <ArrowBackIcon />
           </IconButton>
           <LuggageIcon sx={{ mr: 1, fontSize: 22 }} />
@@ -368,23 +279,18 @@ export default function SimulationConfigPage() {
             Configuración de Simulación
           </Typography>
           <Box sx={{ flex: 1 }} />
-          <Typography
-            variant="caption"
-            sx={{ color: '#90CAF9', fontFamily: 'monospace', fontSize: '0.78rem' }}
-          >
+          <Typography variant="caption" sx={{ color: '#90CAF9', fontFamily: 'monospace', fontSize: '0.78rem' }}>
             {utcClock}
           </Typography>
         </Toolbar>
       </AppBar>
 
-      {/* Main Content: resizable split */}
+      {/* Main Content */}
       <Box ref={containerRef} sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Left: Map */}
         <Box sx={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
           {loadingData ? (
-            <Box
-              sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}
-            >
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
               <CircularProgress />
             </Box>
           ) : (
@@ -396,42 +302,29 @@ export default function SimulationConfigPage() {
         <Box
           onMouseDown={handleResizeStart}
           sx={{
-            width: '5px',
-            cursor: 'col-resize',
-            backgroundColor: '#BFBFBF',
-            flexShrink: 0,
-            transition: 'background-color 0.15s',
-            '&:hover': { backgroundColor: '#2E75B6' },
-            zIndex: 10,
+            width: '5px', cursor: 'col-resize', backgroundColor: '#BFBFBF', flexShrink: 0,
+            transition: 'background-color 0.15s', '&:hover': { backgroundColor: '#2E75B6' }, zIndex: 10,
           }}
         />
 
         {/* Right: Config Panel */}
         <Box
           sx={{
-            width: `${panelWidth}%`,
-            flexShrink: 0,
-            overflow: 'auto',
-            backgroundColor: '#FFFFFF',
-            borderLeft: 'none',
-            display: 'flex',
-            flexDirection: 'column',
+            width: `${panelWidth}%`, flexShrink: 0, overflow: 'auto',
+            backgroundColor: '#FFFFFF', display: 'flex', flexDirection: 'column',
           }}
         >
           <Box sx={{ p: 2.5, flex: 1, overflow: 'auto' }}>
-            <Typography
-              variant="h6"
-              sx={{ fontWeight: 700, color: '#1F3864', mb: 0.5, fontSize: '1rem' }}
-            >
+            <Typography variant="h6" sx={{ fontWeight: 700, color: '#1F3864', mb: 0.5, fontSize: '1rem' }}>
               Simulación por Período
             </Typography>
             <Typography variant="body2" sx={{ color: '#6B7280', mb: 2.5, fontSize: '0.8rem' }}>
-              Configure los parámetros de la simulación y presione Iniciar para comenzar.
+              Configure los parámetros y presione Iniciar para comenzar.
             </Typography>
 
             <Divider sx={{ mb: 2 }} />
 
-            {/* Period selector */}
+            {/* Period */}
             <Box sx={{ mb: 2.5 }}>
               <Typography sx={{ fontSize: '0.8rem', fontWeight: 600, color: '#1F3864', mb: 0.5 }}>
                 Duración del período
@@ -443,9 +336,7 @@ export default function SimulationConfigPage() {
 
             {/* Start date */}
             <FormControl sx={{ mb: 2.5, width: '100%' }}>
-              <FormLabel
-                sx={{ fontSize: '0.8rem', fontWeight: 600, color: '#1F3864', mb: 1, display: 'block' }}
-              >
+              <FormLabel sx={{ fontSize: '0.8rem', fontWeight: 600, color: '#1F3864', mb: 1, display: 'block' }}>
                 Fecha de inicio
               </FormLabel>
               <DateTimePicker
@@ -453,130 +344,103 @@ export default function SimulationConfigPage() {
                 onChange={(newVal) => setStartDate(newVal)}
                 slotProps={{
                   textField: {
-                    size: 'small',
-                    fullWidth: true,
+                    size: 'small', fullWidth: true,
                     sx: { '& .MuiOutlinedInput-root': { fontSize: '0.82rem' } },
                   },
                 }}
               />
             </FormControl>
 
-            {/* Shipments Upload */}
-            <Box sx={{ mb: 3 }}>
-              <Typography
-                variant="caption"
-                sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}
-              >
-                Datos de Envíos (TXT)
+            {/* Envíos store status */}
+            <Box sx={{ mb: 2.5 }}>
+              <Typography variant="caption"
+                sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}>
+                Datos de Envíos
               </Typography>
 
-              {/* FIX 3: show file list always (not just when !uploading), so progress bars are visible during upload */}
-              {loadedFiles.length > 0 && (
-                <Box sx={{ mb: 1 }}>
-                  {loadedFiles.map((file, index) => {
-                    const _acMatch = file.name.match(/envios_([A-Za-z]{4})_/i)
-                    const airportCode = _acMatch ? _acMatch[1].toUpperCase() : null
-                    const progress = uploadProgressMap[airportCode]
-
-                    return (
-                      <Box
-                        key={index}
-                        sx={{ mb: 2, p: 1.5, border: '1px solid #E0E0E0', borderRadius: 1 }}
-                      >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                          <InsertDriveFileOutlinedIcon sx={{ fontSize: 16, color: '#1F3864' }} />
-                          <Typography variant="caption" sx={{ flex: 1, fontWeight: 600 }}>
-                            {file.name}
-                          </Typography>
-                          {progress?.status === 'COMPLETED' && (
-                            <CheckCircleIcon sx={{ fontSize: 18, color: '#2E7D32' }} />
-                          )}
-                          {/* FIX 2: delete button now wired to handleRemoveFile; disabled while uploading */}
-                          <Tooltip title="Eliminar archivo">
-                            <span>
-                              <IconButton
-                                size="small"
-                                disabled={uploading}
-                                onClick={() => handleRemoveFile(index)}
-                              >
-                                <DeleteOutlineIcon sx={{ fontSize: 16 }} />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        </Box>
-
-                        {progress && (progress.status === 'IN_PROGRESS' || progress.status === 'COMPLETED') && (
-                          <Box>
-                            <LinearProgress
-                              variant={progress.total > 0 ? 'determinate' : 'indeterminate'}
-                              value={progress.total > 0 ? (progress.processed / progress.total) * 100 : 0}
-                              sx={{
-                                height: 6,
-                                borderRadius: 5,
-                                '& .MuiLinearProgress-bar': {
-                                  backgroundColor: progress.status === 'COMPLETED' ? '#2E7D32' : '#2E75B6',
-                                },
-                              }}
-                            />
-                            <Typography variant="caption" sx={{ fontSize: '0.65rem', color: '#666' }}>
-                              {progress.message} ({progress.processed}/{progress.total})
-                            </Typography>
-                          </Box>
-                        )}
-                      </Box>
-                    )
-                  })}
-                </Box>
+              {storeStatus?.loaded ? (
+                <Paper elevation={0}
+                  sx={{ p: 1.5, border: '1px solid #A5D6A7', borderRadius: 1, backgroundColor: '#F1F8E9' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <InventoryIcon sx={{ fontSize: 18, color: '#2E7D32' }} />
+                    <Box sx={{ flex: 1 }}>
+                      <Typography sx={{ fontSize: '0.78rem', fontWeight: 700, color: '#2E7D32' }}>
+                        {storeStatus.totalCount.toLocaleString()} envíos en memoria
+                      </Typography>
+                      {storeStatus.minDate && (
+                        <Typography variant="caption" sx={{ color: '#558B2F', fontSize: '0.68rem' }}>
+                          {storeStatus.minDate} → {storeStatus.maxDate}
+                        </Typography>
+                      )}
+                    </Box>
+                    <Chip label="Listo" size="small"
+                      sx={{ backgroundColor: '#C8E6C9', color: '#1B5E20', fontWeight: 700, fontSize: '0.62rem' }} />
+                  </Box>
+                </Paper>
+              ) : (
+                <Alert severity="warning" sx={{ fontSize: '0.75rem', py: 0.5 }}
+                  action={
+                    <Tooltip title="Ir al módulo de envíos">
+                      <IconButton size="small" onClick={() => navigate('/envios')}>
+                        <OpenInNewIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </Tooltip>
+                  }>
+                  Sin datos cargados. Carga los archivos primero.
+                </Alert>
               )}
 
-              <Button
-                component="label"
-                variant="outlined"
-                fullWidth
-                disabled={uploading}
-                startIcon={<CloudUploadIcon />}
-                sx={{
-                  py: 1,
-                  borderColor: uploading ? '#A5D6A7' : '#2E75B6',
-                  color: uploading ? '#A5D6A7' : '#2E75B6',
-                  cursor: uploading ? 'not-allowed' : 'pointer',
-                }}
-              >
-                Cargar Archivo de Envíos
-                <input
-                  type="file"
-                  accept=".txt"
-                  multiple
-                  hidden
-                  onChange={handleFileUpload}
-                />
-              </Button>
-
-              {/* FIX 1: removed the broken second progress block that referenced undefined `uploadProgress`.
-                  Per-file progress is now handled entirely inside the file list above. */}
+              {/* Batch creation progress */}
+              {creatingBatches && batchProgressEntries.length > 0 && (
+                <Box sx={{ mt: 1.5 }}>
+                  <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#6B7280', mb: 0.5, display: 'block' }}>
+                    Preparando batches para el período...
+                  </Typography>
+                  {batchProgressEntries.map(([code, prog]) => (
+                    <Box key={code} sx={{ mb: 0.5 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="caption" sx={{ fontSize: '0.68rem', fontFamily: 'monospace' }}>
+                          {code}
+                        </Typography>
+                        <Typography variant="caption" sx={{ fontSize: '0.68rem', color: '#6B7280' }}>
+                          {prog.inserted || 0}
+                        </Typography>
+                      </Box>
+                      <LinearProgress
+                        variant={prog.total > 0 ? 'determinate' : 'indeterminate'}
+                        value={prog.total > 0 ? (prog.processed / prog.total) * 100 : 0}
+                        sx={{
+                          height: 4, borderRadius: 3,
+                          '& .MuiLinearProgress-bar': {
+                            backgroundColor: prog.status === 'COMPLETED' ? '#2E7D32' : '#2E75B6',
+                          },
+                        }}
+                      />
+                    </Box>
+                  ))}
+                </Box>
+              )}
             </Box>
 
             {/* Summary cards */}
             <Box sx={{ mb: 2.5 }}>
-              <Typography
-                variant="caption"
-                sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}
-              >
+              <Typography variant="caption"
+                sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}>
                 Resumen del escenario
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                 <SummaryCard label="Aeropuertos" value={airports.length} color="#1F3864" />
                 <SummaryCard label="Vuelos" value={periodFlightCount} color="#2E75B6" />
-                <SummaryCard label="Envíos" value={shipmentsCount} color="#2E7D32" />
+                <SummaryCard label="Envíos en store"
+                  value={storeStatus?.totalCount ? storeStatus.totalCount.toLocaleString() : '—'}
+                  color="#2E7D32" />
               </Box>
             </Box>
 
-            {/* Summary of ALNS Parameters */}
+            {/* ALNS params */}
             <Box sx={{ mb: 2.5 }}>
-              <Typography
-                variant="caption"
-                sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}
-              >
+              <Typography variant="caption"
+                sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}>
                 Resumen de Valores
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -588,40 +452,25 @@ export default function SimulationConfigPage() {
 
             {/* Start button */}
             <Button
-              variant="contained"
-              fullWidth
-              size="large"
-              startIcon={<PlayArrowIcon />}
+              variant="contained" fullWidth size="large"
+              startIcon={creatingBatches ? <CircularProgress size={16} color="inherit" /> : <PlayArrowIcon />}
               onClick={handleStart}
-              disabled={starting || uploading}
+              disabled={starting || creatingBatches}
               sx={{
-                backgroundColor: '#1F3864',
-                fontWeight: 700,
-                fontSize: '0.9rem',
-                py: 1.5,
+                backgroundColor: '#1F3864', fontWeight: 700, fontSize: '0.9rem', py: 1.5,
                 '&:hover': { backgroundColor: '#162D4F' },
-              }}
-            >
-              {uploading ? 'PROCESANDO ARCHIVOS...' : starting ? 'INICIANDO...' : 'INICIAR SIMULACIÓN'}
+              }}>
+              {creatingBatches ? 'PREPARANDO ENVÍOS...' : starting ? 'INICIANDO...' : 'INICIAR SIMULACIÓN'}
             </Button>
 
             <Divider sx={{ my: 2 }} />
 
             {/* Collapsible flights table */}
             <Box>
-              <Button
-                fullWidth
-                variant="text"
+              <Button fullWidth variant="text"
                 endIcon={flightsExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                 onClick={() => setFlightsExpanded((v) => !v)}
-                sx={{
-                  justifyContent: 'space-between',
-                  color: '#1F3864',
-                  fontWeight: 600,
-                  fontSize: '0.78rem',
-                  px: 0,
-                }}
-              >
+                sx={{ justifyContent: 'space-between', color: '#1F3864', fontWeight: 600, fontSize: '0.78rem', px: 0 }}>
                 Vuelos del Escenario ({flights.length})
               </Button>
               <Collapse in={flightsExpanded}>
@@ -634,26 +483,19 @@ export default function SimulationConfigPage() {
         </Box>
       </Box>
 
-      {/* Backdrop for simulation start */}
+      {/* Backdrop */}
       <Backdrop
         sx={{
-          color: '#fff',
-          zIndex: (theme) => theme.zIndex.drawer + 1,
-          flexDirection: 'column',
-          gap: 2,
-          textAlign: 'center',
+          color: '#fff', zIndex: (theme) => theme.zIndex.drawer + 1,
+          flexDirection: 'column', gap: 2, textAlign: 'center',
           backgroundColor: 'rgba(31, 56, 100, 0.9)',
         }}
-        open={starting}
-      >
+        open={starting}>
         <CircularProgress color="inherit" size={60} />
         <Box>
-          <Typography variant="h6" sx={{ fontWeight: 700 }}>
-            Inicializando Simulación
-          </Typography>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>Inicializando Simulación</Typography>
           <Typography variant="body2" sx={{ opacity: 0.8, maxWidth: 300 }}>
-            Estamos procesando los envíos y optimizando las rutas iniciales. Esto puede tomar un
-            momento...
+            Procesando envíos y optimizando rutas iniciales...
           </Typography>
         </Box>
       </Backdrop>

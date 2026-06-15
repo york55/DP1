@@ -203,7 +203,7 @@ public class SimulationService {
 
     private void expandFlightsForSimulation(Simulation sim, List<Flight> templates) {
         if (templates.isEmpty()) return;
-        LocalDate simStart = sim.getStartDate();
+        LocalDate simStart = sim.getStartDate().toLocalDate();
         int periodDays = sim.getPeriodDays() != null ? sim.getPeriodDays() : 5;
         long baseOffset = ChronoUnit.DAYS.between(FLIGHT_TEMPLATE_DATE, simStart);
 

@@ -15,8 +15,16 @@ import WarningIcon from '@mui/icons-material/Warning'
 import LuggageIcon from '@mui/icons-material/Luggage'
 import FlightIcon from '@mui/icons-material/Flight'
 import SettingsIcon from '@mui/icons-material/Settings'
+import InventoryIcon from '@mui/icons-material/Inventory'
 
-function ScenarioCard({ icon, title, description, badge, onSelect, disabled }) {
+const ACCENT_SIM = '#1F3864'
+const ACCENT_CFG = '#92400E'
+
+function ScenarioCard({ icon, title, description, badge, onSelect, disabled, variant = 'simulation' }) {
+  const accent = disabled ? '#BFBFBF' : variant === 'config' ? ACCENT_CFG : ACCENT_SIM
+  const accentBg = disabled ? '#F2F2F2' : variant === 'config' ? '#FEF3C7' : '#E8EEF7'
+  const hoverColor = variant === 'config' ? '#78350F' : '#162D4F'
+
   return (
     <Card
       elevation={disabled ? 1 : 4}
@@ -24,7 +32,7 @@ function ScenarioCard({ icon, title, description, badge, onSelect, disabled }) {
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        borderTop: disabled ? '4px solid #BFBFBF' : '4px solid #1F3864',
+        borderTop: `4px solid ${accent}`,
         opacity: disabled ? 0.65 : 1,
         transition: 'transform 0.2s, box-shadow 0.2s',
         '&:hover': disabled ? {} : {
@@ -40,14 +48,14 @@ function ScenarioCard({ icon, title, description, badge, onSelect, disabled }) {
               width: 52,
               height: 52,
               borderRadius: 2,
-              backgroundColor: disabled ? '#F2F2F2' : '#E8EEF7',
+              backgroundColor: accentBg,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
             {React.cloneElement(icon, {
-              sx: { fontSize: 28, color: disabled ? '#BFBFBF' : '#1F3864' },
+              sx: { fontSize: 28, color: accent },
             })}
           </Box>
           {badge && (
@@ -55,8 +63,9 @@ function ScenarioCard({ icon, title, description, badge, onSelect, disabled }) {
               label={badge}
               size="small"
               sx={{
-                backgroundColor: disabled ? '#F2F2F2' : '#1F3864',
-                color: disabled ? '#BFBFBF' : '#FFFFFF',
+                backgroundColor: disabled ? '#F2F2F2' : accentBg,
+                color: disabled ? '#BFBFBF' : accent,
+                border: `1px solid ${disabled ? '#BFBFBF' : accent}`,
                 fontSize: '0.65rem',
                 fontWeight: 700,
               }}
@@ -64,7 +73,7 @@ function ScenarioCard({ icon, title, description, badge, onSelect, disabled }) {
           )}
         </Box>
 
-        <Typography variant="h6" sx={{ fontWeight: 700, color: '#1F3864', mb: 1, fontSize: '1rem' }}>
+        <Typography variant="h6" sx={{ fontWeight: 700, color: accent, mb: 1, fontSize: '1rem' }}>
           {title}
         </Typography>
         <Typography variant="body2" sx={{ color: '#6B7280', lineHeight: 1.6 }}>
@@ -79,12 +88,12 @@ function ScenarioCard({ icon, title, description, badge, onSelect, disabled }) {
           onClick={onSelect}
           disabled={disabled}
           sx={{
-            backgroundColor: disabled ? 'transparent' : '#1F3864',
-            borderColor: disabled ? '#BFBFBF' : '#1F3864',
+            backgroundColor: disabled ? 'transparent' : accent,
+            borderColor: disabled ? '#BFBFBF' : accent,
             color: disabled ? '#BFBFBF' : '#FFFFFF',
             fontWeight: 700,
             '&:hover': {
-              backgroundColor: disabled ? 'transparent' : '#162D4F',
+              backgroundColor: disabled ? 'transparent' : hoverColor,
             },
           }}
         >
@@ -142,7 +151,7 @@ export default function ScenarioSelectorPage() {
 
       {/* Scenario Cards */}
       <Container maxWidth="xl">
-        <Box sx={{ mb: 3, textAlign: 'center' }}>
+        <Box sx={{ mb: 4, textAlign: 'center' }}>
           <Typography variant="h5" sx={{ color: '#FFFFFF', fontWeight: 700, mb: 0.5 }}>
             Seleccionar Escenario de Simulación
           </Typography>
@@ -151,8 +160,13 @@ export default function ScenarioSelectorPage() {
           </Typography>
         </Box>
 
-        <Grid container spacing={3} justifyContent="center">
-          {/* Simulaciones */}
+        {/* Simulation scenarios */}
+        <Box sx={{ mb: 1 }}>
+          <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.7rem', letterSpacing: '0.15em' }}>
+            Modos de Simulación
+          </Typography>
+        </Box>
+        <Grid container spacing={3} justifyContent="center" sx={{ mb: 4 }}>
           <Grid item xs={12} sm={6} md={4}>
             <ScenarioCard
               icon={<CalendarMonthIcon />}
@@ -183,8 +197,29 @@ export default function ScenarioSelectorPage() {
               disabled={true}
             />
           </Grid>
+        </Grid>
 
-          {/* Mantenimientos */}
+        {/* Divider */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+          <Box sx={{ flex: 1, height: '1px', backgroundColor: 'rgba(255,255,255,0.2)' }} />
+          <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.7rem', letterSpacing: '0.15em', whiteSpace: 'nowrap' }}>
+            Configuración de Infraestructura
+          </Typography>
+          <Box sx={{ flex: 1, height: '1px', backgroundColor: 'rgba(255,255,255,0.2)' }} />
+        </Box>
+
+        <Grid container spacing={3} justifyContent="center">
+          <Grid item xs={12} sm={6} md={4}>
+            <ScenarioCard
+              icon={<InventoryIcon />}
+              title="Gestión de Envíos"
+              description="Carga los archivos de envíos (_envios_IATA_.txt) en memoria. Los datos persisten entre simulaciones y se filtran por fecha al iniciar cada corrida."
+              badge="Nuevo"
+              onSelect={() => navigate('/envios')}
+              disabled={false}
+              variant="config"
+            />
+          </Grid>
           <Grid item xs={12} sm={6} md={4}>
             <ScenarioCard
               icon={<SettingsIcon />}
@@ -193,6 +228,7 @@ export default function ScenarioSelectorPage() {
               badge="Nuevo"
               onSelect={() => navigate('/almacenes')}
               disabled={false}
+              variant="config"
             />
           </Grid>
           <Grid item xs={12} sm={6} md={4}>
@@ -203,6 +239,7 @@ export default function ScenarioSelectorPage() {
               badge="Nuevo"
               onSelect={() => navigate('/vuelos')}
               disabled={false}
+              variant="config"
             />
           </Grid>
         </Grid>

@@ -1,0 +1,1 @@
+ALTER TABLE simulations MODIFY COLUMN start_date DATETIME NOT NULL;

@@ -59,5 +59,3 @@ logging:
     org.springframework.web.socket: INFO
     org.hibernate.SQL: WARN
     
-envios:
-  directorio: ./envios
