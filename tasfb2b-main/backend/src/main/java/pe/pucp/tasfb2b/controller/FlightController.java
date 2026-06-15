@@ -1,12 +1,15 @@
 package pe.pucp.tasfb2b.controller;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import pe.pucp.tasfb2b.domain.enums.FlightStatus;
 import pe.pucp.tasfb2b.dto.request.CancelFlightRequest;
+import pe.pucp.tasfb2b.dto.request.FlightRequest;
 import pe.pucp.tasfb2b.dto.response.FlightDto;
 import pe.pucp.tasfb2b.service.FlightService;
 
@@ -39,6 +42,33 @@ public class FlightController {
         return ResponseEntity.ok(assignedOnly
                 ? flightService.findAllAssigned()
                 : flightService.findAll());
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<FlightDto> findById(@PathVariable Long id) {
+        log.debug("ACTION get_flight id={}", id);
+        return ResponseEntity.ok(flightService.findById(id));
+    }
+
+    @PostMapping
+    public ResponseEntity<FlightDto> create(@Valid @RequestBody FlightRequest request) {
+        log.info("ACTION create_flight request={}", request);
+        FlightDto created = flightService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<FlightDto> update(@PathVariable Long id,
+                                            @Valid @RequestBody FlightRequest request) {
+        log.info("ACTION update_flight id={} request={}", id, request);
+        return ResponseEntity.ok(flightService.update(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        log.info("ACTION delete_flight id={}", id);
+        flightService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/cancel")

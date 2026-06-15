@@ -6,6 +6,7 @@ import Typography from '@mui/material/Typography'
 import Divider from '@mui/material/Divider'
 import FlightTakeoffIcon from '@mui/icons-material/FlightTakeoff'
 import LuggageIcon from '@mui/icons-material/Luggage'
+import { useSimulationContext } from '../../context/SimulationContext'
 
 function lerp(a, b, t) {
   return a + (b - a) * t
@@ -25,6 +26,15 @@ const createPlaneIcon = (angle) => L.divIcon({
 function FlightRoute({ flight, airports = [], simulatedTime }) {
   const originAirport = airports.find(a => a.iata === flight.origin)
   const destAirport = airports.find(a => a.iata === flight.destination)
+
+  let context = null
+  try {
+    context = useSimulationContext()
+  } catch (e) {
+    // context not available
+  }
+  const setSelectedFlightId = context ? context.setSelectedFlightId : null
+  const setActivePanelTab = context ? context.setActivePanelTab : null
 
   const isInFlight = flight.status === 'IN_FLIGHT'
 
@@ -89,6 +99,14 @@ function FlightRoute({ flight, airports = [], simulatedTime }) {
           position={progressPosition}
           icon={planeIcon}
           zIndexOffset={1000}
+          eventHandlers={{
+            click: () => {
+              if (setSelectedFlightId && setActivePanelTab) {
+                setSelectedFlightId(flight.id)
+                setActivePanelTab(1) // 1 corresponds to Flights Tab
+              }
+            }
+          }}
         >
           <Popup minWidth={200}>
             <Box sx={{ p: 1 }}>

@@ -1,16 +1,19 @@
-import React, { useState } from 'react'
+import React from 'react'
 import Box from '@mui/material/Box'
 import Tabs from '@mui/material/Tabs'
 import Tab from '@mui/material/Tab'
 import Paper from '@mui/material/Paper'
 import LocalShippingIcon from '@mui/icons-material/LocalShipping'
 import FlightIcon from '@mui/icons-material/Flight'
+import WarehouseIcon from '@mui/icons-material/Warehouse'
 import LuggageIcon from '@mui/icons-material/Luggage'
 import BarChartIcon from '@mui/icons-material/BarChart'
 import ShipmentsTab from './ShipmentsTab'
 import FlightsTab from './FlightsTab'
+import WarehousesTab from './WarehousesTab'
 import BagsTab from './BagsTab'
 import KpiPanel from './KpiPanel'
+import { useSimulationContext } from '../../context/SimulationContext'
 
 function TabLabel({ icon, text }) {
   return (
@@ -38,10 +41,10 @@ function TabPanel({ children, value, index }) {
 }
 
 export default function SimulationPanel() {
-  const [tab, setTab] = useState(0)
+  const { activePanelTab, setActivePanelTab } = useSimulationContext()
 
   const handleChange = (event, newValue) => {
-    setTab(newValue)
+    setActivePanelTab(newValue)
   }
 
   return (
@@ -56,15 +59,16 @@ export default function SimulationPanel() {
       }}
     >
       <Tabs
-        value={tab}
+        value={activePanelTab}
         onChange={handleChange}
         variant="fullWidth"
         sx={{
           backgroundColor: '#1F3864',
           '& .MuiTab-root': {
             color: '#90CAF9',
-            fontSize: '0.72rem',
+            fontSize: '0.70rem',
             minHeight: 44,
+            px: 0.5,
             py: 0.5,
             textTransform: 'none',
           },
@@ -78,26 +82,31 @@ export default function SimulationPanel() {
           },
         }}
       >
-        <Tab label={<TabLabel icon={<LocalShippingIcon sx={{ fontSize: 16 }} />} text="Envíos" />} />
-        <Tab label={<TabLabel icon={<FlightIcon sx={{ fontSize: 16 }} />} text="Vuelos" />} />
-        <Tab label={<TabLabel icon={<LuggageIcon sx={{ fontSize: 16 }} />} text="Maletas" />} />
-        <Tab label={<TabLabel icon={<BarChartIcon sx={{ fontSize: 16 }} />} text="KPIs" />} />
+        <Tab label={<TabLabel icon={<LocalShippingIcon sx={{ fontSize: 15 }} />} text="Envíos" />} />
+        <Tab label={<TabLabel icon={<FlightIcon sx={{ fontSize: 15 }} />} text="Vuelos" />} />
+        <Tab label={<TabLabel icon={<WarehouseIcon sx={{ fontSize: 15 }} />} text="Almacenes" />} />
+        <Tab label={<TabLabel icon={<LuggageIcon sx={{ fontSize: 15 }} />} text="Maletas" />} />
+        <Tab label={<TabLabel icon={<BarChartIcon sx={{ fontSize: 15 }} />} text="KPIs" />} />
       </Tabs>
 
       <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
-        <TabPanel value={tab} index={0}>
+        <TabPanel value={activePanelTab} index={0}>
           <ShipmentsTab />
         </TabPanel>
-        <TabPanel value={tab} index={1}>
+        <TabPanel value={activePanelTab} index={1}>
           <FlightsTab />
         </TabPanel>
-        <TabPanel value={tab} index={2}>
+        <TabPanel value={activePanelTab} index={2}>
+          <WarehousesTab />
+        </TabPanel>
+        <TabPanel value={activePanelTab} index={3}>
           <BagsTab />
         </TabPanel>
-        <TabPanel value={tab} index={3}>
+        <TabPanel value={activePanelTab} index={4}>
           <KpiPanel />
         </TabPanel>
       </Box>
     </Paper>
   )
 }
+

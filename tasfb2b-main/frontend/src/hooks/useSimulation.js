@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { simulationApi, airportApi, flightApi, shipmentApi } from '../api/simulationApi'
 import { connectSimulationWebSocket, disconnectSimulationWebSocket } from '../websocket/simulationWebSocket'
 import { createLogger } from '../utils/logger'
@@ -17,6 +17,7 @@ function makeNotification(message, type = 'info', persistent = false) {
     dismissed: false,
   }
 }
+
 
 export function useSimulation() {
   const [simulationState, setSimulationState] = useState({
@@ -45,6 +46,21 @@ export function useSimulation() {
       waitingBags: 0,
     }
   })
+
+  // Panel, Selection and Filtering Shared State
+  const [selectedAirportCode, setSelectedAirportCode] = useState(null)
+  const [selectedFlightId, setSelectedFlightId] = useState(null)
+  const [selectedShipmentId, setSelectedShipmentId] = useState(null)
+  const [activePanelTab, setActivePanelTab] = useState(0)
+
+  const [warehouseSearch, setWarehouseSearch] = useState('')
+  const [warehouseRegion, setWarehouseRegion] = useState('ALL')
+  const [warehouseSemaphore, setWarehouseSemaphore] = useState('ALL')
+
+  const [flightSearch, setFlightSearch] = useState('')
+  const [flightOrigin, setFlightOrigin] = useState('ALL')
+  const [flightDest, setFlightDest] = useState('ALL')
+  const [flightSemaphore, setFlightSemaphore] = useState('ALL')
 
   const [notifications, setNotifications] = useState([])
 
@@ -207,6 +223,7 @@ export function useSimulation() {
               deliveredBags: s.status === 'DELIVERED' ? qty : 0,
               client: s.airline || '—',
               currentFlight: null,
+              deliveredAt: s.deliveredAt || null,
             }
           })
 
@@ -412,7 +429,6 @@ export function useSimulation() {
 
     const startDate = config.startDate instanceof Date ? config.startDate : new Date(config.startDate)
     const simStart = new Date(startDate)
-    simStart.setUTCHours(0, 0, 0, 0)
     simTimeRef.current = simStart
     statusRef.current = 'running'
 
@@ -721,6 +737,82 @@ export function useSimulation() {
     reconnect()
   }, [handleTickEvent, handleAlert, loadShipments]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const matchesSemaphore = (pct, filter) => {
+    if (filter === 'ALL') return true
+    if (filter === 'EMPTY') return pct === 0
+    if (filter === 'LOW') return pct > 0 && pct < 25
+    if (filter === 'MEDIUM') return pct >= 25 && pct < 50
+    if (filter === 'HIGH') return pct >= 50 && pct < 90
+    if (filter === 'CRITICAL') return pct >= 90
+    return true
+  }
+
+  // Compute next departure and arrival for each airport
+  const airportsWithTimes = useMemo(() => {
+    return (simulationData.airports || []).map(a => {
+      const airportCode = a.iata || a.iataCode
+
+      // Next departing flight
+      const departingFlights = (simulationData.flights || []).filter(f => f.origin === airportCode && f.status !== 'LANDED' && f.status !== 'CANCELLED')
+      const nextDepFlight = departingFlights.reduce((acc, f) => {
+        if (!acc || new Date(f.departureUTC) < new Date(acc.departureUTC)) return f
+        return acc
+      }, null)
+
+      // Next arriving flight
+      const arrivingFlights = (simulationData.flights || []).filter(f => f.destination === airportCode && f.status !== 'LANDED' && f.status !== 'CANCELLED')
+      const nextArrFlight = arrivingFlights.reduce((acc, f) => {
+        if (!acc || new Date(f.arrivalUTC) < new Date(acc.arrivalUTC)) return f
+        return acc
+      }, null)
+
+      return {
+        ...a,
+        id: airportCode, // Ensure it has a unique id field for DataGrid
+        nextDeparture: nextDepFlight ? nextDepFlight.departureUTC : null,
+        nextDepartureFlight: nextDepFlight ? nextDepFlight.id : null,
+        nextArrival: nextArrFlight ? nextArrFlight.arrivalUTC : null,
+        nextArrivalFlight: nextArrFlight ? nextArrFlight.id : null,
+      }
+    })
+  }, [simulationData.airports, simulationData.flights])
+
+  // Filtered warehouses
+  const filteredAirports = useMemo(() => {
+    return airportsWithTimes.filter(a => {
+      const name = a.iata || a.iataCode || ''
+      const city = a.city || ''
+      const country = a.country || ''
+      const matchesSearch = name.toLowerCase().includes(warehouseSearch.toLowerCase()) ||
+        city.toLowerCase().includes(warehouseSearch.toLowerCase()) ||
+        country.toLowerCase().includes(warehouseSearch.toLowerCase())
+      const matchesRegion = warehouseRegion === 'ALL' || a.continent === warehouseRegion
+      
+      const capacity = a.warehouseCapacity || 500
+      const current = a.currentOccupancy || 0
+      const pct = a.occupancy || (current / capacity) * 100
+      const matchesSem = matchesSemaphore(pct, warehouseSemaphore)
+
+      return matchesSearch && matchesRegion && matchesSem
+    })
+  }, [airportsWithTimes, warehouseSearch, warehouseRegion, warehouseSemaphore])
+
+  // Filtered flights
+  const filteredFlights = useMemo(() => {
+    return (simulationData.flights || []).filter(f => {
+      const matchesSearch = String(f.id).toLowerCase().includes(flightSearch.toLowerCase()) ||
+        `${f.origin}-${f.destination}`.toLowerCase().includes(flightSearch.toLowerCase())
+      const matchesOrigin = flightOrigin === 'ALL' || f.origin === flightOrigin
+      const matchesDest = flightDest === 'ALL' || f.destination === flightDest
+      
+      const capacity = f.capacity || 1
+      const pct = ((f.bagsAboard || 0) / capacity) * 100
+      const matchesSem = matchesSemaphore(pct, flightSemaphore)
+
+      return matchesSearch && matchesOrigin && matchesDest && matchesSem
+    })
+  }, [simulationData.flights, flightSearch, flightOrigin, flightDest, flightSemaphore])
+
   useEffect(() => {
     return () => {
       disconnectSimulationWebSocket()
@@ -741,5 +833,37 @@ export function useSimulation() {
     resetSimulation,
     cancelSimulation,
     dismissNotification,
+
+    // Selection states
+    selectedAirportCode,
+    setSelectedAirportCode,
+    selectedFlightId,
+    setSelectedFlightId,
+    selectedShipmentId,
+    setSelectedShipmentId,
+    activePanelTab,
+    setActivePanelTab,
+
+    // Filters states & setters
+    warehouseSearch,
+    setWarehouseSearch,
+    warehouseRegion,
+    setWarehouseRegion,
+    warehouseSemaphore,
+    setWarehouseSemaphore,
+    flightSearch,
+    setFlightSearch,
+    flightOrigin,
+    setFlightOrigin,
+    flightDest,
+    setFlightDest,
+    flightSemaphore,
+    setFlightSemaphore,
+
+    // Computed filtered lists
+    airportsWithTimes,
+    filteredAirports,
+    filteredFlights,
   }
 }
+
