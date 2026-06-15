@@ -19,7 +19,7 @@ echo "✔ Nginx reiniciado"
 # 3. Levantar Docker Compose
 echo "[3/3] Levantando Docker en /opt/demo..."
 
-cd /opt/demo
+cd /opt/DP1
 
 sudo docker compose down
 sudo docker compose up -d --build
