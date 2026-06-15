@@ -7,6 +7,7 @@ echo " Iniciando stack completo (MySQL + Nginx + Docker)"
 echo "===================================="
 
 # 1. Obtener de Git con Pull
+git pull
 
 # 2. Reiniciar Nginx del sistema
 echo "[2/3] Reiniciando Nginx..."
