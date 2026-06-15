@@ -3,7 +3,7 @@
 -- Fuente: PDDS 26-1 (basado en 2026.1) 20260404
 -- ============================================================
 
-INSERT INTO ops_airport (iata_code, name, country, short_code, continent, gmt_offset, capacity, latitude, longitude) VALUES
+INSERT IGNORE INTO OPS_AIRPORT (iata_code, name, country, short_code, continent, gmt_offset, capacity, latitude, longitude) VALUES
 -- América del Sur
 ('SKBO', 'Bogota',            'Colombia',       'bogo', 'SOUTH_AMERICA',  -5, 430,   4.7014,  -74.1469),
 ('SEQM', 'Quito',             'Ecuador',        'quit', 'SOUTH_AMERICA',  -5, 410,   0.1133,  -78.3586),

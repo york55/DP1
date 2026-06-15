@@ -1,4 +1,4 @@
-INSERT INTO ops_flight_plan
+INSERT IGNORE INTO OPS_FLIGHT_PLAN
     (origin_iata, dest_iata, dep_time_local, arr_time_local, capacity)
 VALUES
     ('SKBO', 'SEQM', '03:34', '04:21', 300),
