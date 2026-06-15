@@ -15,6 +15,7 @@ import WarningIcon from '@mui/icons-material/Warning'
 import LuggageIcon from '@mui/icons-material/Luggage'
 import FlightIcon from '@mui/icons-material/Flight'
 import SettingsIcon from '@mui/icons-material/Settings'
+import UploadFileIcon from '@mui/icons-material/UploadFile'
 
 function ScenarioCard({ icon, title, description, badge, onSelect, disabled }) {
   return (
@@ -183,6 +184,19 @@ export default function ScenarioSelectorPage() {
               disabled={true}
             />
           </Grid>
+          
+          {/* Carga de archivos */}
+          <Grid item xs={12} sm={6} md={4}>
+            <ScenarioCard
+              icon={<UploadFileIcon />}
+              title="Carga de Archivos"
+              description="Carga los archivos de configuración del sistema: planes de vuelo, datos de aeropuertos y parámetros iniciales de simulación."
+              badge="Nuevo"
+              onSelect={() => navigate('/filesuploads')}
+              disabled={false}
+            />
+          </Grid>
+
 
           {/* Mantenimientos */}
           <Grid item xs={12} sm={6} md={4}>

@@ -28,3 +28,6 @@ logging:
     pe.pucp.tasfb2b: INFO
     org.flywaydb: INFO
     org.hibernate.SQL: WARN
+
+uploads:
+  dir: uploads

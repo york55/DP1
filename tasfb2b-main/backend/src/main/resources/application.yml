@@ -61,3 +61,6 @@ logging:
     
 envios:
   directorio: ./envios
+
+uploads:
+  dir: uploads
