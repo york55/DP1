@@ -1,11 +1,43 @@
 spring:
+  datasource:
+    # Sin fallback: si no están seteadas las env vars, la app falla al iniciar con error claro
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: tasfb2b-prod-pool
+
   jpa:
     hibernate:
       ddl-auto: validate
     show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    clean-disabled: true
+
+  websocket:
+    allowed-origins: ${WS_ALLOWED_ORIGINS}
+
+management:
+  endpoint:
+    health:
+      show-details: never
 
 logging:
   level:
     pe.pucp.tasfb2b: INFO
-    org.springframework.web.socket: INFO
-    org.hibernate.SQL: WARN
+    org.springframework: WARN
+    org.hibernate: WARN
+    org.flywaydb: WARN
