@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef } from 'react'
+import { useMemo, useEffect } from 'react'
 import { MapContainer, TileLayer, useMap } from 'react-leaflet'
 import Box from '@mui/material/Box'
 import AirportMarker from './AirportMarker'
@@ -94,72 +94,33 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], si
     [flights]
   )
 
-  // ─── FLIGHT DRAWING DIAGNOSTIC LOG ───────────────────────────────────────────
-  // Logs every time the flights list changes. Open DevTools > Console to see it.
-  const logCountRef = useRef(0)
-  useEffect(() => {
-    logCountRef.current += 1
-    const logIndex = logCountRef.current
+  // O(1) airport lookups instead of each FlightRoute/marker doing its own
+  // Array.find() over the full airports list on every render.
+  const airportsByCode = useMemo(() => {
+    const map = new Map()
+    for (const a of airports) map.set(a.iata || a.iataCode, a)
+    return map
+  }, [airports])
 
-    // Build a quick airport lookup map by iata code for validation
-    const airportMap = new Map(airports.map(a => [a.iata || a.iataCode, a]))
-
-    // Categorise every flight
-    const drawn = []
-    const skipped = []
-
+  // Single O(flights) pass to count incoming/outgoing per airport, instead of
+  // every AirportMarker filtering the full flights array on its own.
+  const flightCountsByAirport = useMemo(() => {
+    const map = new Map()
+    const get = (code) => {
+      let entry = map.get(code)
+      if (!entry) {
+        entry = { incoming: 0, outgoing: 0 }
+        map.set(code, entry)
+      }
+      return entry
+    }
     for (const f of flights) {
-      const originAirport  = airportMap.get(f.origin)
-      const destAirport    = airportMap.get(f.destination)
-
-      if (f.status !== 'IN_FLIGHT') {
-        skipped.push({ id: f.id, origin: f.origin, destination: f.destination, reason: `status="${f.status}"` })
-        continue
-      }
-      if (!originAirport) {
-        skipped.push({ id: f.id, origin: f.origin, destination: f.destination, reason: `origin airport "${f.origin}" not found in airports array` })
-        continue
-      }
-      if (!destAirport) {
-        skipped.push({ id: f.id, origin: f.origin, destination: f.destination, reason: `destination airport "${f.destination}" not found in airports array` })
-        continue
-      }
-      if (originAirport.lat == null || originAirport.lon == null) {
-        skipped.push({ id: f.id, origin: f.origin, destination: f.destination, reason: `origin airport "${f.origin}" has no lat/lon` })
-        continue
-      }
-      if (destAirport.lat == null || destAirport.lon == null) {
-        skipped.push({ id: f.id, origin: f.origin, destination: f.destination, reason: `destination airport "${f.destination}" has no lat/lon` })
-        continue
-      }
-      drawn.push({ id: f.id, origin: f.origin, destination: f.destination, progress: f.progress })
+      if (f.status !== 'SCHEDULED' && f.status !== 'IN_FLIGHT') continue
+      get(f.destination).incoming += 1
+      get(f.origin).outgoing += 1
     }
-
-    // Print the summary report
-    console.group(`[WorldMap] Flight Draw Report #${logIndex}`)
-    console.log(`📊 Total flights received: ${flights.length} | Airports loaded: ${airports.length}`)
-    console.log(`✅ Drawn (IN_FLIGHT + valid airports): ${drawn.length}`)
-    if (drawn.length > 0) {
-      console.table(drawn)
-    } else {
-      console.warn('⚠️  No flights are being drawn on the map.')
-    }
-    console.log(`❌ Skipped: ${skipped.length}`)
-    if (skipped.length > 0) {
-      // Show only the first 20 skipped entries to avoid flooding the console
-      console.table(skipped.slice(0, 20))
-      if (skipped.length > 20) console.log(`   ... and ${skipped.length - 20} more skipped.`)
-    }
-
-    // Extra: show status breakdown of all flights
-    const statusCounts = flights.reduce((acc, f) => {
-      acc[f.status || 'undefined'] = (acc[f.status || 'undefined'] || 0) + 1
-      return acc
-    }, {})
-    console.log('📋 Status breakdown:', statusCounts)
-    console.groupEnd()
-  }, [flights, airports])
-  // ─────────────────────────────────────────────────────────────────────────────
+    return map
+  }, [flights])
 
   return (
     <Box sx={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -172,6 +133,7 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], si
         style={{ width: '100%', height: '100%' }}
         zoomControl={true}
         attributionControl={false}
+        preferCanvas={true}
       >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -187,19 +149,23 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], si
           <FlightRoute
             key={flight.id}
             flight={flight}
-            airports={airports}
+            airportsByCode={airportsByCode}
             simulatedTime={simulatedTime}
           />
         ))}
 
         {/* Airport markers */}
-        {airports.map(airport => (
-          <AirportMarker
-            key={airport.iata}
-            airport={airport}
-            flights={flights}
-          />
-        ))}
+        {airports.map(airport => {
+          const counts = flightCountsByAirport.get(airport.iata) || { incoming: 0, outgoing: 0 }
+          return (
+            <AirportMarker
+              key={airport.iata}
+              airport={airport}
+              incomingCount={counts.incoming}
+              outgoingCount={counts.outgoing}
+            />
+          )
+        })}
       </MapContainer>
 
       {/* Legend (absolute positioned over map) */}

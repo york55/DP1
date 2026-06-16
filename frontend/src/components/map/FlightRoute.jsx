@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useRef, useEffect } from 'react'
 import { Polyline, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
 import Box from '@mui/material/Box'
@@ -12,20 +12,32 @@ function lerp(a, b, t) {
   return a + (b - a) * t
 }
 
-const createPlaneIcon = (angle) => L.divIcon({
+// A single shared, unrotated icon. The heading is applied per-marker by
+// rotating its DOM element directly (see rotatePlaneMarker), so every flight
+// gets its exact bearing instead of being snapped to a fixed set of angles,
+// and no new divIcon/SVG string needs to be built per flight or per render.
+const PLANE_ICON = L.divIcon({
   className: '',
-  html: `<div style="transform:rotate(${angle}deg);line-height:0;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.5));"><svg xmlns='http://www.w3.org/2000/svg' viewBox='-10 -10 20 20' width='22' height='22'><path d='M0,-9 L1.5,-6 L1.5,-2 L8,2 L8,4 L1.5,2 L1.5,6 L3,8 L3,9 L0,7.5 L-3,9 L-3,8 L1.5,6' fill='none'/><path d='M0,-9 L1.5,-6 L1.5,-2 L8,2 L8,4 L1.5,2 L1.5,6 L3,8.5 L0,7.5 L-3,8.5 L-1.5,6 L-1.5,2 L-8,4 L-8,2 L-1.5,-2 L-1.5,-6 Z' fill='#1F3864' stroke='white' stroke-width='0.6'/></svg></div>`,
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
+  html: `<div class="plane-rotor" style="line-height:0;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.5));"><svg xmlns='http://www.w3.org/2000/svg' viewBox='-10 -10 20 20' width='15' height='15'><path d='M0,-9 L1.5,-6 L1.5,-2 L8,2 L8,4 L1.5,2 L1.5,6 L3,8.5 L0,7.5 L-3,8.5 L-1.5,6 L-1.5,2 L-8,4 L-8,2 L-1.5,-2 L-1.5,-6 Z' fill='#1F3864' stroke='white' stroke-width='0.6'/></svg></div>`,
+  iconSize: [15, 15],
+  iconAnchor: [7.5, 7.5],
 })
+
+// Rotates a mounted marker's icon element in place, in CSS pixel/transform
+// space — avoids recreating the icon (and its DOM) for every heading.
+function rotatePlaneMarker(marker, angle) {
+  const el = marker?.getElement?.()
+  const rotor = el?.firstChild
+  if (rotor) rotor.style.transform = `rotate(${angle}deg)`
+}
 
 /**
  * FlightRoute — renders a Polyline for a flight route.
  * If the flight is IN_FLIGHT, renders an animated plane icon at the progress point.
  */
-function FlightRoute({ flight, airports = [], simulatedTime }) {
-  const originAirport = airports.find(a => a.iata === flight.origin)
-  const destAirport = airports.find(a => a.iata === flight.destination)
+function FlightRoute({ flight, airportsByCode, simulatedTime }) {
+  const originAirport = airportsByCode?.get(flight.origin)
+  const destAirport = airportsByCode?.get(flight.destination)
 
   let context = null
   try {
@@ -51,20 +63,34 @@ function FlightRoute({ flight, airports = [], simulatedTime }) {
 
   const { progressPosition, angle } = useMemo(() => {
     if (!originAirport || !destAirport) return { progressPosition: null, angle: 0 }
-    
+
     const lat1 = originAirport.lat
     const lon1 = originAirport.lon
     const lat2 = destAirport.lat
     const lon2 = destAirport.lon
-    
-    // Compass bearing: 0° = north, 90° = east (clockwise). SVG plane points north at 0°.
-    const rot = Math.atan2(lon2 - lon1, lat2 - lat1) * (180 / Math.PI)
-    
+
+    // Leaflet draws the Polyline in projected (Mercator) space, where latitude
+    // is non-linear. Interpolating raw lat/lon puts the plane off the rendered
+    // line, so interpolate in the same projected space the line uses instead.
+    const p1 = L.Projection.SphericalMercator.project({ lat: lat1, lng: lon1 })
+    const p2 = L.Projection.SphericalMercator.project({ lat: lat2, lng: lon2 })
+
+    // Compass bearing: 0° = north, 90° = east (clockwise). SVG plane points
+    // north at 0°. Note: raw SphericalMercator.project() y increases
+    // NORTHWARD (standard projected meters), unlike on-screen pixels where y
+    // increases downward — so the northward delta is (p2.y - p1.y) directly,
+    // with no sign flip.
+    const rot = Math.atan2(p2.x - p1.x, p2.y - p1.y) * (180 / Math.PI)
+
     // Only show plane when it's clearly between airports (not sitting on origin/destination dot)
     if (!isInFlight || progress < 0.02 || progress > 0.98) return { progressPosition: null, angle: rot }
 
+    const px = lerp(p1.x, p2.x, progress)
+    const py = lerp(p1.y, p2.y, progress)
+    const latlng = L.Projection.SphericalMercator.unproject({ x: px, y: py })
+
     return {
-      progressPosition: [lerp(lat1, lat2, progress), lerp(lon1, lon2, progress)],
+      progressPosition: [latlng.lat, latlng.lng],
       angle: rot
     }
   }, [isInFlight, progress, originAirport, destAirport])
@@ -77,11 +103,15 @@ function FlightRoute({ flight, airports = [], simulatedTime }) {
   ]
 
   const lineColor = isInFlight ? '#FB8C00' : '#2E75B6'
-  const lineWeight = isInFlight ? 1.5 : 1.2
+  const lineWeight = isInFlight ? 0.75 : 0.6
   const lineOpacity = isInFlight ? 0.85 : 0.4
   const dashArray = isInFlight ? '8 6' : '4 6'
 
-  const planeIcon = useMemo(() => createPlaneIcon(angle), [angle])
+  const markerRef = useRef(null)
+
+  useEffect(() => {
+    rotatePlaneMarker(markerRef.current, angle)
+  }, [angle, progressPosition])
 
   return (
     <>
@@ -96,10 +126,12 @@ function FlightRoute({ flight, airports = [], simulatedTime }) {
       />
       {isInFlight && progressPosition && (
         <Marker
+          ref={markerRef}
           position={progressPosition}
-          icon={planeIcon}
+          icon={PLANE_ICON}
           zIndexOffset={1000}
           eventHandlers={{
+            add: (e) => rotatePlaneMarker(e.target, angle),
             click: () => {
               if (setSelectedFlightId && setActivePanelTab) {
                 setSelectedFlightId(flight.id)
@@ -149,4 +181,4 @@ function FlightRoute({ flight, airports = [], simulatedTime }) {
   )
 }
 
-export default FlightRoute
+export default React.memo(FlightRoute)

@@ -8,7 +8,7 @@ import { useSimulationContext } from '../../context/SimulationContext'
  * AirportMarker — renders a colored CircleMarker for an airport on the map.
  * Color is derived from the airport's current occupancy via semaphore levels.
  */
-function AirportMarker({ airport, flights = [] }) {
+function AirportMarker({ airport, incomingCount = 0, outgoingCount = 0 }) {
   const { lat, lon, occupancy, iata } = airport
   const color = getSemaphoreColor(occupancy)
 
@@ -20,13 +20,6 @@ function AirportMarker({ airport, flights = [] }) {
   }
   const setSelectedAirportCode = context ? context.setSelectedAirportCode : null
   const setActivePanelTab = context ? context.setActivePanelTab : null
-
-  const incomingFlights = flights.filter(
-    f => f.destination === iata && (f.status === 'SCHEDULED' || f.status === 'IN_FLIGHT')
-  )
-  const outgoingFlights = flights.filter(
-    f => f.origin === iata && (f.status === 'SCHEDULED' || f.status === 'IN_FLIGHT')
-  )
 
   return (
     <CircleMarker
@@ -51,8 +44,8 @@ function AirportMarker({ airport, flights = [] }) {
       <Popup>
         <AirportPopup
           airport={airport}
-          incomingCount={incomingFlights.length}
-          outgoingCount={outgoingFlights.length}
+          incomingCount={incomingCount}
+          outgoingCount={outgoingCount}
         />
       </Popup>
     </CircleMarker>

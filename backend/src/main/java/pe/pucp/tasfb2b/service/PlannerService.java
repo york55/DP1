@@ -2,6 +2,7 @@ package pe.pucp.tasfb2b.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.pucp.tasfb2b.domain.*;
@@ -20,6 +21,21 @@ import java.util.List;
 @RequiredArgsConstructor
 @Slf4j
 public class PlannerService {
+
+    @Value("${tasf.alns.default-t0:100.0}")
+    private double defaultT0;
+
+    @Value("${tasf.alns.default-alpha:0.9995}")
+    private double defaultAlpha;
+
+    @Value("${tasf.alns.default-q-pct:0.25}")
+    private double defaultQPct;
+
+    @Value("${tasf.alns.default-max-iterations:80}")
+    private int defaultMaxIterations;
+
+    @Value("${tasf.alns.default-seg-len:20}")
+    private int defaultSegLen;
 
     private final AlnsEngine alnsEngine;
     private final RouteRepository routeRepo;
@@ -75,11 +91,11 @@ public class PlannerService {
     public AlnsParams buildAlnsParams(Simulation sim) {
         AlnsParams defaults = AlnsParams.defaults();
         return new AlnsParams(
-                sim.getT0() != null ? sim.getT0() : defaults.t0(),
-                sim.getAlphaSa() != null ? sim.getAlphaSa() : defaults.alpha(),
-                sim.getQPct() != null ? sim.getQPct() : defaults.qPct(),
-                sim.getMaxIterations() != null ? sim.getMaxIterations() : defaults.maxIterations(),
-                defaults.segLen(), defaults.sigma1(), defaults.sigma2(), defaults.sigma3(),
+                sim.getT0() != null ? sim.getT0() : defaultT0,
+                sim.getAlphaSa() != null ? sim.getAlphaSa() : defaultAlpha,
+                sim.getQPct() != null ? sim.getQPct() : defaultQPct,
+                sim.getMaxIterations() != null ? sim.getMaxIterations() : defaultMaxIterations,
+                defaultSegLen, defaults.sigma1(), defaults.sigma2(), defaults.sigma3(),
                 defaults.rho(), defaults.pNoise(), defaults.w1(), defaults.w2(), defaults.w3(),
                 defaults.kRegret()
         );

@@ -437,18 +437,6 @@ export default function SimulationConfigPage() {
               </Box>
             </Box>
 
-            {/* ALNS params */}
-            <Box sx={{ mb: 2.5 }}>
-              <Typography variant="caption"
-                sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}>
-                Resumen de Valores
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                <SummaryCard label="Ta" value="8000 ms" color="#374151" />
-                <SummaryCard label="Sa" value="120 min" color="#374151" />
-                <SummaryCard label="Sc" value="2 h" color="#374151" />
-              </Box>
-            </Box>
 
             {/* Start button */}
             <Button

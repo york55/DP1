@@ -173,6 +173,9 @@ public class AlnsEngine implements RouteOptimizer {
                                           AlnsParams p) {
         AlnsSolution solution = new AlnsSolution(flights, batches);
 
+        Map<String, List<Flight>> flightsByOrigin = flights.stream()
+                .collect(Collectors.groupingBy(f -> f.getOriginAirport().getIataCode()));
+
         List<BaggageBatch> sorted = batches.stream()
                 .sorted(Comparator.comparing(BaggageBatch::getAvailableFrom))
                 .collect(Collectors.toList());
@@ -181,8 +184,8 @@ public class AlnsEngine implements RouteOptimizer {
             String origin = batch.getOriginAirport().getIataCode();
             String dest = batch.getDestinationAirport().getIataCode();
 
-            Optional<Flight> bestFlight = flights.stream()
-                    .filter(f -> f.getOriginAirport().getIataCode().equals(origin))
+            Optional<Flight> bestFlight = flightsByOrigin.getOrDefault(origin, Collections.emptyList())
+                    .stream()
                     .filter(f -> f.getDestinationAirport().getIataCode().equals(dest))
                     .filter(f -> !f.getDepartureTime().isBefore(batch.getAvailableFrom()))
                     .filter(f -> solution.canAssign(f.getId(), batch.getQuantity()))
@@ -255,15 +258,14 @@ public class AlnsEngine implements RouteOptimizer {
                 .collect(Collectors.toMap(Flight::getId, f -> f));
 
         List<Route> routes = new ArrayList<>();
+        Map<Long, BaggageBatch> batchById = batches.stream()
+                .collect(Collectors.toMap(BaggageBatch::getId, b -> b));
 
         for (Map.Entry<Long, List<Long>> entry : solution.getAssignments().entrySet()) {
             Long batchId = entry.getKey();
             List<Long> flightIds = entry.getValue();
 
-            BaggageBatch batch = batches.stream()
-                    .filter(b -> b.getId().equals(batchId))
-                    .findFirst()
-                    .orElse(null);
+            BaggageBatch batch = batchById.get(batchId);
             if (batch == null) continue;
 
             // Build shipment

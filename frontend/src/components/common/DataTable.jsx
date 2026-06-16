@@ -13,6 +13,12 @@ export default function DataTable({
   sx = {},
   ...rest
 }) {
+  const resizableColumns = columns.map((col) => ({
+    resizable: true,
+    minWidth: 60,
+    ...col,
+  }))
+
   return (
     <Box
       sx={{
@@ -40,12 +46,19 @@ export default function DataTable({
           backgroundColor: '#E8EEF7',
           cursor: onRowClick ? 'pointer' : 'default',
         },
+        '& .MuiDataGrid-columnSeparator': {
+          visibility: 'visible',
+          color: '#BFBFBF',
+        },
+        '& .MuiDataGrid-columnSeparator:hover': {
+          color: '#1F3864',
+        },
         ...sx,
       }}
     >
       <DataGrid
         rows={rows}
-        columns={columns}
+        columns={resizableColumns}
         density="compact"
         initialState={{
           pagination: {
