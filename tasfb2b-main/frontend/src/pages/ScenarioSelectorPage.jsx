@@ -16,6 +16,7 @@ import LuggageIcon from '@mui/icons-material/Luggage'
 import FlightIcon from '@mui/icons-material/Flight'
 import SettingsIcon from '@mui/icons-material/Settings'
 import InventoryIcon from '@mui/icons-material/Inventory'
+import UploadFileIcon from '@mui/icons-material/UploadFile'
 
 const ACCENT_SIM = '#1F3864'
 const ACCENT_CFG = '#92400E'
@@ -24,6 +25,7 @@ function ScenarioCard({ icon, title, description, badge, onSelect, disabled, var
   const accent = disabled ? '#BFBFBF' : variant === 'config' ? ACCENT_CFG : ACCENT_SIM
   const accentBg = disabled ? '#F2F2F2' : variant === 'config' ? '#FEF3C7' : '#E8EEF7'
   const hoverColor = variant === 'config' ? '#78350F' : '#162D4F'
+
 
   return (
     <Card
@@ -198,6 +200,19 @@ export default function ScenarioSelectorPage() {
             />
           </Grid>
         </Grid>
+          
+          {/* Carga de archivos */}
+          <Grid item xs={12} sm={6} md={4}>
+            <ScenarioCard
+              icon={<UploadFileIcon />}
+              title="Carga de Archivos"
+              description="Carga los archivos de configuración del sistema: planes de vuelo, datos de aeropuertos y parámetros iniciales de simulación."
+              badge="Nuevo"
+              onSelect={() => navigate('/filesuploads')}
+              disabled={false}
+            />
+          </Grid>
+
 
         {/* Divider */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>

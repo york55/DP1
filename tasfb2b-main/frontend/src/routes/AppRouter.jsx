@@ -8,6 +8,7 @@ import RealtimeOperationsPage from '../pages/Operacion/OperacionDiaria'
 import AirportManagementPage from '../pages/AirportManagementPage'
 import FlightManagementPage from '../pages/FlightManagementPage'
 import EnvioCargaPage from '../pages/EnvioCargaPage'
+import FilesUpload from '../pages/FileUploads/FilesUpload'
 
 export default function AppRouter() {
   return (
@@ -21,6 +22,7 @@ export default function AppRouter() {
         <Route path="/almacenes" element={<AirportManagementPage />} />
         <Route path="/vuelos" element={<FlightManagementPage />} />
         <Route path="/envios" element={<EnvioCargaPage />} />
+        <Route path="/filesuploads" element={<FilesUpload />} />
         {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

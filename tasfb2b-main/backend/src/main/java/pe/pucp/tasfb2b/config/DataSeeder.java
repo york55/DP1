@@ -8,10 +8,12 @@ import org.springframework.stereotype.Component;
 import pe.pucp.tasfb2b.domain.Airline;
 import pe.pucp.tasfb2b.domain.Airport;
 import pe.pucp.tasfb2b.domain.Flight;
+import pe.pucp.tasfb2b.domain.OpsAirport;
 import pe.pucp.tasfb2b.domain.enums.FlightStatus;
 import pe.pucp.tasfb2b.repository.AirlineRepository;
 import pe.pucp.tasfb2b.repository.AirportRepository;
 import pe.pucp.tasfb2b.repository.FlightRepository;
+import pe.pucp.tasfb2b.repository.OpsAirportRepository;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -31,9 +33,10 @@ import java.nio.charset.StandardCharsets;
 @RequiredArgsConstructor
 public class DataSeeder implements CommandLineRunner {
 
-    private final AirportRepository airportRepository;
-    private final FlightRepository flightRepository;
-    private final AirlineRepository airlineRepository;
+    private final AirportRepository    airportRepository;
+    private final FlightRepository     flightRepository;
+    private final AirlineRepository    airlineRepository;
+    private final OpsAirportRepository opsAirportRepository;   // ← NUEVO
 
     @Override
     public void run(String... args) throws Exception {
@@ -54,6 +57,14 @@ public class DataSeeder implements CommandLineRunner {
             log.info("Airports table already populated.");
         }
 
+        // ── OPS_AIRPORT: sincronizar desde Airport ───────────────────────────
+        if (opsAirportRepository.count() == 0) {
+            log.info("Populating OPS_AIRPORT from Airport table...");
+            syncOpsAirports();
+        } else {
+            log.info("OPS_AIRPORT table already populated ({} rows).", opsAirportRepository.count());
+        }
+
         if (airlineRepository.count() == 0) {
             log.info("Populating Airlines...");
             populateAirlines();
@@ -61,7 +72,6 @@ public class DataSeeder implements CommandLineRunner {
             log.info("Airlines table already populated.");
         }
 
-        // Templates should be ~2866 (one per itinerary). More than 3000 means old multi-day replication.
         long dailyCount = flightRepository.findByFrequency("DAILY").size();
         boolean needFlightReseed = flightRepository.count() > 0 &&
                 (dailyCount == 0 || dailyCount > 3000);
@@ -78,6 +88,34 @@ public class DataSeeder implements CommandLineRunner {
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // NUEVO: copia Airport → OpsAirport
+    // ─────────────────────────────────────────────────────────────────────────
+    private void syncOpsAirports() {
+        List<Airport> airports = airportRepository.findAll();
+
+        // Mapeo de continente: el DataSeeder usa nombres en español,
+        // OpsAirport los conserva igual para que la lógica de deadline funcione.
+        for (Airport a : airports) {
+            OpsAirport ops = new OpsAirport();
+            ops.setIataCode(a.getIataCode());
+            ops.setName(a.getCity());                           // Airport.city → OpsAirport.name
+            ops.setCountry(a.getCountry());
+            ops.setShortCode(a.getIataCode().substring(0, 4)); // fallback: mismo IATA
+            ops.setContinent(a.getContinent());
+            ops.setGmtOffset(a.getGmtOffset());
+            ops.setCapacity(a.getWarehouseCapacity());
+            ops.setLatitude(a.getLatitude() != null ? a.getLatitude().doubleValue() : null);
+            ops.setLongitude(a.getLongitude() != null ? a.getLongitude().doubleValue() : null);
+            opsAirportRepository.save(ops);
+        }
+        log.info("OPS_AIRPORT populated with {} airports.", opsAirportRepository.count());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Sin cambios desde aquí
+    // ─────────────────────────────────────────────────────────────────────────
+
     private void populateAirports() {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(
                 new ClassPathResource("data/aeropuertos.txt").getInputStream(), StandardCharsets.UTF_16))) {
@@ -88,13 +126,8 @@ public class DataSeeder implements CommandLineRunner {
 
             while ((line = br.readLine()) != null) {
                 line = line.trim();
-                if (line.isEmpty() || line.startsWith("*") || line.startsWith("PDDS")) {
-                    continue;
-                }
-                // Skip column-header lines (contain both GMT and CAPACIDAD)
-                if (line.contains("GMT") && line.contains("CAPACIDAD")) {
-                    continue;
-                }
+                if (line.isEmpty() || line.startsWith("*") || line.startsWith("PDDS")) continue;
+                if (line.contains("GMT") && line.contains("CAPACIDAD")) continue;
 
                 if (!line.matches("^\\d+.*")) {
                     currentContinent = line.replace(".", "").trim();
@@ -131,9 +164,9 @@ public class DataSeeder implements CommandLineRunner {
 
     private void populateAirlines() {
         List<Object[]> data = List.of(
-            new Object[]{"LATAM Airlines",       "LA"},
-            new Object[]{"Lufthansa",             "LH"},
-            new Object[]{"Singapore Airlines",    "SQ"}
+                new Object[]{"LATAM Airlines",    "LA"},
+                new Object[]{"Lufthansa",          "LH"},
+                new Object[]{"Singapore Airlines", "SQ"}
         );
         for (Object[] row : data) {
             Airline a = new Airline((String) row[0], (String) row[1], null);
@@ -163,7 +196,6 @@ public class DataSeeder implements CommandLineRunner {
             DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
             LocalDateTime baseDate = LocalDateTime.of(2026, 5, 10, 0, 0);
 
-            // Read all flight templates once, then replicate for each simulation day
             List<String> lines = new java.util.ArrayList<>();
             String line;
             while ((line = br.readLine()) != null) {
@@ -174,7 +206,6 @@ public class DataSeeder implements CommandLineRunner {
             for (int day = 0; day < SIMULATION_DAYS; day++) {
                 LocalDateTime dayBase = baseDate.plusDays(day);
                 for (String flightLine : lines) {
-                    // Strip leading "N\t" line-number prefix if present
                     String flightData = flightLine.contains("\t")
                             ? flightLine.substring(flightLine.lastIndexOf('\t') + 1)
                             : flightLine;
@@ -182,18 +213,16 @@ public class DataSeeder implements CommandLineRunner {
                     if (parts.length < 5) continue;
 
                     Airport origin = airportMap.get(parts[0]);
-                    Airport dest = airportMap.get(parts[1]);
+                    Airport dest   = airportMap.get(parts[1]);
                     if (origin == null || dest == null) continue;
 
                     LocalTime depLocal = LocalTime.parse(parts[2], timeFormatter);
                     LocalTime arrLocal = LocalTime.parse(parts[3], timeFormatter);
 
                     LocalDateTime departureUTC = dayBase.with(depLocal).minusHours(origin.getGmtOffset());
-                    LocalDateTime arrivalUTC = dayBase.with(arrLocal).minusHours(dest.getGmtOffset());
+                    LocalDateTime arrivalUTC   = dayBase.with(arrLocal).minusHours(dest.getGmtOffset());
 
-                    if (arrivalUTC.isBefore(departureUTC)) {
-                        arrivalUTC = arrivalUTC.plusDays(1);
-                    }
+                    if (arrivalUTC.isBefore(departureUTC)) arrivalUTC = arrivalUTC.plusDays(1);
 
                     Flight flight = new Flight();
                     flight.setOriginAirport(origin);
