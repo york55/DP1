@@ -20,7 +20,10 @@ public class OpsAirportService {
                 a.getName(),
                 a.getCountry(),
                 a.getContinent(),
-                a.getGmtOffset()
+                a.getGmtOffset(),
+                a.getCapacity(),
+                a.getLatitude(),
+                a.getLongitude()
             ))
             .toList();
     }

@@ -10,6 +10,9 @@ import pe.pucp.tasfb2b.domain.OpsShipment;
 import pe.pucp.tasfb2b.repository.OpsAirportRepository;
 import pe.pucp.tasfb2b.repository.OpsShipmentRepository;
 
+import org.springframework.data.domain.Sort;
+import java.util.List;
+
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -128,4 +131,8 @@ public class EnvioService {
     private String generarIdCliente(long idEnvio) {
         return String.format("%07d", idEnvio * 500L);
     }
+	
+	public List<OpsShipment> listarEnvios() {
+		return shipmentRepo.findAll(Sort.by(Sort.Direction.DESC, "registeredAt"));
+	}
 }

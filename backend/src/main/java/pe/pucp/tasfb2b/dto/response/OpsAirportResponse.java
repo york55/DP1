@@ -5,5 +5,8 @@ public record OpsAirportResponse(
     String name,
     String country,
     String continent,
-    Integer gmtOffset
+    Integer gmtOffset,
+    Integer capacity,
+    Double latitude,
+    Double longitude
 ) {}
