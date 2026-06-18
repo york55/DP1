@@ -17,4 +17,7 @@ public interface OpsFlightPlanRepository extends JpaRepository<OpsFlightPlan, Lo
     @Modifying
     @Query(value = "UPDATE OPS_FLIGHT_PLAN SET is_active = 0 WHERE id = :id AND is_active = 1", nativeQuery = true)
     int cancelById(@Param("id") Long id);
+
+    // ── Agregado: requerido por OpsPlannerService para generar instancias de vuelo ──
+    List<OpsFlightPlan> findAllByIsActiveTrue();
 }
