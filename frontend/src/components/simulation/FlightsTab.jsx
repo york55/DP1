@@ -3,11 +3,11 @@ import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import TextField from '@mui/material/TextField'
 import MenuItem from '@mui/material/MenuItem'
-import Drawer from '@mui/material/Drawer'
 import Typography from '@mui/material/Typography'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import CloseIcon from '@mui/icons-material/Close'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
@@ -156,6 +156,123 @@ export default function FlightsTab() {
     },
   ]
 
+  // Inline flight detail panel — replaces the table when a flight is selected
+  if (selectedFlight) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* Header */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1, py: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <IconButton size="small" onClick={() => setSelectedFlightId(null)}>
+              <ArrowBackIcon fontSize="small" />
+            </IconButton>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1F3864' }}>
+              Detalle de UT: {selectedFlight.id}
+            </Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setSelectedFlightId(null)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Box>
+
+        <Divider />
+
+        {/* Info Summary */}
+        <Box sx={{ px: 1.5, py: 1.5, display: 'flex', flexDirection: 'column', gap: 0.8 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2" color="text.secondary">Ruta:</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>{selectedFlight.origin} → {selectedFlight.destination}</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2" color="text.secondary">Aerolínea:</Typography>
+            <Typography variant="body2">{selectedFlight.airline}</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="body2" color="text.secondary">Ocupación:</Typography>
+            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>{selectedFlight.bagsAboard} / {selectedFlight.capacity}</Typography>
+              <SemaphoreChip occupancyPct={(selectedFlight.bagsAboard / (selectedFlight.capacity || 1)) * 100} />
+            </Box>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2" color="text.secondary">Salida:</Typography>
+            <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{formatFlightTime(selectedFlight.departureUTC)} UTC</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2" color="text.secondary">Llegada:</Typography>
+            <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{formatFlightTime(selectedFlight.arrivalUTC)} UTC</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="body2" color="text.secondary">Estado:</Typography>
+            <FlightStatusChip status={selectedFlight.status} />
+          </Box>
+        </Box>
+
+        <Divider />
+
+        {/* Tabs */}
+        <Tabs
+          value={detailTab}
+          onChange={(e, v) => setDetailTab(v)}
+          variant="fullWidth"
+          sx={{ minHeight: 36, '& .MuiTab-root': { py: 1, minHeight: 36, fontSize: '0.75rem' } }}
+        >
+          <Tab label="Envíos" />
+          <Tab label="Lotes" />
+        </Tabs>
+
+        {/* Tab content */}
+        <Box sx={{ flex: 1, overflowY: 'auto', px: 1 }}>
+          {detailTab === 0 ? (
+            <List dense>
+              {flightShipments.length === 0 ? (
+                <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', my: 2, color: 'text.secondary' }}>
+                  Sin envíos asignados a este vuelo
+                </Typography>
+              ) : (
+                flightShipments.map(s => (
+                  <ListItem key={s.id} sx={{ px: 0, py: 0.5 }}>
+                    <ListItemText
+                      primary={
+                        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
+                          {s.id}
+                        </Typography>
+                      }
+                      secondary={`Cliente: ${s.client} | Destino: ${s.destination}`}
+                    />
+                    <Chip label={`${s.totalBags} maletas`} size="small" variant="outlined" />
+                  </ListItem>
+                ))
+              )}
+            </List>
+          ) : (
+            <List dense>
+              {flightBags.length === 0 ? (
+                <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', my: 2, color: 'text.secondary' }}>
+                  Sin maletas asignadas
+                </Typography>
+              ) : (
+                flightBags.map(b => (
+                  <ListItem key={b.id} sx={{ px: 0, py: 0.5 }}>
+                    <ListItemText
+                      primary={
+                        <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                          {b.id}
+                        </Typography>
+                      }
+                      secondary={`Envío: ${b.shipmentId} (${b.client})`}
+                    />
+                    <Chip label={`${b.bagCount} maletas`} size="small" color="primary" variant="outlined" />
+                  </ListItem>
+                ))
+              )}
+            </List>
+          )}
+        </Box>
+      </Box>
+    )
+  }
+
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 1 }}>
       {/* Search & Filters */}
@@ -222,123 +339,6 @@ export default function FlightsTab() {
           }}
         />
       </Box>
-
-      {/* Flight Detail Drawer */}
-      <Drawer
-        anchor="right"
-        open={Boolean(selectedFlight)}
-        onClose={() => setSelectedFlightId(null)}
-        PaperProps={{ sx: { width: 360, p: 2 } }}
-      >
-        {selectedFlight && (
-          <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {/* Header */}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#1F3864' }}>
-                Detalle de UT: {selectedFlight.id}
-              </Typography>
-              <IconButton onClick={() => setSelectedFlight(null)} size="small">
-                <CloseIcon />
-              </IconButton>
-            </Box>
-
-            <Divider />
-
-            {/* Info Summary */}
-            <Box sx={{ my: 2, display: 'flex', flexDirection: 'column', gap: 0.8 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">Ruta:</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{selectedFlight.origin} → {selectedFlight.destination}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">Aerolínea:</Typography>
-                <Typography variant="body2">{selectedFlight.airline}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2" color="text.secondary">Ocupación:</Typography>
-                <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>{selectedFlight.bagsAboard} / {selectedFlight.capacity}</Typography>
-                  <SemaphoreChip occupancyPct={(selectedFlight.bagsAboard / (selectedFlight.capacity || 1)) * 100} />
-                </Box>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">Salida:</Typography>
-                <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{formatFlightTime(selectedFlight.departureUTC)} UTC</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">Llegada:</Typography>
-                <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{formatFlightTime(selectedFlight.arrivalUTC)} UTC</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2" color="text.secondary">Estado:</Typography>
-                <FlightStatusChip status={selectedFlight.status} />
-              </Box>
-            </Box>
-
-            <Divider />
-
-            {/* Tabs inside Drawer */}
-            <Tabs
-              value={detailTab}
-              onChange={(e, v) => setDetailTab(v)}
-              variant="fullWidth"
-              sx={{ minHeight: 36, mt: 1, '& .MuiTab-root': { py: 1, minHeight: 36, fontSize: '0.75rem' } }}
-            >
-              <Tab label="Envíos" />
-              <Tab label="Lotes" />
-            </Tabs>
-
-            {/* Tab Panels */}
-            <Box sx={{ flex: 1, overflowY: 'auto', mt: 1 }}>
-              {detailTab === 0 ? (
-                <List dense>
-                  {flightShipments.length === 0 ? (
-                    <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', my: 2, color: 'text.secondary' }}>
-                      Sin envíos asignados a este vuelo
-                    </Typography>
-                  ) : (
-                    flightShipments.map(s => (
-                      <ListItem key={s.id} sx={{ px: 0, py: 0.5 }}>
-                        <ListItemText
-                          primary={
-                            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
-                              {s.id}
-                            </Typography>
-                          }
-                          secondary={`Cliente: ${s.client} | Destino: ${s.destination}`}
-                        />
-                        <Chip label={`${s.totalBags} maletas`} size="small" variant="outlined" />
-                      </ListItem>
-                    ))
-                  )}
-                </List>
-              ) : (
-                <List dense>
-                  {flightBags.length === 0 ? (
-                    <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', my: 2, color: 'text.secondary' }}>
-                      Sin maletas asignadas
-                    </Typography>
-                  ) : (
-                    flightBags.map(b => (
-                      <ListItem key={b.id} sx={{ px: 0, py: 0.5 }}>
-                        <ListItemText
-                          primary={
-                            <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                              {b.id}
-                            </Typography>
-                          }
-                          secondary={`Envío: ${b.shipmentId} (${b.client})`}
-                        />
-                        <Chip label={`${b.bagCount} maletas`} size="small" color="primary" variant="outlined" />
-                      </ListItem>
-                    ))
-                  )}
-                </List>
-              )}
-            </Box>
-          </Box>
-        )}
-      </Drawer>
     </Box>
   )
 }

@@ -28,7 +28,7 @@ public interface BaggageBatchRepository extends JpaRepository<BaggageBatch, Long
     @Query("SELECT b FROM BaggageBatch b JOIN FETCH b.originAirport JOIN FETCH b.destinationAirport")
     List<BaggageBatch> findAllWithAirports();
 
-    // Batches DELIVERED within the last 10 simulated minutes — still occupying destination storage.
+    // Batches DELIVERED within the last 15 simulated minutes — still occupying destination storage.
     @Query("SELECT b FROM BaggageBatch b JOIN FETCH b.destinationAirport " +
            "WHERE b.status = 'DELIVERED' " +
            "AND EXISTS (SELECT s FROM Shipment s WHERE s.baggageBatch = b AND s.deliveredAt > :cutoff)")
