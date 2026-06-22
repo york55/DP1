@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Box from '@mui/material/Box'
 import client from '../../api/client'
+import OpsPanel from '../../components/ops/OpsPanel'
+import MapLegend from '../../components/ops/MapLegend'
+import { createRoot } from 'react-dom/client'
+import { createReactPopup }
+  from '../../utils/leafletPopup'
+
+import OpsAirportPopup
+  from '../../components/ops/OpsAirportPopup'
+
+import OpsFlightPopup
+  from '../../components/ops/OpsFlightPopup'
 
 const POLL_INTERVAL_MS = 30_000 // refresca cada 30 s
 
@@ -9,6 +20,28 @@ function airportColor(pct) {
   if (pct >= 80) return '#C62828'  // rojo
   if (pct >= 50) return '#F57C00'  // naranja
   return '#2E75B6'                  // azul normal
+}
+function getBearing(lat1, lon1, lat2, lon2) {
+
+  const dLon =
+    (lon2 - lon1) * Math.PI / 180
+
+  const y =
+    Math.sin(dLon) *
+    Math.cos(lat2 * Math.PI / 180)
+
+  const x =
+    Math.cos(lat1 * Math.PI / 180) *
+    Math.sin(lat2 * Math.PI / 180) -
+    Math.sin(lat1 * Math.PI / 180) *
+    Math.cos(lat2 * Math.PI / 180) *
+    Math.cos(dLon)
+
+  return (
+    Math.atan2(y, x) *
+    180 /
+    Math.PI
+  )
 }
 
 // Tooltip compacto al hacer hover sobre un aeropuerto
@@ -40,8 +73,8 @@ const airportPopupHtml = (a) => `
 
 // Popup al hacer click sobre un avión en vuelo
 const flightPopupHtml = (f) => {
-  const dep = new Date(f.depTimeUtc).toLocaleString('es-PE', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
-  const arr = new Date(f.arrTimeUtc).toLocaleString('es-PE', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
+  const dep = new Date(f.depTimeUtc).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  const arr = new Date(f.arrTimeUtc).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
   const pctLoad = f.capacity > 0 ? ((f.assignedBags / f.capacity) * 100).toFixed(1) : '0.0'
   return `
     <div style="font-size:13px;line-height:1.7;min-width:190px;">
@@ -72,81 +105,176 @@ const flightPopupHtml = (f) => {
 }
 
 export default function RealtimeMapPage() {
-  const mapRef       = useRef(null)
-  const mapInst      = useRef(null)
+  const mapRef = useRef(null)
+  const mapInst = useRef(null)
   const airportLayer = useRef(null)  // LayerGroup para aeropuertos
-  const flightLayer  = useRef(null)  // LayerGroup para aviones
+  const flightMarkers = useRef(new Map()) // LayerGroup para aviones
+  const airportMarkers =
+    useRef(new Map())
+  const flightLayer = useRef(null)
 
   const [lastUpdate, setLastUpdate] = useState(null)
+  const [panelOpen, setPanelOpen] = useState(true)
+  const [airports, setAirports] = useState([])
+  const [flights, setFlights] = useState([])
+  const [shipments, setShipments] = useState([])
+  const [selectedFlightId, setSelectedFlightId] =
+    useState(null)
+
+  const [selectedAirportCode, setSelectedAirportCode] =
+    useState(null)
+
 
   // ── Fetch del snapshot y pintado ──────────────────────────────────────────
 
   const fetchAndRender = useCallback(async () => {
     const map = mapInst.current
-    const L   = window.L
+    const L = window.L
     if (!map || !L) return
 
     try {
-      const res  = await client.get('/ops/map/snapshot')
+      const res = await client.get('/ops/map/snapshot')
       const data = res.data
+      setAirports(data.airports || [])
+      setFlights(data.flights || [])
+      setShipments(data.shipments || [])
 
       // ── Aeropuertos ────────────────────────────────────────────────────────
       if (airportLayer.current) airportLayer.current.clearLayers()
+      airportMarkers.current.clear()
+        ; (data.airports || []).forEach(a => {
+          if (a.latitude == null || a.longitude == null) return
+          const color = airportColor(a.occupancyPct)
 
-      ;(data.airports || []).forEach(a => {
-        if (a.latitude == null || a.longitude == null) return
-        const color = airportColor(a.occupancyPct)
-        const icon  = L.divIcon({
-          html: `<div style="
-            background:${color};width:14px;height:14px;
-            border-radius:50%;border:2.5px solid white;
-            box-shadow:0 1px 4px rgba(0,0,0,0.45);
-          "></div>`,
-          iconSize: [28, 28], iconAnchor: [14, 14], className: '',
+          const size =
+            25 + (a.occupancyPct / 100) * 10
+
+          const icon = L.divIcon({
+            html: `
+    <div style="
+      width:${size + 10}px;
+      height:${size + 10}px;
+      border-radius:50%;
+      background:${color}33;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    ">
+      <div style="
+        background:${color};
+        width:${size}px;
+        height:${size}px;
+        border-radius:50%;
+        border:2px solid white;
+        box-shadow:0 2px 6px rgba(0,0,0,0.35);
+      "></div>
+    </div>
+  `,
+            iconSize: [size + 10, size + 10],
+            iconAnchor: [(size + 10) / 2, (size + 10) / 2],
+            className: '',
+          })
+          const marker = L.marker(
+            [a.latitude, a.longitude],
+            { icon }
+          )
+            .addTo(airportLayer.current)
+            .bindTooltip(airportTooltipHtml(a), { direction: 'top', offset: [0, -10] })
+            .bindPopup(
+              createReactPopup(
+                OpsAirportPopup,
+                { airport: a }
+              )
+            )
+            .on('click', () => {
+              setSelectedAirportCode(a.iataCode)
+            })
+
         })
-        L.marker([a.latitude, a.longitude], { icon })
-          .addTo(airportLayer.current)
-          .bindTooltip(airportTooltipHtml(a), { direction: 'top', offset: [0, -10] })
-          .bindPopup(airportPopupHtml(a))
-      })
 
       // ── Vuelos activos con maletas ──────────────────────────────────────────
       if (flightLayer.current) flightLayer.current.clearLayers()
+      flightMarkers.current.clear()
 
-      ;(data.flights || []).forEach(f => {
-        if (!f.originLat || !f.originLng || !f.destLat || !f.destLng) return
+        ; (data.flights || []).forEach(f => {
+          if (!f.originLat || !f.originLng || !f.destLat || !f.destLng) return
 
-        // Línea de ruta tenue
-        L.polyline(
-          [[f.originLat, f.originLng], [f.destLat, f.destLng]],
-          { color: '#2E75B6', weight: 1.5, opacity: 0.35, dashArray: '6 4' }
-        ).addTo(flightLayer.current)
+          // Línea de ruta tenue
+          L.polyline(
+            [[f.originLat, f.originLng], [f.destLat, f.destLng]],
+            { color: '#2E75B6', weight: 1.5, opacity: 0.35, dashArray: '6 4' }
+          ).addTo(flightLayer.current)
 
-        // Posición interpolada del avión
-        const lat = f.originLat + (f.destLat - f.originLat) * f.progress
-        const lng = f.originLng + (f.destLng - f.originLng) * f.progress
+          // Posición interpolada del avión
+          const lat = f.originLat + (f.destLat - f.originLat) * f.progress
+          const lng = f.originLng + (f.destLng - f.originLng) * f.progress
 
-        // Ícono de avión (emoji SVG embebido para no depender de imágenes externas)
-        const planeIcon = L.divIcon({
-          html: `<div style="
-            background:#1F3864;
-            color:white;
-            font-size:15px;
-            width:24px;height:24px;
-            border-radius:50%;
-            display:flex;align-items:center;justify-content:center;
-            border:2px solid white;
-            box-shadow:0 2px 6px rgba(0,0,0,0.4);
-            cursor:pointer;
-          ">✈</div>`,
-          iconSize: [24, 24], iconAnchor: [12, 12], className: '',
+          const angle = getBearing(
+            f.originLat,
+            f.originLng,
+            f.destLat,
+            f.destLng
+          )
+          // Ícono de avión (emoji SVG embebido para no depender de imágenes externas)
+          const planeIcon = L.divIcon({
+
+            html: `
+    <div style="
+      width:34px;
+      height:34px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      transform:rotate(${angle}deg);
+    ">
+
+      <svg
+        width="30"
+        height="30"
+        viewBox="0 0 24 24"
+        fill="#092c54"
+        xmlns="http://www.w3.org/2000/svg"
+        style="
+          filter:
+            drop-shadow(0 2px 4px rgba(0,0,0,.35));
+        "
+      >
+        <path d="
+          M21 16V14L13 9V3.5
+          A1.5 1.5 0 0 0 10 3.5V9
+          L2 14V16L10 13.5V19
+          L7.5 20.5V22L11.5 21
+          L15.5 22V20.5L13 19
+          V13.5L21 16Z
+        "/>
+      </svg>
+
+    </div>
+  `,
+
+            iconSize: [34, 34],
+            iconAnchor: [17, 17],
+            className: '',
+          })
+
+          const marker =
+            L.marker([lat, lng], { icon: planeIcon })
+              .addTo(flightLayer.current)
+
+          flightMarkers.current.set(
+            f.flightId,
+            marker
+          )
+
+          marker
+            .bindTooltip(`${f.originIata} → ${f.destIata}`, { direction: 'top', offset: [0, -14] })
+            .bindPopup(
+              createReactPopup(
+                OpsFlightPopup,
+                { flight: f }
+              )
+            )
         })
-
-        L.marker([lat, lng], { icon: planeIcon })
-          .addTo(flightLayer.current)
-          .bindTooltip(`${f.originIata} → ${f.destIata}`, { direction: 'top', offset: [0, -14] })
-          .bindPopup(flightPopupHtml(f))
-      })
 
       setLastUpdate(new Date().toLocaleTimeString('es-PE'))
     } catch (e) {
@@ -155,6 +283,42 @@ export default function RealtimeMapPage() {
   }, [])
 
   // ── Inicializar mapa ───────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!mapInst.current) return
+
+    setTimeout(() => {
+      mapInst.current.invalidateSize()
+    }, 300)
+
+  }, [panelOpen])
+
+  useEffect(() => {
+
+    if (!selectedFlightId)
+      return
+
+    const marker =
+      flightMarkers.current.get(
+        selectedFlightId
+      )
+
+    if (!marker || !mapInst.current)
+      return
+
+    mapInst.current.flyTo(
+      marker.getLatLng(),
+      4,
+      {
+        duration: 1.2
+      }
+    )
+
+    setTimeout(() => {
+      marker.openPopup()
+    }, 400)
+
+  }, [selectedFlightId])
 
   useEffect(() => {
     if (mapInst.current || !mapRef.current) return
@@ -169,13 +333,15 @@ export default function RealtimeMapPage() {
       worldCopyJump: false,
     })
 
+
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
       noWrap: true,
     }).addTo(map)
 
     airportLayer.current = L.layerGroup().addTo(map)
-    flightLayer.current  = L.layerGroup().addTo(map)
+    flightLayer.current = L.layerGroup().addTo(map)
 
     mapInst.current = map
   }, [])
@@ -192,20 +358,166 @@ export default function RealtimeMapPage() {
     }
   }, [fetchAndRender])
 
+  useEffect(() => {
+
+    if (!selectedAirportCode)
+      return
+
+    const airport =
+      airports.find(
+        a =>
+          a.iataCode ===
+          selectedAirportCode
+      )
+
+    if (!airport)
+      return
+
+    mapInst.current.flyTo(
+      [
+        airport.latitude,
+        airport.longitude
+      ],
+      6,
+      {
+        duration: 1.2
+      }
+    )
+
+  }, [
+    selectedAirportCode,
+    airports
+  ])
+
+
+  useEffect(() => {
+
+    if (!selectedAirportCode)
+      return
+
+    const airport =
+      airports.find(
+        a =>
+          a.iataCode ===
+          selectedAirportCode
+      )
+
+    if (!airport)
+      return
+
+    mapInst.current.flyTo(
+      [
+        airport.latitude,
+        airport.longitude
+      ],
+      6,
+      {
+        duration: 1.2
+      }
+    )
+
+  }, [
+    selectedAirportCode,
+    airports
+  ])
+
+
   return (
-    <Box sx={{ flex: 1, height: '100%', position: 'relative' }}>
-      <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
-      {lastUpdate && (
-        <Box sx={{
-          position: 'absolute', bottom: 12, left: 12, zIndex: 1000,
-          backgroundColor: 'rgba(31,56,100,0.85)',
-          color: '#90CAF9', fontSize: '0.72rem', fontFamily: 'monospace',
-          px: 1.5, py: 0.5, borderRadius: '6px',
-          pointerEvents: 'none',
-        }}>
-          Actualizado: {lastUpdate}
+    <Box
+      sx={{
+        display: 'flex',
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
+      }}
+    >
+
+      {/* MAPA */}
+      <Box
+        sx={{
+          flex: 1,
+          position: 'relative',
+        }}
+      >
+        <div
+          ref={mapRef}
+          style={{
+            width: '100%',
+            height: '100%',
+          }}
+        />
+
+        <MapLegend />
+
+        {/* Botón panel */}
+        <Box
+          onClick={() => setPanelOpen(!panelOpen)}
+          sx={{
+            position: 'absolute',
+            top: 16,
+            right: 16,
+            zIndex: 2000,
+            width: 40,
+            height: 40,
+            borderRadius: '50%',
+            backgroundColor: '#1F3864',
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          }}
+        >
+          {panelOpen ? '→' : '←'}
         </Box>
-      )}
+
+        {lastUpdate && (
+          <Box
+            sx={{
+              position: 'absolute',
+              bottom: 12,
+              right: 12,
+              zIndex: 1000,
+              backgroundColor: 'rgba(31,56,100,0.85)',
+              color: '#90CAF9',
+              fontSize: '0.72rem',
+              fontFamily: 'monospace',
+              px: 1.5,
+              py: 0.5,
+              borderRadius: '6px',
+              pointerEvents: 'none',
+            }}
+          >
+            Actualizado: {lastUpdate}
+          </Box>
+        )}
+      </Box>
+
+      {/* PANEL */}
+      <Box
+        sx={{
+          width: panelOpen ? 500 : 0,
+          flexShrink: 0,
+          overflow: 'hidden',
+          transition: 'width 0.3s ease',
+          borderLeft: panelOpen
+            ? '1px solid rgba(0,0,0,0.12)'
+            : 'none',
+          backgroundColor: '#fff',
+        }}
+      >
+        <OpsPanel
+          airports={airports}
+          flights={flights}
+          shipments={shipments}
+          onFlightSelected={setSelectedFlightId}
+          onAirportSelected={setSelectedAirportCode}
+          selectedAirportCode={selectedAirportCode}
+        />
+      </Box>
+
     </Box>
   )
 }

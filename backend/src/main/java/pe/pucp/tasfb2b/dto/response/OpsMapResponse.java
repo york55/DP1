@@ -14,7 +14,7 @@ public class OpsMapResponse {
 
     private List<AirportDto> airports;
     private List<ActiveFlightDto> flights;
-
+    private List<OpsShipmentResponse> shipments;
     @Data
     @Builder
     public static class AirportDto {

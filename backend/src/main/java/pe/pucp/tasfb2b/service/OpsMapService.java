@@ -9,6 +9,7 @@ import pe.pucp.tasfb2b.domain.OpsShipment;
 import pe.pucp.tasfb2b.domain.OpsShipmentRoute;
 import pe.pucp.tasfb2b.dto.response.OpsMapResponse;
 import pe.pucp.tasfb2b.dto.response.OpsMapResponse.*;
+import pe.pucp.tasfb2b.dto.response.OpsShipmentResponse;
 import pe.pucp.tasfb2b.repository.OpsAirportRepository;
 import pe.pucp.tasfb2b.repository.OpsFlightRepository;
 import pe.pucp.tasfb2b.repository.OpsShipmentRepository;
@@ -94,9 +95,25 @@ public class OpsMapService {
                 })
                 .collect(Collectors.toList());
 
+        List<OpsShipmentResponse> shipmentDtos =
+                shipmentRepo.findAll()
+                        .stream()
+                        .map(s -> new OpsShipmentResponse(
+                                s.getId(),
+                                s.getExternalId(),
+                                s.getOriginIata(),
+                                s.getDestIata(),
+                                s.getBagCount(),
+                                s.getStatus(),
+                                s.getRegisteredAt(),
+                                s.getDeadlineUtc()
+                        ))
+                        .collect(Collectors.toList());
+
         return OpsMapResponse.builder()
                 .airports(airportDtos)
                 .flights(flightDtos)
+                .shipments(shipmentDtos)
                 .build();
     }
 
