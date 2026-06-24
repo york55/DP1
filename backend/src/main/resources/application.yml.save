@@ -12,8 +12,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: none # cambiado para mayor seguridad en general
-      naming:
-        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+      
     show-sql: false
     properties:
       hibernate:
