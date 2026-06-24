@@ -5,7 +5,7 @@
 CREATE TABLE IF NOT EXISTS airlines (
     id            BIGINT NOT NULL AUTO_INCREMENT,
     name          VARCHAR(120)    NOT NULL,
-    iata_code     CHAR(2)         NOT NULL,
+    iata_code     VARCHAR(2)         NOT NULL,
     contact_email VARCHAR(120)    NULL,
     created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

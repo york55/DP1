@@ -1,6 +1,6 @@
 services:
 
-  demo-mysql:
+  tasfb2b-mysql:
     image: mysql:8
     container_name: tasfb2b-mysql
     environment:
@@ -19,7 +19,7 @@ services:
       context: ./backend
     container_name: tasfb2b-backend
     depends_on:
-      demo-mysql:
+      tasfb2b-mysql:
         condition: service_healthy
     ports:
       - "8080:8080"
