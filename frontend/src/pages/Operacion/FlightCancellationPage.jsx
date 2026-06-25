@@ -17,6 +17,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
 import CancelIcon from '@mui/icons-material/Cancel'
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import client from '../../api/client'
 
 const formatTime = (timeStr) => {
@@ -101,56 +102,75 @@ export default function FlightPlanPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {paginated.map((f, i) => (
-                <TableRow
-                  key={f.id}
-                  sx={{
-                    backgroundColor: f.cancelled ? '#FFF3F3' : i % 2 === 0 ? '#FFFFFF' : '#F9FAFB',
-                    '&:hover': { backgroundColor: f.cancelled ? '#FFE5E5' : '#E8EEF7' },
-                    opacity: f.cancelled ? 0.75 : 1,
-                  }}
-                >
-                  <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{page * rowsPerPage + i + 1}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.origin}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.destination}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{formatTime(f.departureUtc)}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{formatTime(f.arrivalUtc)}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{formatTime(f.departureLocal)}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{formatTime(f.arrivalLocal)}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem' }}>{f.capacity}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={f.cancelled ? 'Cancelado' : 'Activo'}
-                      size="small"
-                      sx={{
-                        backgroundColor: f.cancelled ? '#FFEBEE' : '#E8F5E9',
-                        color: f.cancelled ? '#C62828' : '#2E7D32',
-                        fontWeight: 700,
-                        fontSize: '0.65rem',
-                      }}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    {!f.cancelled && (
-                      <Tooltip title="Cancelar vuelo">
-                        <span>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleCancel(f.id)}
-                            disabled={cancelling === f.id}
-                            sx={{ color: '#C62828', '&:hover': { backgroundColor: '#FFEBEE' } }}
-                          >
-                            {cancelling === f.id
-                              ? <CircularProgress size={16} sx={{ color: '#C62828' }} />
-                              : <CancelIcon fontSize="small" />
-                            }
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {paginated.map((f, i) => {
+                // ── AGREGADO: el vuelo está "bloqueado" si el plan está cancelado
+                // permanentemente O si la próxima instancia concreta ya fue cancelada
+                const isCancelled = f.cancelled || f.nextInstanceCancelled
+
+                return (
+                  <TableRow
+                    key={f.id}
+                    sx={{
+                      backgroundColor: isCancelled ? '#FFF3F3' : i % 2 === 0 ? '#FFFFFF' : '#F9FAFB',
+                      '&:hover': { backgroundColor: isCancelled ? '#FFE5E5' : '#E8EEF7' },
+                      opacity: isCancelled ? 0.75 : 1,
+                    }}
+                  >
+                    <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{page * rowsPerPage + i + 1}</TableCell>
+                    <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.origin}</TableCell>
+                    <TableCell sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{f.destination}</TableCell>
+                    <TableCell sx={{ fontSize: '0.78rem' }}>{formatTime(f.departureUtc)}</TableCell>
+                    <TableCell sx={{ fontSize: '0.78rem' }}>{formatTime(f.arrivalUtc)}</TableCell>
+                    <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{formatTime(f.departureLocal)}</TableCell>
+                    <TableCell sx={{ fontSize: '0.78rem', color: '#6B7280' }}>{formatTime(f.arrivalLocal)}</TableCell>
+                    <TableCell sx={{ fontSize: '0.78rem' }}>{f.capacity}</TableCell>
+                    <TableCell>
+                      {/* ── AGREGADO: chip diferenciado entre cancelado permanente vs próxima instancia ── */}
+                      <Chip
+                        label={f.cancelled ? 'Cancelado' : f.nextInstanceCancelled ? 'Próx. cancelado' : 'Activo'}
+                        size="small"
+                        sx={{
+                          backgroundColor: f.cancelled ? '#FFEBEE' : f.nextInstanceCancelled ? '#FFF3E0' : '#E8F5E9',
+                          color: f.cancelled ? '#C62828' : f.nextInstanceCancelled ? '#E65100' : '#2E7D32',
+                          fontWeight: 700,
+                          fontSize: '0.65rem',
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {!f.cancelled && (
+                        // ── AGREGADO: si nextInstanceCancelled, mostrar ícono de check deshabilitado
+                        // en lugar del botón de cancelar
+                        f.nextInstanceCancelled ? (
+                          <Tooltip title="Próxima instancia ya cancelada">
+                            <span>
+                              <IconButton size="small" disabled sx={{ color: '#E65100', opacity: 0.5 }}>
+                                <CheckCircleOutlineIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip title="Cancelar vuelo">
+                            <span>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleCancel(f.id)}
+                                disabled={cancelling === f.id}
+                                sx={{ color: '#C62828', '&:hover': { backgroundColor: '#FFEBEE' } }}
+                              >
+                                {cancelling === f.id
+                                  ? <CircularProgress size={16} sx={{ color: '#C62828' }} />
+                                  : <CancelIcon fontSize="small" />
+                                }
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        )
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </TableContainer>

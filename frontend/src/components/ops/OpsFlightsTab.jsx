@@ -40,6 +40,19 @@ const STATUS_STYLES = {
     },
 }
 
+// ── Normaliza los valores en español que puede devolver el backend ──
+const STATUS_NORMALIZE = {
+    'Programado':  'SCHEDULED',
+    'En vuelo':    'IN_FLIGHT',
+    'En Vuelo':    'IN_FLIGHT',
+    'Aterrizó':    'LANDED',
+    'Cancelado':   'CANCELLED',
+}
+
+function normalizeStatus(status) {
+    return STATUS_NORMALIZE[status] ?? status
+}
+
 function FlightStatusChip({ status }) {
     const style =
         STATUS_STYLES[status] ||
@@ -69,6 +82,14 @@ export default function OpsFlightsTab({
     onFlightSelected,
 }) {
 
+    // ── Normaliza status al entrar, una sola vez ──
+    const normalizedFlights = useMemo(() =>
+        flights.map(f => ({
+            ...f,
+            status: normalizeStatus(f.status),
+        }))
+    , [flights])
+
     const [selectedFlight, setSelectedFlight] =
         useState(null)
 
@@ -84,23 +105,23 @@ export default function OpsFlightsTab({
     const origins = useMemo(() => {
         return [
             ...new Set(
-                flights.map(f => f.originIata)
+                normalizedFlights.map(f => f.originIata)
             ),
         ].sort()
-    }, [flights])
+    }, [normalizedFlights])
 
     const destinations = useMemo(() => {
         return [
             ...new Set(
-                flights.map(f => f.destIata)
+                normalizedFlights.map(f => f.destIata)
             ),
         ].sort()
-    }, [flights])
+    }, [normalizedFlights])
 
     const filteredFlights =
         useMemo(() => {
 
-            return flights.filter(f => {
+            return normalizedFlights.filter(f => {
 
                 const text =
                     `${f.originIata} ${f.destIata}`
@@ -126,7 +147,7 @@ export default function OpsFlightsTab({
             })
 
         }, [
-            flights,
+            normalizedFlights,
             search,
             origin,
             destination,
@@ -149,6 +170,13 @@ export default function OpsFlightsTab({
             width: 180,
 
             renderCell: params => {
+                if (params.row.status === 'CANCELLED') {
+                    return (
+                        <Typography sx={{ fontSize: '0.78rem', color: '#C62828' }}>
+                            —
+                        </Typography>
+                    )
+                }
 
                 const capacity =
                     params.row.capacity || 1
@@ -191,8 +219,10 @@ export default function OpsFlightsTab({
 
     if (selectedFlight) {
 
+        const isCancelled = selectedFlight.status === 'CANCELLED'
+
         const loadPct =
-            selectedFlight.capacity > 0
+            !isCancelled && selectedFlight.capacity > 0
                 ? (
                     selectedFlight.assignedBags /
                     selectedFlight.capacity
@@ -205,6 +235,7 @@ export default function OpsFlightsTab({
                     display: 'flex',
                     flexDirection: 'column',
                     height: '100%',
+                    backgroundColor: isCancelled ? '#FFF5F5' : 'transparent',
                 }}
             >
 
@@ -238,7 +269,7 @@ export default function OpsFlightsTab({
                         <Typography
                             sx={{
                                 fontWeight: 700,
-                                color: '#1F3864',
+                                color: isCancelled ? '#C62828' : '#1F3864',
                             }}
                         >
                             {selectedFlight.originIata}
@@ -288,26 +319,30 @@ export default function OpsFlightsTab({
                         />
                     </Typography>
 
-                    <Typography>
-                        Ocupación:
-                        {' '}
-                        {selectedFlight.assignedBags}
-                        {' / '}
-                        {selectedFlight.capacity}
-                    </Typography>
+                    {!isCancelled && (
+                        <>
+                            <Typography>
+                                Ocupación:
+                                {' '}
+                                {selectedFlight.assignedBags}
+                                {' / '}
+                                {selectedFlight.capacity}
+                            </Typography>
 
-                    <SemaphoreChip
-                        occupancyPct={loadPct}
-                    />
+                            <SemaphoreChip
+                                occupancyPct={loadPct}
+                            />
 
-                    <Typography>
-                        Progreso:
-                        {' '}
-                        {(
-                            selectedFlight.progress * 100
-                        ).toFixed(1)}
-                        %
-                    </Typography>
+                            <Typography>
+                                Progreso:
+                                {' '}
+                                {(
+                                    selectedFlight.progress * 100
+                                ).toFixed(1)}
+                                %
+                            </Typography>
+                        </>
+                    )}
 
                     <Typography>
                         Salida:
@@ -416,6 +451,18 @@ export default function OpsFlightsTab({
                     rows={filteredFlights}
                     columns={columns}
                     getRowId={(row) => row.flightId}
+                    getRowClassName={(params) =>
+                        params.row.status === 'CANCELLED' ? 'row-cancelled' : ''
+                    }
+                    sx={{
+                        '& .row-cancelled': {
+                            backgroundColor: '#FFF0F0',
+                            opacity: 0.8,
+                            '&:hover': {
+                                backgroundColor: '#FFE0E0',
+                            },
+                        },
+                    }}
                     onRowClick={(params) => {
 
                         setSelectedFlight(params.row)

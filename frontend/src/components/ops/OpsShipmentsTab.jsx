@@ -28,6 +28,12 @@ const STATUS_STYLES = {
     bg: '#FFF3E0',
   },
 
+  IN_FLIGHT: {
+    label: 'En vuelo',
+    color: '#E65100',
+    bg: '#FFF3E0',
+  },
+
   DELIVERED: {
     label: 'Entregado',
     color: '#2E7D32',
@@ -106,6 +112,7 @@ export default function OpsShipmentsTab({
       const counts = {
         PLANNED: 0,
         IN_TRANSIT: 0,
+        IN_FLIGHT: 0,
         DELIVERED: 0,
         DELAYED: 0,
       }
@@ -151,7 +158,7 @@ export default function OpsShipmentsTab({
           return s.status === 'PLANNED'
 
         if (tab === 2)
-          return s.status === 'IN_TRANSIT'
+          return s.status === 'IN_TRANSIT' || s.status === 'IN_FLIGHT'
 
         if (tab === 3)
           return s.status === 'DELIVERED'
@@ -341,21 +348,25 @@ export default function OpsShipmentsTab({
       >
 
         {Object.entries(STATUS_STYLES)
-          .map(([status, style]) => (
-
-            <Chip
-              key={status}
-              label={`${style.label}: ${shipmentCounts[status] || 0}`}
-              size="small"
-              sx={{
-                backgroundColor: style.bg,
-                color: style.color,
-                border: `1px solid ${style.color}`,
-                fontWeight: 600,
-              }}
-            />
-
-          ))}
+          .filter(([status]) => status !== 'IN_FLIGHT') // IN_FLIGHT se suma a IN_TRANSIT
+          .map(([status, style]) => {
+            const count = status === 'IN_TRANSIT'
+              ? (shipmentCounts['IN_TRANSIT'] || 0) + (shipmentCounts['IN_FLIGHT'] || 0)
+              : (shipmentCounts[status] || 0)
+            return (
+              <Chip
+                key={status}
+                label={`${style.label}: ${count}`}
+                size="small"
+                sx={{
+                  backgroundColor: style.bg,
+                  color: style.color,
+                  border: `1px solid ${style.color}`,
+                  fontWeight: 600,
+                }}
+              />
+            )
+          })}
       </Box>
 
       {/* Filtros */}

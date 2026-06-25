@@ -10,5 +10,6 @@ public record OpsShipmentResponse(
     int    bagCount,
     String status,
     LocalDateTime registeredAt,
-    LocalDateTime deadlineUtc
+    LocalDateTime deadlineUtc,
+    LocalDateTime lastUpdated
 ) {}

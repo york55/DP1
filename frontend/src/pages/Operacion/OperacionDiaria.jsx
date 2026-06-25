@@ -11,23 +11,27 @@ import IconButton from '@mui/material/IconButton'
 import LuggageIcon from '@mui/icons-material/Luggage'
 import FlightLandIcon from '@mui/icons-material/FlightLand'
 import MapIcon from '@mui/icons-material/Map'
+import AssessmentIcon from '@mui/icons-material/Assessment'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import AppHeader from '../../components/common/Header'
 import BaggageRegistrationPage from './BaggageRegistrationPage'
 import FlightCancellationPage from './FlightCancellationPage'
 import RealtimeMapPage from './RealtimeMapPage'
+import ReportesPage from './ReportesPage'
 
 const NAV_ITEMS = [
-  { key: 'baggage',      label: 'Registro de Maletas',         icon: <LuggageIcon /> },
-  { key: 'cancellation', label: 'Cancelación de Vuelos',       icon: <FlightLandIcon /> },
+  { key: 'baggage',      label: 'Registro de Maletas',          icon: <LuggageIcon /> },
+  { key: 'cancellation', label: 'Cancelación de Vuelos',        icon: <FlightLandIcon /> },
   { key: 'map',          label: 'Visualización en Tiempo Real', icon: <MapIcon /> },
+  { key: 'reportes',     label: 'Reportes',                     icon: <AssessmentIcon /> },
 ]
 
 const PAGES = {
   baggage:      <BaggageRegistrationPage />,
   cancellation: <FlightCancellationPage />,
   map:          <RealtimeMapPage />,
+  reportes:     <ReportesPage />,
 }
 
 export default function RealtimeOperationsPage() {

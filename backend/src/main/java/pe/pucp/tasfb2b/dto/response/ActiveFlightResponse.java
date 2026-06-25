@@ -15,5 +15,10 @@ public record ActiveFlightResponse(
 
         int capacity,
 
-        boolean cancelled
+        boolean cancelled,
+
+        // ── AGREGADO: true si la instancia concreta que se cancelaría ahora
+        // (hoy o mañana según la regla de 1h) ya está cancelada.
+        // El front usa esto para deshabilitar el botón de cancelar.
+        boolean nextInstanceCancelled
 ) {}

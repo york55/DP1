@@ -30,6 +30,16 @@ public class OpsMapService {
     private final OpsShipmentRouteRepository routeRepo;
     private final OpsShipmentRepository   shipmentRepo;
 
+    /**
+     * Estados de OPS_SHIPMENT que cuentan como "físicamente en el almacén de origen".
+     * Solo PENDING: una vez planificado (PLANNED) o volando (IN_FLIGHT), el envío
+     * ocupa espacio en el vuelo asignado, no en el almacén del aeropuerto.
+     */
+    private static final List<String> STATUSES_OCCUPYING_WAREHOUSE = List.of("PENDING");
+
+    /** Minutos que un envío DELIVERED sigue ocupando espacio físico en el almacén de destino. */
+    private static final int DELIVERED_OCCUPANCY_MINUTES = 15;
+
     @Transactional(readOnly = true)
     public OpsMapResponse buildSnapshot() {
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
@@ -37,12 +47,25 @@ public class OpsMapService {
         // ── Vuelos que tienen al menos un envío asignado ───────────────────────
         List<OpsFlight> activeFlights = flightRepo.findFlightsWithPendingShipments();
 
+        // ── AGREGADO: cancelados de hoy y mañana (para mostrar en el tab) ─────
+        List<OpsFlight> cancelledFlights = flightRepo.findRecentlyCancelled(
+                now.toLocalDate(), now.toLocalDate().plusDays(1));
+
+        // Lista combinada para construir los DTOs (cancelados van al final)
+        List<OpsFlight> allDisplayFlights = new java.util.ArrayList<>(activeFlights);
+        allDisplayFlights.addAll(cancelledFlights);
+
         // ── Sumar los bagCount de los envíos asignados a cada vuelo ────────────
         Map<Long, Integer> bagsPerFlight = computeBagsPerFlight(activeFlights);
 
         // ── Aeropuertos con ocupación calculada ───────────────────────────────
         List<OpsAirport> allAirports = airportRepo.findAll();
-        Map<String, Integer> shipmentsByOrigin = countPlannedShipmentsByOrigin();
+
+        // Ocupación = lo que sigue en el almacén de ORIGEN (PENDING)
+        //           + lo recién entregado en el almacén de DESTINO (DELIVERED hace <15 min)
+        Map<String, Integer> shipmentsByOrigin = new HashMap<>(countWarehouseOccupancyByOrigin());
+        countRecentlyDeliveredByDest(now).forEach((iata, bags) ->
+                shipmentsByOrigin.merge(iata, bags, Integer::sum));
 
         List<AirportDto> airportDtos = allAirports.stream()
                 .map(a -> {
@@ -71,7 +94,7 @@ public class OpsMapService {
         DateTimeFormatter fmt = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
         Map<Long, Integer> finalBagsMap = bagsPerFlight;
 
-        List<ActiveFlightDto> flightDtos = activeFlights.stream()
+        List<ActiveFlightDto> flightDtos = allDisplayFlights.stream()
                 .map(f -> {
                     OpsAirport orig = airportsByIata.get(f.getOriginIata());
                     OpsAirport dest = airportsByIata.get(f.getDestIata());
@@ -106,7 +129,8 @@ public class OpsMapService {
                                 s.getBagCount(),
                                 s.getStatus(),
                                 s.getRegisteredAt(),
-                                s.getDeadlineUtc()
+                                s.getDeadlineUtc(),
+                                s.getLastUpdated()
                         ))
                         .collect(Collectors.toList());
 
@@ -143,6 +167,33 @@ public class OpsMapService {
         return shipmentRepo.findAllByStatus("PLANNED").stream()
                 .collect(Collectors.groupingBy(
                         OpsShipment::getOriginIata,
+                        Collectors.summingInt(OpsShipment::getBagCount)));
+    }
+
+    /**
+     * Cuenta maletas que siguen físicamente en el almacén de origen, agrupadas por aeropuerto.
+     * A diferencia de countPlannedShipmentsByOrigin(), incluye también PENDING (recién
+     * registrado, aún no planificado), porque esas maletas ya ocupan espacio real en el
+     * almacén aunque todavía no tengan vuelo asignado.
+     */
+    private Map<String, Integer> countWarehouseOccupancyByOrigin() {
+        return shipmentRepo.findAllByStatusIn(STATUSES_OCCUPYING_WAREHOUSE).stream()
+                .collect(Collectors.groupingBy(
+                        OpsShipment::getOriginIata,
+                        Collectors.summingInt(OpsShipment::getBagCount)));
+    }
+
+    /**
+     * Maletas entregadas (DELIVERED) hace menos de DELIVERED_OCCUPANCY_MINUTES minutos:
+     * siguen ocupando espacio físico en el almacén de destino aunque ya cambiaron de estado.
+     * Usa lastUpdated como proxy del "momento de entrega", ya que markShipmentsDelivered()
+     * actualiza ese campo junto con el status.
+     */
+    private Map<String, Integer> countRecentlyDeliveredByDest(LocalDateTime now) {
+        LocalDateTime cutoff = now.minusMinutes(DELIVERED_OCCUPANCY_MINUTES);
+        return shipmentRepo.findAllByStatusAndLastUpdatedAfter("DELIVERED", cutoff).stream()
+                .collect(Collectors.groupingBy(
+                        OpsShipment::getDestIata,
                         Collectors.summingInt(OpsShipment::getBagCount)));
     }
 }

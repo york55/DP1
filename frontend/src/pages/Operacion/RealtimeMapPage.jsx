@@ -135,8 +135,22 @@ export default function RealtimeMapPage() {
     try {
       const res = await client.get('/ops/map/snapshot')
       const data = res.data
+
+      const STATUS_LABEL = {
+        IN_FLIGHT:  'En vuelo',
+        SCHEDULED:  'Programado',
+        LANDED:     'Aterrizado',
+        CANCELLED:  'Cancelado',
+        DELAYED:    'Demorado',
+      }
+
+      const normalizedFlights = (data.flights || []).map(f => ({
+        ...f,
+        status: STATUS_LABEL[f.status] ?? f.status,
+      }))
+
       setAirports(data.airports || [])
-      setFlights(data.flights || [])
+      setFlights(normalizedFlights)
       setShipments(data.shipments || [])
 
       // ── Aeropuertos ────────────────────────────────────────────────────────
@@ -196,7 +210,7 @@ export default function RealtimeMapPage() {
       if (flightLayer.current) flightLayer.current.clearLayers()
       flightMarkers.current.clear()
 
-        ; (data.flights || []).forEach(f => {
+        ; normalizedFlights.forEach(f => {
           if (!f.originLat || !f.originLng || !f.destLat || !f.destLng) return
 
           // Línea de ruta tenue

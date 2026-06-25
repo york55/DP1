@@ -66,7 +66,8 @@ public class OpsShipmentService {
             s.getBagCount(),
             s.getStatus(),
             s.getRegisteredAt(),
-            s.getDeadlineUtc()
+            s.getDeadlineUtc(),
+			s.getLastUpdated()
         );
     }
 }
