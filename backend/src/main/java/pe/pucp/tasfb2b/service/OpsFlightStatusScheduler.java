@@ -21,7 +21,7 @@ public class OpsFlightStatusScheduler {
     private final OpsFlightStatusService statusService;
 
     /** Corre cada 10 minutos. */
-    @Scheduled(fixedDelay = 10 * 60 * 1000L, initialDelay = 10_000L)
+    @Scheduled(fixedDelay = 10 * 60 * 1000L, initialDelay = 10 * 60 * 1000L)
     public void scheduledStatusSync() {
         try {
             statusService.syncFlightStatuses();
