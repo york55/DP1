@@ -107,6 +107,20 @@ function ScenarioCard({ icon, title, description, badge, onSelect, disabled, var
 export default function ScenarioSelectorPage() {
   const navigate = useNavigate()
 
+  const handleSimulacionPeriodo = async () => {
+    try {
+      const res = await fetch('/api/simulations/active')
+      if (res.ok && res.status !== 204) {
+        // Hay una simulación corriendo — ir directo a verla
+        navigate('/simulation/running')
+        return
+      }
+    } catch {
+      // Si falla el fetch igual dejamos pasar a config
+    }
+    navigate('/simulation/config')
+  }
+
   return (
     <Box
       sx={{
@@ -173,7 +187,7 @@ export default function ScenarioSelectorPage() {
               title="Simulación por Período"
               description="Simula 5 días completos de operaciones aéreas. Observa el flujo de maletas, la ocupación de aeropuertos y el desempeño de vuelos en tiempo acelerado."
               badge="Disponible"
-              onSelect={() => navigate('/simulation/config')}
+              onSelect={handleSimulacionPeriodo}
               disabled={false}
             />
           </Grid>
@@ -182,7 +196,7 @@ export default function ScenarioSelectorPage() {
               icon={<StreamIcon />}
               title="Operaciones en Tiempo Real"
               description="Conecta con datos en vivo del sistema de enrutamiento para monitoreo continuo de operaciones. Integración con APIs externas de aerolíneas."
-              badge="Próximamente"
+              badge="Disponible"
               onSelect={() => navigate('/operacion')}
               disabled={false}
             />

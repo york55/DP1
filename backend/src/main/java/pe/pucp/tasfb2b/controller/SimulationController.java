@@ -75,6 +75,18 @@ public class SimulationController {
         return ResponseEntity.ok(kpiService.findBySimulation(id));
     }
 
+    @GetMapping("/active")
+    public ResponseEntity<SimulationDto> getActive() {
+        log.debug("ACTION get_active_simulation");
+        return simulationService.findAll().stream()
+                .filter(s -> "PLAYING".equals(s.getStatus())
+                        || "PAUSED".equals(s.getStatus())
+                        || "BUFFERING".equals(s.getStatus()))
+                .findFirst()
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.noContent().build());
+    }
+
     @DeleteMapping("/reset")
     public ResponseEntity<Void> resetSimulations() {
         log.info("ACTION reset_simulations");

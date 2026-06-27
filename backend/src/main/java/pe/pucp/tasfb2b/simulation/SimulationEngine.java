@@ -18,10 +18,8 @@ import pe.pucp.tasfb2b.websocket.WebSocketEventPublisher;
 
 import java.math.BigDecimal; 
 import java.math.RoundingMode;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -99,15 +97,6 @@ public class SimulationEngine {
 
             sim.setSimulatedTime(simNow);
             simulationRepo.save(sim);
-
-            // 0. Reset flights at day boundary (recurring daily schedules)
-            LocalDate simDate = simNow.toLocalDate();
-            if (state.lastResetDate == null) {
-                state.lastResetDate = simDate;
-            } else if (simDate.isAfter(state.lastResetDate)) {
-                resetFlightsForNewDay(simDate);
-                state.lastResetDate = simDate;
-            }
 
             // 1. Land arrived flights
             long t0 = System.currentTimeMillis();
@@ -489,11 +478,10 @@ public class SimulationEngine {
         long delayedBags   = batchRepo.sumQuantityByStatus(BatchStatus.DELAYED);
         long waitingBags   = batchRepo.sumQuantityByStatus(BatchStatus.IN_ORIGIN);
 
-        // Shipment status counts for sidebar
+        // Shipment status counts for sidebar — countByStatus evita cargar entidades completas
         Map<String, Long> shipmentCounts = new HashMap<>();
         for (BatchStatus bs : BatchStatus.values()) {
-            long count = batchRepo.findByStatus(bs).size();
-            shipmentCounts.put(bs.name(), count);
+            shipmentCounts.put(bs.name(), batchRepo.countByStatus(bs));
         }
 
         SimulationTickEvent event = SimulationTickEvent.builder()
@@ -526,23 +514,6 @@ public class SimulationEngine {
                 System.currentTimeMillis() - pubStart);
     }
 
-    private void resetFlightsForNewDay(LocalDate simDate) {
-        List<Flight> toReset = new ArrayList<>();
-        toReset.addAll(flightRepo.findByStatus(FlightStatus.LANDED));
-        toReset.addAll(flightRepo.findByStatus(FlightStatus.CANCELLED));
-        for (Flight f : toReset) {
-            long days = ChronoUnit.DAYS.between(f.getDepartureTime().toLocalDate(), simDate);
-            if (days > 0) {
-                f.setDepartureTime(f.getDepartureTime().plusDays(days));
-                f.setArrivalTime(f.getArrivalTime().plusDays(days));
-            }
-            f.setStatus(FlightStatus.SCHEDULED);
-            f.setCurrentLoad(0);
-        }
-        flightRepo.saveAll(toReset);
-        log.info("[SIM] Reseteo diario: {} vuelos vuelven a SCHEDULED para {}", toReset.size(), simDate);
-    }
-
     private void recordStatusChange(Shipment shipment, String oldStatus, String newStatus,
                                      Airport airport, LocalDateTime changedAt) {
         ShipmentStatusHistory history = new ShipmentStatusHistory(
@@ -558,7 +529,7 @@ public class SimulationEngine {
         final SimulationClock clock;
         final long startMillis;
         final Random rng;
-        LocalDate lastResetDate;
+
 
         SimulationRuntimeState(SimulationClock clock, long startMillis, Random rng) {
             this.clock = clock;

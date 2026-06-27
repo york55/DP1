@@ -17,11 +17,14 @@ import pe.pucp.tasfb2b.mapper.ShipmentMapper;
 import pe.pucp.tasfb2b.repository.*;
 import pe.pucp.tasfb2b.simulation.EnvioStore;
 import pe.pucp.tasfb2b.simulation.RawEnvio;
-
+import org.springframework.beans.factory.annotation.Value;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -29,6 +32,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -368,6 +372,144 @@ public class ShipmentService {
 
         log.info("Batches creados desde store: {}", totalInserted);
     }
+
+    // ── NUEVO: leer desde archivos en disco en lugar del EnvioStore ───────────
+
+    @Value("${tasf.uploads.dir:uploads}")
+    private String uploadsDir;
+
+    /**
+     * Alternativa a crearBatchesDesdeStoreAsync: lee los archivos .txt
+     * de la carpeta uploads/ filtrando por rango durante la lectura,
+     * sin cargar todo en memoria. El resto del flujo es idéntico.
+     */
+    @Async
+    @Transactional
+    public void crearBatchesDesdeArchivosAsync(int periodo, LocalDateTime startDate) {
+        LocalDateTime endDate = startDate.plusDays(periodo);
+        log.info("Creando batches desde archivos. Rango: {} -> {}", startDate, endDate);
+
+        Path uploadsPath = Paths.get(uploadsDir).toAbsolutePath().normalize();
+
+        List<Path> archivos;
+        try (Stream<Path> stream = Files.list(uploadsPath)) {
+            archivos = stream
+                    .filter(p -> p.getFileName().toString().endsWith(".txt"))
+                    .sorted()
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            sendError("No se pudo leer la carpeta de uploads: " + e.getMessage(), "__FILES__");
+            return;
+        }
+
+        if (archivos.isEmpty()) {
+            messagingTemplate.convertAndSend("/topic/shipments/progress",
+                    new UploadProgressDto(0, 0, "ALL_COMPLETED",
+                            "No hay archivos en uploads.", "__ALL__", 0));
+            return;
+        }
+
+        Airline airline = airlineRepo.findAll().stream().findFirst().orElse(null);
+        if (airline == null) {
+            sendError("No hay aerolíneas registradas.", "__FILES__");
+            return;
+        }
+
+        Map<String, Airport> airportCache = new HashMap<>();
+        int batchSize = 1000;
+        List<BaggageBatch> buffer = new ArrayList<>(batchSize);
+        int totalInserted = 0;
+        Pattern iataPattern = Pattern.compile("envios_([A-Za-z]{4})_");
+
+        for (Path archivo : archivos) {
+            String filename = archivo.getFileName().toString();
+            Matcher m = iataPattern.matcher(filename);
+            if (!m.find()) {
+                log.warn("No se pudo extraer IATA de: {}", filename);
+                continue;
+            }
+            String originIata = m.group(1).toUpperCase();
+            int insertedForOrigin = 0;
+
+            messagingTemplate.convertAndSend("/topic/shipments/progress",
+                    new UploadProgressDto(0, 0, "IN_PROGRESS",
+                            "Procesando " + originIata + "...", originIata, 0));
+
+            try (BufferedReader reader = Files.newBufferedReader(archivo, StandardCharsets.UTF_8)) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    line = line.trim();
+                    if (line.isEmpty()) continue;
+
+                    // Formato: 000000001-20260102-00-47-SUAA-002-0032535
+                    String[] parts = line.split("-");
+                    if (parts.length < 6) continue;
+
+                    try {
+                        String dateStr = parts[1];
+                        int year  = Integer.parseInt(dateStr.substring(0, 4));
+                        int month = Integer.parseInt(dateStr.substring(4, 6));
+                        int day   = Integer.parseInt(dateStr.substring(6, 8));
+                        int hour  = Integer.parseInt(parts[2]);
+                        int min   = Integer.parseInt(parts[3]);
+                        String destIata = parts[4];
+                        int qty   = Integer.parseInt(parts[5]);
+
+                        LocalDateTime availableFrom = LocalDateTime.of(year, month, day, hour, min);
+
+                        if (availableFrom.isBefore(startDate)) continue;
+                        if (availableFrom.isAfter(endDate)) break; // asume archivos ordenados por fecha
+
+                        Airport origin = airportCache.computeIfAbsent(originIata,
+                                k -> airportRepo.findByIataCode(k).orElse(null));
+                        Airport dest = airportCache.computeIfAbsent(destIata,
+                                k -> airportRepo.findByIataCode(k).orElse(null));
+
+                        if (origin != null && dest != null) {
+                            BaggageBatch batch = new BaggageBatch();
+                            batch.setAirline(airline);
+                            batch.setOriginAirport(origin);
+                            batch.setDestinationAirport(dest);
+                            batch.setQuantity(qty);
+                            batch.setAvailableFrom(availableFrom);
+                            batch.setStatus(BatchStatus.IN_ORIGIN);
+                            buffer.add(batch);
+                            insertedForOrigin++;
+                        }
+
+                        if (buffer.size() >= batchSize) {
+                            batchRepo.saveAll(buffer);
+                            buffer.clear();
+                        }
+
+                    } catch (Exception ex) {
+                        log.trace("Línea inválida ignorada en {}: {}", filename, line);
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Error leyendo archivo {}: {}", filename, e.getMessage());
+                sendError("Error leyendo " + filename + ": " + e.getMessage(), originIata);
+                continue;
+            }
+
+            totalInserted += insertedForOrigin;
+            messagingTemplate.convertAndSend("/topic/shipments/progress",
+                    new UploadProgressDto(insertedForOrigin, insertedForOrigin, "COMPLETED",
+                            "Completado: " + insertedForOrigin + " batches", originIata, insertedForOrigin));
+        }
+
+        if (!buffer.isEmpty()) {
+            batchRepo.saveAll(buffer);
+        }
+
+        messagingTemplate.convertAndSend("/topic/shipments/progress",
+                new UploadProgressDto(totalInserted, totalInserted, "ALL_COMPLETED",
+                        "Todos los batches creados: " + totalInserted, "__ALL__", totalInserted));
+
+        log.info("Batches creados desde archivos en disco: {}", totalInserted);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
 
     private void sendError(String message, String aeropuerto) {
         messagingTemplate.convertAndSend("/topic/shipments/progress",

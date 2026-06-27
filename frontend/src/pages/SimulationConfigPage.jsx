@@ -100,8 +100,15 @@ function SummaryCard({ label, value, color = '#1F3864' }) {
 
 export default function SimulationConfigPage() {
   const navigate = useNavigate()
-  const { startSimulation } = useSimulationContext()
+  const { startSimulation, resetSimulation } = useSimulationContext()
   const utcClock = useClock()
+
+  // Limpiar estado del contexto al entrar a config — por si había una sim
+  // anterior en memoria (ej. el usuario volvió desde summary o F5)
+  useEffect(() => {
+    resetSimulation()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [period] = useState('5')
   const [startDate, setStartDate] = useState()
@@ -115,6 +122,7 @@ export default function SimulationConfigPage() {
   const [isWaitingToStart, setIsWaitingToStart] = useState(false)
 
   const [storeStatus, setStoreStatus] = useState(null)
+  const [uploadedFiles, setUploadedFiles] = useState([])
   const [batchProgressMap, setBatchProgressMap] = useState({})
 
   // Resizable panel state
@@ -150,20 +158,24 @@ export default function SimulationConfigPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [airportsRes, flightsRes, storeRes, flightPlansRes] = await Promise.all([
+        const [airportsRes, flightsRes, storeRes, flightPlansRes, uploadsRes] = await Promise.all([
           apiClient.get('/airports'),
           apiClient.get('/flights'),
           apiClient.get('/envios/estado'),
           apiClient.get('/flight-plans'),
+          apiClient.get('/sim/uploads/archivos'),
         ])
 
         setAirports(airportsRes.data.map((a) => ({
           ...a, lat: a.latitude, lon: a.longitude,
           maxCapacity: a.warehouseCapacity, occupancy: a.currentOccupancy,
         })))
-        setFlights(flightsRes.data)
+        // Solo mostrar vuelos plantilla (frequency=DAILY), no las instancias
+        // generadas por corridas anteriores que aún no fueron limpiadas
+        setFlights(flightsRes.data.filter(f => f.frequency === 'DAILY' || !f.frequency))
         setFlightScheduleCount(flightPlansRes.data.length)
         setStoreStatus(storeRes.data)
+        setUploadedFiles(uploadsRes.data)
       } catch (err) {
         console.error('Error fetching simulation data:', err)
       } finally {
@@ -228,8 +240,8 @@ export default function SimulationConfigPage() {
       alert('Por favor, seleccione la fecha de inicio.')
       return
     }
-    if (!storeStatus?.loaded) {
-      alert('No hay envíos cargados en memoria. Ve al módulo de Gestión de Envíos y carga los archivos primero.')
+    if (!uploadedFiles.length) {
+      alert('No hay archivos de envíos subidos. Ve a Gestión de Envíos y sube los archivos primero.')
       return
     }
 
@@ -250,7 +262,7 @@ export default function SimulationConfigPage() {
         dateStr = String(startDate)
       }
 
-      await apiClient.post(`/batches/from-store?periodo=${period}&startDate=${dateStr}`)
+      await apiClient.post(`/batches/from-files?periodo=${period}&startDate=${dateStr}`)
     } catch (err) {
       console.error('Error iniciando:', err)
       const detail = err.response?.data?.error || err.response?.data?.mensaje || err.message
@@ -358,20 +370,18 @@ export default function SimulationConfigPage() {
                 Datos de Envíos
               </Typography>
 
-              {storeStatus?.loaded ? (
+              {uploadedFiles.length > 0 ? (
                 <Paper elevation={0}
                   sx={{ p: 1.5, border: '1px solid #A5D6A7', borderRadius: 1, backgroundColor: '#F1F8E9' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <InventoryIcon sx={{ fontSize: 18, color: '#2E7D32' }} />
                     <Box sx={{ flex: 1 }}>
                       <Typography sx={{ fontSize: '0.78rem', fontWeight: 700, color: '#2E7D32' }}>
-                        {storeStatus.totalCount.toLocaleString()} envíos en memoria
+                        {uploadedFiles.length} archivo{uploadedFiles.length !== 1 ? 's' : ''} disponibles en servidor
                       </Typography>
-                      {storeStatus.minDate && (
-                        <Typography variant="caption" sx={{ color: '#558B2F', fontSize: '0.68rem' }}>
-                          {storeStatus.minDate} → {storeStatus.maxDate}
-                        </Typography>
-                      )}
+                      <Typography variant="caption" sx={{ color: '#558B2F', fontSize: '0.68rem' }}>
+                        Se leerá solo el rango seleccionado al iniciar
+                      </Typography>
                     </Box>
                     <Chip label="Listo" size="small"
                       sx={{ backgroundColor: '#C8E6C9', color: '#1B5E20', fontWeight: 700, fontSize: '0.62rem' }} />
@@ -386,7 +396,7 @@ export default function SimulationConfigPage() {
                       </IconButton>
                     </Tooltip>
                   }>
-                  Sin datos cargados. Carga los archivos primero.
+                  Sin archivos subidos. Sube los archivos primero.
                 </Alert>
               )}
 
@@ -431,8 +441,8 @@ export default function SimulationConfigPage() {
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                 <SummaryCard label="Aeropuertos" value={airports.length} color="#1F3864" />
                 <SummaryCard label="Vuelos" value={periodFlightCount} color="#2E75B6" />
-                <SummaryCard label="Envíos en store"
-                  value={storeStatus?.totalCount ? storeStatus.totalCount.toLocaleString() : '—'}
+                <SummaryCard label="Archivos subidos"
+                  value={uploadedFiles.length || '—'}
                   color="#2E7D32" />
               </Box>
             </Box>

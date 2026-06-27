@@ -15,7 +15,9 @@ import pe.pucp.tasfb2b.planner.alns.AlnsEngine;
 import pe.pucp.tasfb2b.planner.alns.AlnsParams;
 import pe.pucp.tasfb2b.repository.*;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -72,20 +74,33 @@ public class PlannerService {
     }
 
     public void persistRoutes(OptimizationResult result) {
-        for (Route route : result.routes()) {
-            Shipment shipment = route.getShipment();
-            shipment.setStatus(ShipmentStatus.PLANNED);
+        if (result.routes().isEmpty()) return;
 
-            Shipment saved = shipmentRepo.save(shipment);
-            route.setShipment(saved);
+        // Guardar todos los shipments en un solo batch
+        List<Shipment> shipments = result.routes().stream()
+                .map(Route::getShipment)
+                .peek(s -> s.setStatus(ShipmentStatus.PLANNED))
+                .collect(Collectors.toList());
+        List<Shipment> savedShipments = shipmentRepo.saveAll(shipments);
 
-            Route savedRoute = routeRepo.save(route);
+        // Asociar shipments guardados a sus routes
+        List<Route> routes = result.routes();
+        for (int i = 0; i < routes.size(); i++) {
+            routes.get(i).setShipment(savedShipments.get(i));
+        }
 
-            for (RouteLeg leg : route.getLegs()) {
+        // Guardar todas las routes en un solo batch
+        List<Route> savedRoutes = routeRepo.saveAll(routes);
+
+        // Recopilar y guardar todos los legs en un solo batch
+        List<RouteLeg> allLegs = new ArrayList<>();
+        for (Route savedRoute : savedRoutes) {
+            for (RouteLeg leg : savedRoute.getLegs()) {
                 leg.setRoute(savedRoute);
-                routeLegRepo.save(leg);
+                allLegs.add(leg);
             }
         }
+        routeLegRepo.saveAll(allLegs);
     }
 
     public AlnsParams buildAlnsParams(Simulation sim) {

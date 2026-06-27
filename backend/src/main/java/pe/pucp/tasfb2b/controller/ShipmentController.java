@@ -69,6 +69,19 @@ public class ShipmentController {
         return ResponseEntity.status(202).body(Map.of("mensaje", "Creación de batches iniciada"));
     }
 
+    // NUEVO: usa archivos en disco en lugar del EnvioStore en memoria
+    @PostMapping("/batches/from-files")
+    public ResponseEntity<Map<String, Object>> fromFiles(
+            @RequestParam("periodo") int periodo,
+            @RequestParam("startDate")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            LocalDateTime startDate) {
+
+        log.info("ACTION from_files periodo={} startDate={}", periodo, startDate);
+        shipmentService.crearBatchesDesdeArchivosAsync(periodo, startDate);
+        return ResponseEntity.status(202).body(Map.of("mensaje", "Creación de batches desde archivos iniciada"));
+    }
+
    @PostMapping("/batches/upload")
     public ResponseEntity<Map<String, Object>> uploadBatches(
             @RequestParam("file") MultipartFile file,

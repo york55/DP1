@@ -18,6 +18,7 @@ import pe.pucp.tasfb2b.exception.SimulationNotFoundException;
 import pe.pucp.tasfb2b.mapper.SimulationMapper;
 import pe.pucp.tasfb2b.repository.*;
 import pe.pucp.tasfb2b.simulation.BlockOrchestrator;
+import pe.pucp.tasfb2b.simulation.EnvioStore;
 import pe.pucp.tasfb2b.simulation.SimulationEngine;
 
 import java.math.BigDecimal;
@@ -42,6 +43,7 @@ public class SimulationService {
     private final BlockOrchestrator blockOrchestrator;
     private final KpiService kpiService;
     private final SimulationMapper simulationMapper;
+    private final EnvioStore envioStore;
 
     private final RouteRepository routeRepo;
     private final RouteLegRepository routeLegRepo;
@@ -260,13 +262,19 @@ public class SimulationService {
         // 6. Reset Airport
         airportRepo.resetAllOccupancies();
 
-        // 7. Reset Flight
-        List<Flight> flights = flightRepo.findAll();
-        for (Flight f : flights) {
+        // 7. Eliminar vuelos instanciados (frequency=INSTANCE) generados por simulaciones anteriores
+        flightRepo.deleteAllInstances();
+
+        // 8. Reset vuelos plantilla (frequency=DAILY) a estado inicial
+        List<Flight> templates = flightRepo.findByFrequency("DAILY");
+        for (Flight f : templates) {
             f.setStatus(FlightStatus.SCHEDULED);
             f.setCurrentLoad(0);
         }
-        flightRepo.saveAll(flights);
+        flightRepo.saveAll(templates);
+
+        // 9. Limpiar el store en memoria de envíos crudos
+        envioStore.clear();
 
         log.info("ACTION hard_reset COMPLETADO");
     }

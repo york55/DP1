@@ -40,6 +40,8 @@ public interface BaggageBatchRepository extends JpaRepository<BaggageBatch, Long
     @Query("SELECT COALESCE(SUM(b.quantity), 0) FROM BaggageBatch b")
     long sumAllQuantity();
 
+    long countByStatus(BatchStatus status);
+
     @Modifying
     @Query("UPDATE BaggageBatch b SET b.status = 'IN_ORIGIN'")
     void resetAllToInOrigin();

@@ -84,6 +84,27 @@ export default function SimulationRunningPage() {
     }
   }, [status, navigate])
 
+  // ── Cross-PC / F5 guard ──────────────────────────────────────────────────
+  // El hook ya intenta reconectarse al montar (reconnect en useEffect).
+  // Este efecto actúa como safety-net: si después de un breve margen el
+  // estado sigue en 'idle' significa que no había nada activo en el backend
+  // y el usuario llegó aquí directamente — lo mandamos al inicio.
+  const statusAtMountRef = useRef(status)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // Leer el status actual via ref para no re-ejecutar el efecto en cada cambio
+      if (statusAtMountRef.current === 'idle') {
+        navigate('/')
+      }
+    }, 2500)
+    return () => clearTimeout(timer)
+  }, [navigate])
+
+  // Mantener el ref actualizado
+  useEffect(() => {
+    statusAtMountRef.current = status
+  }, [status])
+
   const delayedCount = React.useMemo(() =>
     shipments.filter(s => s.status === 'DELAYED').length,
     [shipments]

@@ -47,3 +47,5 @@ tasfb2b-alns/tasf-b2b-backend/results/*.json
 # H2 embedded database files (local dev DB — do not commit)
 tasfb2b-main/backend/data/*.mv.db
 tasfb2b-main/backend/data/*.trace.db
+
+backend/uploads/

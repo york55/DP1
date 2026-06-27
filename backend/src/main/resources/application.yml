@@ -31,6 +31,8 @@ spring:
     allowed-origins: ${WS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000,http://localhost:4173}
 
 tasf:
+  uploads:
+    dir: uploads
   simulation:
     tick-interval-ms: 1000
     tick-duration-minutes: 5     # 1 real second = 5 simulated minutes -> 24 ticks (24s) per 2h block, enough margin over ALNS background planning time

@@ -627,117 +627,131 @@ export function useSimulation() {
     setNotifications([])
   }, [])
 
-  // On mount: reconnect to any active simulation (handles F5 and new clients)
+  // ── attachToSimulation ───────────────────────────────────────────────────────
+  // Recibe un SimulationDto ya existente (del backend) y engancha el contexto
+  // local a él: carga airports/flights, setea estado y suscribe el WebSocket.
+  // Es el mismo flujo que reconnect(), pero llamable externamente (cross-PC attach,
+  // F5, regreso desde otra pestaña, etc.).
+  const attachToSimulation = useCallback(async (active) => {
+    try {
+      simIdRef.current = active.id
+      const simTime = active.simulatedTime
+        ? new Date(active.simulatedTime)
+        : new Date(active.startDate)
+      simTimeRef.current = simTime
+      const frontendStatus = active.status === 'PLAYING' ? 'running'
+        : active.status === 'BUFFERING' ? 'planning'
+          : active.status === 'FINISHED' ? 'finished'
+            : 'paused'
+      statusRef.current = frontendStatus
+
+      const [realAirports, realFlights] = await Promise.allSettled([
+        airportApi.getAll(),
+        flightApi.getAll(null, true),
+      ])
+
+      const nextAirports = realAirports.status === 'fulfilled'
+        ? realAirports.value.map(a => ({
+          ...a,
+          iata: a.iata || a.iataCode,
+          iataCode: a.iata || a.iataCode,
+          lat: a.latitude,
+          lon: a.longitude,
+          occupancy: a.occupancyPct || 0,
+        }))
+        : []
+
+      const nextFlights = realFlights.status === 'fulfilled'
+        ? realFlights.value.map(f => ({
+          ...f,
+          origin: f.originIata,
+          destination: f.destinationIata,
+          departureUTC: f.departureTime ? (String(f.departureTime).endsWith('Z') ? f.departureTime : f.departureTime + 'Z') : null,
+          arrivalUTC: f.arrivalTime ? (String(f.arrivalTime).endsWith('Z') ? f.arrivalTime : f.arrivalTime + 'Z') : null,
+          capacity: f.baggageCapacity,
+          bagsAboard: f.currentLoad,
+          airline: f.airlineName || f.airlineIata || '—',
+          backendId: f.id,
+        }))
+        : []
+
+      setSimulationData(prev => ({ ...prev, airports: nextAirports, flights: nextFlights }))
+
+      if (frontendStatus !== 'planning') {
+        firstBatchReadyRef.current = true
+        setFirstBatchReady(true)
+      }
+
+      let currentDay = 1
+      if (active.simulatedTime && active.startDate) {
+        const start = new Date(active.startDate)
+        start.setUTCHours(0, 0, 0, 0)
+        const current = new Date(active.simulatedTime)
+        const diffDays = Math.floor((current.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+        currentDay = diffDays + 1
+      }
+
+      setSimulationState({
+        status: frontendStatus,
+        simulatedTime: simTime,
+        currentDay,
+        elapsedSeconds: 0,
+        config: { period: active.periodDays, startDate: new Date(active.startDate) },
+        simulationId: active.id,
+      })
+
+      if (frontendStatus === 'finished') {
+        try {
+          const kpiList = await simulationApi.getKpis(active.id)
+          if (kpiList && kpiList.length > 0) {
+            const latest = kpiList[kpiList.length - 1]
+            setSimulationData(prev => ({
+              ...prev,
+              kpis: {
+                ...prev.kpis,
+                onTimeDeliveryPct: latest.onTimePct ?? 100,
+                avgFlightOccupancy: latest.avgFlightOccupancy ?? 0,
+                avgWarehouseOccupancy: latest.avgWarehouseOccupancy ?? 0,
+                totalDelayedBags: latest.delayedCount ?? 0,
+              }
+            }))
+          }
+        } catch (e) {
+          console.error('Error fetching final KPIs:', e)
+        }
+      }
+
+      await loadShipments()
+      if (shipmentPollRef.current) clearInterval(shipmentPollRef.current)
+      shipmentPollRef.current = setInterval(loadShipments, 5000)
+      if (flightPollRef.current) clearInterval(flightPollRef.current)
+      flightPollRef.current = setInterval(refreshInFlightFlights, 5000)
+
+      if (active.status === 'PLAYING' || active.status === 'BUFFERING' || active.status === 'PAUSED') {
+        connectSimulationWebSocket(active.id, handleTickEvent, handleAlert, handlePlanProgress)
+      }
+
+      simLogger.info(`Enganchado a simulación ID=${active.id}, estado=${active.status}`)
+    } catch (e) {
+      simLogger.warn('attachToSimulation error: ' + (e?.message ?? e))
+    }
+  }, [handleTickEvent, handleAlert, handlePlanProgress, loadShipments, refreshInFlightFlights])
+
+  // On mount: reconnect to any active simulation (handles F5, new tabs, cross-PC).
+  // Usa el mismo attachToSimulation para no duplicar lógica.
   useEffect(() => {
     async function reconnect() {
       try {
         const sims = await simulationApi.getAll()
-        const actives = sims.filter(s => ['PLAYING', 'BUFFERING', 'PAUSED', 'FINISHED'].includes(s.status))
+        const actives = sims.filter(s => ['PLAYING', 'BUFFERING', 'PAUSED'].includes(s.status))
         if (!actives.length) return
-        const active = actives[actives.length - 1]
-
-        simIdRef.current = active.id
-        const simTime = active.simulatedTime
-          ? new Date(active.simulatedTime)
-          : new Date(active.startDate)
-        simTimeRef.current = simTime
-        const frontendStatus = active.status === 'PLAYING' ? 'running'
-          : active.status === 'BUFFERING' ? 'planning'
-            : active.status === 'FINISHED' ? 'finished'
-              : 'paused'
-        statusRef.current = frontendStatus
-
-        const [realAirports, realFlights] = await Promise.allSettled([
-          airportApi.getAll(),
-          flightApi.getAll(null, true),
-        ])
-
-        const nextAirports = realAirports.status === 'fulfilled'
-          ? realAirports.value.map(a => ({
-            ...a,
-            iata: a.iata || a.iataCode,
-            iataCode: a.iata || a.iataCode,
-            lat: a.latitude,
-            lon: a.longitude,
-            occupancy: a.occupancyPct || 0,
-          }))
-          : []
-
-        const nextFlights = realFlights.status === 'fulfilled'
-          ? realFlights.value.map(f => ({
-            ...f,
-            origin: f.originIata,
-            destination: f.destinationIata,
-            departureUTC: f.departureTime ? (String(f.departureTime).endsWith('Z') ? f.departureTime : f.departureTime + 'Z') : null,
-            arrivalUTC: f.arrivalTime ? (String(f.arrivalTime).endsWith('Z') ? f.arrivalTime : f.arrivalTime + 'Z') : null,
-            capacity: f.baggageCapacity,
-            bagsAboard: f.currentLoad,
-            airline: f.airlineName || f.airlineIata || '—',
-            backendId: f.id,
-          }))
-          : []
-
-        setSimulationData(prev => ({ ...prev, airports: nextAirports, flights: nextFlights }))
-        if (frontendStatus !== 'planning') {
-          firstBatchReadyRef.current = true
-          setFirstBatchReady(true)
-        }
-        let currentDay = 1;
-        if (active.simulatedTime && active.startDate) {
-          const start = new Date(active.startDate);
-          start.setUTCHours(0,0,0,0);
-          const current = new Date(active.simulatedTime);
-          const diffDays = Math.floor((current.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-          currentDay = diffDays + 1;
-        }
-
-        setSimulationState({
-          status: frontendStatus,
-          simulatedTime: simTime,
-          currentDay: currentDay,
-          elapsedSeconds: 0,
-          config: { period: active.periodDays, startDate: new Date(active.startDate) },
-          simulationId: active.id,
-        })
-
-        if (frontendStatus === 'finished') {
-          try {
-            const kpiList = await simulationApi.getKpis(active.id)
-            if (kpiList && kpiList.length > 0) {
-              const latest = kpiList[kpiList.length - 1]
-              setSimulationData(prev => ({
-                ...prev,
-                kpis: {
-                  ...prev.kpis,
-                  onTimeDeliveryPct: latest.onTimePct ?? 100,
-                  avgFlightOccupancy: latest.avgFlightOccupancy ?? 0,
-                  avgWarehouseOccupancy: latest.avgWarehouseOccupancy ?? 0,
-                  totalDelayedBags: latest.delayedCount ?? 0,
-                }
-              }))
-            }
-          } catch (e) {
-            console.error('Error fetching final KPIs:', e)
-          }
-        }
-
-        await loadShipments()
-        if (shipmentPollRef.current) clearInterval(shipmentPollRef.current)
-        shipmentPollRef.current = setInterval(loadShipments, 5000)
-        if (flightPollRef.current) clearInterval(flightPollRef.current)
-        flightPollRef.current = setInterval(refreshInFlightFlights, 5000)
-
-        if (active.status === 'PLAYING' || active.status === 'BUFFERING' || active.status === 'PAUSED') {
-          connectSimulationWebSocket(active.id, handleTickEvent, handleAlert, handlePlanProgress)
-        }
-
-        simLogger.info(`Reconectado a simulación activa ID=${active.id}, estado=${active.status}`)
+        await attachToSimulation(actives[actives.length - 1])
       } catch (e) {
         // No active simulation found or backend unavailable — stay idle
       }
     }
     reconnect()
-  }, [handleTickEvent, handleAlert, loadShipments]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [attachToSimulation]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const matchesSemaphore = (pct, filter) => {
     if (filter === 'ALL') return true
@@ -835,6 +849,7 @@ export function useSimulation() {
     resetSimulation,
     cancelSimulation,
     dismissNotification,
+    attachToSimulation,
 
     // Selection states
     selectedAirportCode,
@@ -868,4 +883,3 @@ export function useSimulation() {
     filteredFlights,
   }
 }
-
