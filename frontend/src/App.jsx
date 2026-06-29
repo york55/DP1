@@ -15,7 +15,7 @@ export default function App() {
       <LocalizationProvider dateAdapter={AdapterDateFns}>
         <SimulationProvider>
           <AppRouter />
-          <DevFooter />
+          {/* <DevFooter /> */}
         </SimulationProvider>
       </LocalizationProvider>
     </ThemeProvider>
