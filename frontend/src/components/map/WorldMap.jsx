@@ -1,13 +1,39 @@
 import { useMemo, useEffect, useRef, useState } from 'react'
 import { MapContainer, TileLayer, useMap } from 'react-leaflet'
+import L from 'leaflet'
 import Box from '@mui/material/Box'
+import Paper from '@mui/material/Paper'
+import IconButton from '@mui/material/IconButton'
+import CloseIcon from '@mui/icons-material/Close'
+import FlightMapPopup from './FlightMapPopup'
 import AirportMarker from './AirportMarker'
 import FlightRoute from './FlightRoute'
 import PlaneCanvasLayer from './PlaneCanvasLayer'
 import MapLegend from './MapLegend'
+import MapFilterPanel from './MapFilterPanel'
+import AirportMapPopup from './AirportMapPopup'
 import { useSimulationContext } from '../../context/SimulationContext'
 import { initPlaneIcons } from './planeIcon'
 import { initWarehouseIcons } from './warehouseIcons'
+
+const EMPTY_FILTERS = {
+  flightSemaphore: new Set(),
+  flightStatus: new Set(),
+  warehouseSemaphore: new Set(),
+  warehouseRegion: new Set(),
+}
+
+function getFlightSemaphoreKey(pct) {
+  if (pct < 25) return 'green'
+  if (pct < 50) return 'yellow'
+  if (pct < 75) return 'orange'
+  if (pct < 90) return 'deepOrange'
+  return 'red'
+}
+
+function getAirportSemaphoreKey(pct) {
+  return getFlightSemaphoreKey(pct)
+}
 
 function MapFocusController() {
   const map = useMap()
@@ -21,7 +47,7 @@ function MapFocusController() {
   }
   if (!context) return null
 
-  const { selectedAirportCode, selectedFlightId, airportsWithTimes, flights } = context
+  const { selectedAirportCode, selectedFlightId, airportsWithTimes, flights, simulationState } = context
 
   useEffect(() => {
     if (!selectedAirportCode) {
@@ -43,14 +69,31 @@ function MapFocusController() {
     }
     if (selectedFlightId === lastCenteredFlight.current) return
     const fl = flights.find(f => String(f.id) === String(selectedFlightId))
-    if (fl) {
-      const orig = airportsWithTimes.find(a => (a.iata || a.iataCode) === fl.origin)
-      const dest = airportsWithTimes.find(a => (a.iata || a.iataCode) === fl.destination)
-      if (orig && dest) {
-        lastCenteredFlight.current = selectedFlightId
-        map.setView([(orig.lat + dest.lat) / 2, (orig.lon + dest.lon) / 2], 4)
+    if (!fl) return
+    const orig = airportsWithTimes.find(a => (a.iata || a.iataCode) === fl.origin)
+    const dest = airportsWithTimes.find(a => (a.iata || a.iataCode) === fl.destination)
+    if (!orig || !dest) return
+    lastCenteredFlight.current = selectedFlightId
+
+    // For in-flight planes: interpolate actual current position in Mercator space
+    if (fl.status === 'IN_FLIGHT' && fl.departureUTC && fl.arrivalUTC && simulationState?.simulatedTime) {
+      const dep = new Date(fl.departureUTC).getTime()
+      const arr = new Date(fl.arrivalUTC).getTime()
+      const now = new Date(simulationState.simulatedTime).getTime()
+      if (arr > dep) {
+        const t = Math.max(0, Math.min(1, (now - dep) / (arr - dep)))
+        const p1 = L.Projection.SphericalMercator.project({ lat: orig.lat, lng: orig.lon })
+        const p2 = L.Projection.SphericalMercator.project({ lat: dest.lat, lng: dest.lon })
+        const ll = L.Projection.SphericalMercator.unproject({
+          x: p1.x + (p2.x - p1.x) * t,
+          y: p1.y + (p2.y - p1.y) * t,
+        })
+        map.panTo([ll.lat, ll.lng])
+        return
       }
     }
+    // Fallback (SCHEDULED / no time data): center between airports
+    map.setView([(orig.lat + dest.lat) / 2, (orig.lon + dest.lon) / 2], 4)
   }, [selectedFlightId, flights, airportsWithTimes, map])
 
   return null
@@ -81,6 +124,24 @@ function AirportPaneSetup() {
   return null
 }
 
+// Updates the airport popup overlay position imperatively on pan/zoom.
+function MapAirportTracker({ airport, popupRef }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!airport) return
+    function update() {
+      const el = popupRef.current
+      if (!el) return
+      const pt = map.latLngToContainerPoint([airport.lat, airport.lon])
+      el.style.left = pt.x + 'px'
+      el.style.top = pt.y + 'px'
+    }
+    map.on('move zoom moveend zoomend viewreset', update)
+    return () => map.off('move zoom moveend zoomend viewreset', update)
+  }, [map, airport, popupRef])
+  return null
+}
+
 /**
  * WorldMap — renders the full interactive world map with airports and flight routes.
  * @param {Array} airports - array of airport objects (with live occupancy)
@@ -97,6 +158,27 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
     Promise.all([initPlaneIcons(), initWarehouseIcons()]).then(() => setIconsVersion(1))
   }, [])
 
+  const [mapFilters, setMapFilters] = useState(EMPTY_FILTERS)
+
+  // Plane click overlay — rendered outside MapContainer so it sits above the canvas
+  const [activePlane, setActivePlane] = useState(null) // { flight, x, y }
+  const planePopupRef = useRef(null)
+  const activePlaneFlightId = activePlane?.flight?.id ?? null
+
+  // Airport click overlay — same pattern, static position tracked on pan/zoom
+  const [activeAirport, setActiveAirport] = useState(null) // { airport, semaphore, incomingCount, outgoingCount, x, y }
+  const airportPopupRef = useRef(null)
+
+  // Mutual-exclusion handlers: opening one popup closes the other
+  function handlePlaneClick(data) {
+    setActivePlane(data)
+    if (data) setActiveAirport(null)
+  }
+  function handleAirportSelect(data) {
+    setActiveAirport(data)
+    if (data) setActivePlane(null)
+  }
+
   let context = null
   try {
     context = useSimulationContext()
@@ -104,10 +186,49 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
     // context not available
   }
 
-  const airports = staticAirports ?? (context ? context.filteredAirports : propsAirports)
-  const flights = context ? context.filteredFlights : propsFlights
+  const baseAirports = staticAirports ?? (context ? context.filteredAirports : propsAirports)
+  const baseFlights = context ? context.filteredFlights : propsFlights
 
-  // Show all IN_FLIGHT flights with valid airport assignments.
+  // Unique continent values for region chips — derived from live airport data.
+  // 'unknown' from the DB is normalized to 'Sudamérica' (matches useSimulation patch).
+  const normalizeContinent = (c) =>
+    (!c || c.toLowerCase() === 'unknown') ? 'Sudamérica' : c
+
+  const regionOptions = useMemo(() =>
+    [...new Set(baseAirports.map(a => normalizeContinent(a.continent)).filter(Boolean))].sort()
+  , [baseAirports])
+
+  // Apply local map filters on top of context/sidebar filters
+  const airports = useMemo(() => {
+    const { warehouseSemaphore, warehouseRegion } = mapFilters
+    if (!warehouseSemaphore.size && !warehouseRegion.size) return baseAirports
+    return baseAirports.filter(a => {
+      if (warehouseSemaphore.size && !warehouseSemaphore.has(getAirportSemaphoreKey(a.occupancy ?? 0))) return false
+      if (warehouseRegion.size && !warehouseRegion.has(normalizeContinent(a.continent))) return false
+      return true
+    })
+  }, [baseAirports, mapFilters])
+
+  const flights = useMemo(() => {
+    const { flightSemaphore, flightStatus } = mapFilters
+    if (!flightSemaphore.size && !flightStatus.size) return baseFlights
+    return baseFlights.filter(f => {
+      if (flightStatus.size && !flightStatus.has(f.status)) return false
+      if (flightSemaphore.size) {
+        const pct = ((f.bagsAboard || 0) / (f.capacity || 1)) * 100
+        if (!flightSemaphore.has(getFlightSemaphoreKey(pct))) return false
+      }
+      return true
+    })
+  }, [baseFlights, mapFilters])
+
+  const activeFilterCount =
+    mapFilters.flightSemaphore.size +
+    mapFilters.flightStatus.size +
+    mapFilters.warehouseSemaphore.size +
+    mapFilters.warehouseRegion.size
+
+  // Plane canvas + routes only render IN_FLIGHT entries
   const visibleFlights = useMemo(() =>
     flights.filter(f => f.status === 'IN_FLIGHT'),
     [flights]
@@ -133,13 +254,13 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
       }
       return entry
     }
-    for (const f of flights) {
+    for (const f of baseFlights) {
       if (f.status !== 'SCHEDULED' && f.status !== 'IN_FLIGHT') continue
       get(f.destination).incoming += 1
       get(f.origin).outgoing += 1
     }
     return map
-  }, [flights])
+  }, [baseFlights])
 
   return (
     <Box sx={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -179,6 +300,9 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
         <PlaneCanvasLayer
           flights={visibleFlights}
           airportsByCode={airportsByCode}
+          onPlaneClick={handlePlaneClick}
+          planePopupRef={planePopupRef}
+          activePlaneFlightId={activePlaneFlightId}
         />
 
         {/* Airport markers */}
@@ -191,13 +315,83 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
               incomingCount={counts.incoming}
               outgoingCount={counts.outgoing}
               iconsVersion={iconsVersion}
+              onSelect={handleAirportSelect}
             />
           )
         })}
+
+        {/* Tracks active airport position on pan/zoom — updates overlay imperatively */}
+        <MapAirportTracker airport={activeAirport?.airport ?? null} popupRef={airportPopupRef} />
       </MapContainer>
 
       {/* Legend (absolute positioned over map) */}
       <MapLegend />
+
+      {/* Quick-filter panel (absolute positioned over map, top-right) */}
+      <MapFilterPanel
+        filters={mapFilters}
+        onChange={setMapFilters}
+        activeCount={activeFilterCount}
+        regionOptions={regionOptions}
+      />
+
+      {/* Airport click popup — outside MapContainer, above canvas z-index */}
+      {activeAirport && (
+        <Paper
+          ref={airportPopupRef}
+          elevation={6}
+          style={{
+            position: 'absolute',
+            left: activeAirport.x,
+            top: activeAirport.y,
+            zIndex: 1200,
+            transform: 'translate(-50%, calc(-100% - 14px))',
+            pointerEvents: 'auto',
+          }}
+          sx={{ p: '8px 10px', borderRadius: 1.5, position: 'relative' }}
+        >
+          <IconButton
+            size="small"
+            onClick={() => setActiveAirport(null)}
+            sx={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, color: '#9E9E9E', '&:hover': { color: '#333' } }}
+          >
+            <CloseIcon sx={{ fontSize: 12 }} />
+          </IconButton>
+          <AirportMapPopup
+            airport={activeAirport.airport}
+            semaphore={activeAirport.semaphore}
+            incomingCount={activeAirport.incomingCount}
+            outgoingCount={activeAirport.outgoingCount}
+          />
+        </Paper>
+      )}
+
+      {/* Plane click popup — rendered outside MapContainer so z-index beats the canvas.
+          Position is set as inline style (initial from click, then updated by rAF). */}
+      {activePlane && (
+        <Paper
+          ref={planePopupRef}
+          elevation={6}
+          style={{
+            position: 'absolute',
+            left: activePlane.x,
+            top: activePlane.y,
+            zIndex: 1200,
+            transform: 'translate(-50%, calc(-100% - 14px))',
+            pointerEvents: 'auto',
+          }}
+          sx={{ p: '8px 10px', borderRadius: 1.5, minWidth: 190, maxWidth: 220, position: 'relative' }}
+        >
+          <IconButton
+            size="small"
+            onClick={() => setActivePlane(null)}
+            sx={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, color: '#9E9E9E', '&:hover': { color: '#333' } }}
+          >
+            <CloseIcon sx={{ fontSize: 12 }} />
+          </IconButton>
+          <FlightMapPopup flight={activePlane.flight} />
+        </Paper>
+      )}
     </Box>
   )
 }
