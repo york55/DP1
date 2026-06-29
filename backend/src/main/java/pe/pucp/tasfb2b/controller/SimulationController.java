@@ -13,6 +13,7 @@ import pe.pucp.tasfb2b.service.KpiService;
 import pe.pucp.tasfb2b.service.SimulationService;
 
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -85,6 +86,17 @@ public class SimulationController {
                 .findFirst()
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.noContent().build());
+    }
+
+    @PostMapping("/{simId}/cancel-flight/{flightId}")
+    public ResponseEntity<Map<String, Object>> cancelFlight(@PathVariable Long simId, @PathVariable Long flightId) {
+        log.info("ACTION manual_cancel_flight simId={} flightId={}", simId, flightId);
+        var result = simulationService.manualCancelFlight(simId, flightId);
+        return ResponseEntity.ok(Map.of(
+                "cancelledFlightId", result.cancelledFlightId(),
+                "cancelledDeparture", result.cancelledDeparture().toString(),
+                "appliedNextDay", result.appliedNextDay()
+        ));
     }
 
     @DeleteMapping("/reset")

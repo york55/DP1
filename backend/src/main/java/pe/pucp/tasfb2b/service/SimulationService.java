@@ -161,6 +161,11 @@ public class SimulationService {
         return simulationMapper.toDto(sim, kpiService.getLatest(id));
     }
 
+    @Transactional
+    public SimulationEngine.ManualCancelResult manualCancelFlight(Long simulationId, Long flightId) {
+        return simulationEngine.manualCancelFlight(flightId, simulationId);
+    }
+
     public List<SimulationDto> findAll() {
         return simulationRepo.findAll().stream()
                 .map(s -> simulationMapper.toDto(s, null))

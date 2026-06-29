@@ -80,4 +80,12 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
     @Modifying
     @Query("DELETE FROM Flight f WHERE f.frequency = 'INSTANCE'")
     void deleteAllInstances();
+
+    @Query("SELECT f FROM Flight f JOIN FETCH f.originAirport JOIN FETCH f.destinationAirport " +
+           "WHERE f.originAirport.id = :originId AND f.destinationAirport.id = :destId " +
+           "AND f.status = 'SCHEDULED' AND f.departureTime > :after " +
+           "ORDER BY f.departureTime ASC")
+    List<Flight> findNextScheduledOnRoute(@Param("originId") Long originId,
+                                          @Param("destId") Long destId,
+                                          @Param("after") LocalDateTime after);
 }
