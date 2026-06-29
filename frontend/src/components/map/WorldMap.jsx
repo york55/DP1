@@ -1,13 +1,18 @@
-import { useMemo, useEffect } from 'react'
+import { useMemo, useEffect, useRef, useState } from 'react'
 import { MapContainer, TileLayer, useMap } from 'react-leaflet'
 import Box from '@mui/material/Box'
 import AirportMarker from './AirportMarker'
 import FlightRoute from './FlightRoute'
+import PlaneCanvasLayer from './PlaneCanvasLayer'
 import MapLegend from './MapLegend'
 import { useSimulationContext } from '../../context/SimulationContext'
+import { initPlaneIcon } from './planeIcon'
+import { initWarehouseIcons } from './warehouseIcons'
 
 function MapFocusController() {
   const map = useMap()
+  const lastCenteredAirport = useRef(null)
+  const lastCenteredFlight = useRef(null)
   let context = null
   try {
     context = useSimulationContext()
@@ -19,25 +24,31 @@ function MapFocusController() {
   const { selectedAirportCode, selectedFlightId, airportsWithTimes, flights } = context
 
   useEffect(() => {
-    if (selectedAirportCode) {
-      const ap = airportsWithTimes.find(a => (a.iata || a.iataCode) === selectedAirportCode)
-      if (ap && ap.lat != null && ap.lon != null) {
-        map.setView([ap.lat, ap.lon], 5)
-      }
+    if (!selectedAirportCode) {
+      lastCenteredAirport.current = null
+      return
+    }
+    if (selectedAirportCode === lastCenteredAirport.current) return
+    const ap = airportsWithTimes.find(a => (a.iata || a.iataCode) === selectedAirportCode)
+    if (ap && ap.lat != null && ap.lon != null) {
+      lastCenteredAirport.current = selectedAirportCode
+      map.setView([ap.lat, ap.lon], 5)
     }
   }, [selectedAirportCode, airportsWithTimes, map])
 
   useEffect(() => {
-    if (selectedFlightId) {
-      const fl = flights.find(f => String(f.id) === String(selectedFlightId))
-      if (fl) {
-        const orig = airportsWithTimes.find(a => (a.iata || a.iataCode) === fl.origin)
-        const dest = airportsWithTimes.find(a => (a.iata || a.iataCode) === fl.destination)
-        if (orig && dest) {
-          const lat = (orig.lat + dest.lat) / 2
-          const lon = (orig.lon + dest.lon) / 2
-          map.setView([lat, lon], 4)
-        }
+    if (!selectedFlightId) {
+      lastCenteredFlight.current = null
+      return
+    }
+    if (selectedFlightId === lastCenteredFlight.current) return
+    const fl = flights.find(f => String(f.id) === String(selectedFlightId))
+    if (fl) {
+      const orig = airportsWithTimes.find(a => (a.iata || a.iataCode) === fl.origin)
+      const dest = airportsWithTimes.find(a => (a.iata || a.iataCode) === fl.destination)
+      if (orig && dest) {
+        lastCenteredFlight.current = selectedFlightId
+        map.setView([(orig.lat + dest.lat) / 2, (orig.lon + dest.lon) / 2], 4)
       }
     }
   }, [selectedFlightId, flights, airportsWithTimes, map])
@@ -78,6 +89,13 @@ function AirportPaneSetup() {
  * @param {*} resizeTrigger - any value whose change signals a container resize
  */
 function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], simulatedTime = null, resizeTrigger }) {
+  // Rasterize icons once on mount. When both resolve, bump iconsVersion so all
+  // children re-render once and pick up the PNG L.icon instead of the divIcon fallback.
+  const [iconsVersion, setIconsVersion] = useState(0)
+  useEffect(() => {
+    Promise.all([initPlaneIcon(), initWarehouseIcons()]).then(() => setIconsVersion(1))
+  }, [])
+
   let context = null
   try {
     context = useSimulationContext()
@@ -125,9 +143,12 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], si
   return (
     <Box sx={{ width: '100%', height: '100%', position: 'relative' }}>
       <MapContainer
-        center={[20, 0]}
-        zoom={3}
-        minZoom={2}
+        center={[15, 0]}
+        zoom={3.24}
+        zoomSnap={0.1}
+        zoomDelta={0.5}
+        minZoom={3}
+        maxZoom={4.5}
         maxBounds={[[-85.051129, -180], [85.051129, 180]]}
         maxBoundsViscosity={1.0}
         style={{ width: '100%', height: '100%' }}
@@ -144,15 +165,21 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], si
         <AirportPaneSetup />
         <MapFocusController />
 
-        {/* Flight routes and Planes */}
+        {/* Flight route polylines */}
         {visibleFlights.map(flight => (
           <FlightRoute
             key={flight.id}
             flight={flight}
             airportsByCode={airportsByCode}
-            simulatedTime={simulatedTime}
           />
         ))}
+
+        {/* Plane icons — single canvas layer, zero DOM nodes per plane */}
+        <PlaneCanvasLayer
+          flights={visibleFlights}
+          airportsByCode={airportsByCode}
+          simulatedTime={simulatedTime}
+        />
 
         {/* Airport markers */}
         {airports.map(airport => {
@@ -163,6 +190,7 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], si
               airport={airport}
               incomingCount={counts.incoming}
               outgoingCount={counts.outgoing}
+              iconsVersion={iconsVersion}
             />
           )
         })}

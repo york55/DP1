@@ -1,16 +1,17 @@
 import React from 'react'
-import { CircleMarker, Popup } from 'react-leaflet'
+import { Marker, Popup } from 'react-leaflet'
 import { getSemaphoreColor } from '../../utils/semaphoreUtils'
+import { WAREHOUSE_ICONS } from './warehouseIcons'
 import AirportPopup from './AirportPopup'
 import { useSimulationContext } from '../../context/SimulationContext'
 
 /**
- * AirportMarker — renders a colored CircleMarker for an airport on the map.
+ * AirportMarker — renders a warehouse-shaped marker for an airport on the map.
  * Color is derived from the airport's current occupancy via semaphore levels.
+ * Icon is looked up from WAREHOUSE_ICONS (pre-built, rasterized after init).
  */
-function AirportMarker({ airport, incomingCount = 0, outgoingCount = 0 }) {
+function AirportMarker({ airport, incomingCount = 0, outgoingCount = 0, iconsVersion: _ }) {
   const { lat, lon, occupancy, iata } = airport
-  const color = getSemaphoreColor(occupancy)
 
   let context = null
   try {
@@ -22,16 +23,10 @@ function AirportMarker({ airport, incomingCount = 0, outgoingCount = 0 }) {
   const setActivePanelTab = context ? context.setActivePanelTab : null
 
   return (
-    <CircleMarker
-      center={[lat, lon]}
-      radius={6}
+    <Marker
+      position={[lat, lon]}
+      icon={WAREHOUSE_ICONS[getSemaphoreColor(occupancy)]}
       pane="airportPane"
-      pathOptions={{
-        color: '#FFFFFF',
-        weight: 2,
-        fillColor: color,
-        fillOpacity: 0.85,
-      }}
       eventHandlers={{
         click: () => {
           if (setSelectedAirportCode && setActivePanelTab) {
@@ -48,7 +43,7 @@ function AirportMarker({ airport, incomingCount = 0, outgoingCount = 0 }) {
           outgoingCount={outgoingCount}
         />
       </Popup>
-    </CircleMarker>
+    </Marker>
   )
 }
 
