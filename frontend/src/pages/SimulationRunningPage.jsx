@@ -16,9 +16,40 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import WorldMap from '../components/map/WorldMap'
 import SimulationPanel from '../components/simulation/SimulationPanel'
 import SimulationControls from '../components/simulation/SimulationControls'
-import ClockPanel from '../components/simulation/ClockPanel'
 import NotificationStack from '../components/common/NotificationStack'
 import { useSimulationContext } from '../context/SimulationContext'
+import { formatElapsed } from '../utils/timeUtils'
+
+function fmtRealDate(d) {
+  const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+  const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+  return `${days[d.getDay()]} ${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`
+}
+function fmtRealTime(d) {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+}
+function fmtSimDate(d) {
+  if (!d) return '-- --- ----'
+  const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+  const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+  return `${days[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, '0')} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`
+}
+function fmtSimTime(d) {
+  if (!d) return '--:--:-- UTC'
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}:${String(d.getUTCSeconds()).padStart(2, '0')} UTC`
+}
+function fmtSimElapsed(simTime, startDate) {
+  if (!simTime || !startDate) return '--:--:--'
+  const ms = simTime.getTime() - new Date(startDate).getTime()
+  if (ms < 0) return '00:00:00'
+  const totalSec = Math.floor(ms / 1000)
+  const s = totalSec % 60
+  const m = Math.floor(totalSec / 60) % 60
+  const h = Math.floor(totalSec / 3600) % 24
+  const dv = Math.floor(totalSec / 86400)
+  if (dv > 0) return `${dv}d ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
 
 
 const STATUS_LABELS = {
@@ -44,7 +75,13 @@ export default function SimulationRunningPage() {
     firstBatchReady,
   } = useSimulationContext()
 
-  const { status, simulatedTime, elapsedSeconds, config, currentDay } = simulationState
+  const { status, simulatedTime, elapsedSeconds, config } = simulationState
+
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(id)
+  }, [])
 
   // Sidebar resize / collapse state
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
@@ -131,6 +168,55 @@ export default function SimulationRunningPage() {
             sx={{ backgroundColor: statusInfo.bg, color: statusInfo.color, fontWeight: 700, fontSize: '0.65rem', height: 22 }}
           />
 
+          {/* Clock block */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+            <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.25, mr: 0.5 }} />
+
+            {/* Tiempo Real */}
+            <Box sx={{ px: 1.5 }}>
+              <Typography sx={{ color: '#64B5F6', fontSize: '0.52rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', lineHeight: 1.2 }}>
+                Tiempo Real
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '100px auto', rowGap: 0, columnGap: '3px' }}>
+                <Typography sx={{ color: 'rgba(255,255,255,0.55)', fontFamily: 'monospace', fontSize: '0.62rem', lineHeight: 1.35, whiteSpace: 'nowrap' }}>
+                  {fmtRealDate(now)}
+                </Typography>
+                <Typography sx={{ color: '#FFFFFF', fontFamily: 'monospace', fontSize: '0.62rem', fontWeight: 600, lineHeight: 1.35, whiteSpace: 'nowrap' }}>
+                  {fmtRealTime(now)}
+                </Typography>
+                <Typography sx={{ color: 'rgba(144,202,249,0.5)', fontFamily: 'monospace', fontSize: '0.62rem', lineHeight: 1.35, whiteSpace: 'nowrap' }}>
+                  transcurrido
+                </Typography>
+                <Typography sx={{ color: '#90CAF9', fontFamily: 'monospace', fontSize: '0.62rem', fontWeight: 600, lineHeight: 1.35, whiteSpace: 'nowrap' }}>
+                  {formatElapsed(elapsedSeconds || 0)}
+                </Typography>
+              </Box>
+            </Box>
+
+            <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.25 }} />
+
+            {/* Tiempo Simulación */}
+            <Box sx={{ px: 1.5 }}>
+              <Typography sx={{ color: '#A5D6A7', fontSize: '0.52rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', lineHeight: 1.2 }}>
+                Simulación
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '100px auto', rowGap: 0, columnGap: '3px' }}>
+                <Typography sx={{ color: 'rgba(255,255,255,0.55)', fontFamily: 'monospace', fontSize: '0.62rem', lineHeight: 1.35, whiteSpace: 'nowrap' }}>
+                  {fmtSimDate(simulatedTime)}
+                </Typography>
+                <Typography sx={{ color: '#FFFFFF', fontFamily: 'monospace', fontSize: '0.62rem', fontWeight: 600, lineHeight: 1.35, whiteSpace: 'nowrap' }}>
+                  {fmtSimTime(simulatedTime)}
+                </Typography>
+                <Typography sx={{ color: 'rgba(165,214,167,0.5)', fontFamily: 'monospace', fontSize: '0.62rem', lineHeight: 1.35, whiteSpace: 'nowrap' }}>
+                  transcurrido
+                </Typography>
+                <Typography sx={{ color: '#A5D6A7', fontFamily: 'monospace', fontSize: '0.62rem', fontWeight: 600, lineHeight: 1.35, whiteSpace: 'nowrap' }}>
+                  {fmtSimElapsed(simulatedTime, config?.startDate)}
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+
           <Box sx={{ flex: 1 }} />
 
           {delayedCount > 0 && (
@@ -141,11 +227,6 @@ export default function SimulationRunningPage() {
             />
           )}
 
-          <Chip
-            label={`Día ${currentDay || 1}/${config?.period || 0}`}
-            size="small"
-            sx={{ backgroundColor: '#1565C0', color: '#FFFFFF', fontWeight: 700, fontSize: '0.75rem', height: 24 }}
-          />
 
           <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.5 }} />
 
@@ -158,7 +239,6 @@ export default function SimulationRunningPage() {
         {/* Map — fills remaining space */}
         <Box sx={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <WorldMap airports={airports} flights={flights} simulatedTime={simulatedTime} resizeTrigger={collapsed ? 'collapsed' : panelWidth} />
-          <ClockPanel simulatedTime={simulatedTime} elapsedSeconds={elapsedSeconds} startDate={config?.startDate} />
 
           {/* Collapse / expand button — always overlaid on map right edge */}
           <Tooltip title={collapsed ? 'Expandir panel' : 'Colapsar panel'} placement="left">
