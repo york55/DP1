@@ -11,6 +11,7 @@ import FlightRoute from './FlightRoute'
 import PlaneCanvasLayer from './PlaneCanvasLayer'
 import MapLegend from './MapLegend'
 import MapFilterPanel from './MapFilterPanel'
+import SimPipelineBox, { SHOW_SIM_PIPELINE } from './SimPipelineBox'
 import AirportMapPopup from './AirportMapPopup'
 import { useSimulationContext } from '../../context/SimulationContext'
 import { initPlaneIcons } from './planeIcon'
@@ -189,6 +190,9 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
   const baseAirports = staticAirports ?? (context ? context.filteredAirports : propsAirports)
   const baseFlights = context ? context.filteredFlights : propsFlights
   const simulatedTime = context?.simulationState?.simulatedTime ?? null
+  const planningProgress = context?.planningProgress ?? { phase: '', iteration: 0, maxIterations: 1000, assignedBatches: 0, totalBatches: 0, currentObjective: 0 }
+  const blockHistory = context?.blockHistory ?? []
+  const totalSimBlocks = context?.totalSimBlocks ?? 0
 
   // Unique continent values for region chips — derived from live airport data.
   // 'unknown' from the DB is normalized to 'Sudamérica' (matches useSimulation patch).
@@ -336,6 +340,16 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
         activeCount={activeFilterCount}
         regionOptions={regionOptions}
       />
+
+      {/* ALNS pipeline box — disable by setting SHOW_SIM_PIPELINE=false in SimPipelineBox.jsx */}
+      {SHOW_SIM_PIPELINE && (
+        <SimPipelineBox
+          planningProgress={planningProgress}
+          blockHistory={blockHistory}
+          totalSimBlocks={totalSimBlocks}
+          simulatedTime={simulatedTime}
+        />
+      )}
 
       {/* Airport click popup — outside MapContainer, above canvas z-index */}
       {activeAirport && (
