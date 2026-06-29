@@ -11,13 +11,11 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '/tasfb2b/api'),
       },
       '/ws': {
         target: 'http://localhost:8080',
         changeOrigin: true,
         ws: true,
-        rewrite: (path) => path.replace(/^\/ws/, '/tasfb2b/ws'),
       },
     },
   },
