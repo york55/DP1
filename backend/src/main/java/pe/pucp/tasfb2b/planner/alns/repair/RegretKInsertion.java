@@ -10,7 +10,15 @@ import java.util.stream.Collectors;
 
 public class RegretKInsertion implements RepairOperator {
 
-    private static final int CONNECT_MIN_GAP_MINUTES = 30;
+    private final int connectMinGapMinutes;
+
+    public RegretKInsertion(int connectMinGapMinutes) {
+        this.connectMinGapMinutes = connectMinGapMinutes;
+    }
+
+    public RegretKInsertion() {
+        this.connectMinGapMinutes = 30;
+    }
 
     @Override
     public void repair(AlnsSolution solution, List<BaggageBatch> allBatches,
@@ -100,7 +108,7 @@ public class RegretKInsertion implements RepairOperator {
                 if (!f2.getDestinationAirport().getIataCode().equals(dest)) continue;
                 if (!solution.canAssign(f2.getId(), qty)) continue;
                 long gap = Duration.between(f1.getArrivalTime(), f2.getDepartureTime()).toMinutes();
-                if (gap < CONNECT_MIN_GAP_MINUTES) continue;
+                if (gap < connectMinGapMinutes) continue;
                 candidates.add(List.of(f1.getId(), f2.getId()));
             }
         }

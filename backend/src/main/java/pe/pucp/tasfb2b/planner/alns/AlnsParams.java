@@ -14,17 +14,19 @@ public record AlnsParams(
         double w1,
         double w2,
         double w3,
-        int kRegret
+        double w4,
+        int kRegret,
+        int connectMinGapMinutes
 ) {
     public static AlnsParams defaults() {
         return new AlnsParams(100.0, 0.9995, 0.25, 200, 100,
                 9.0, 3.0, 1.0, 0.1, 0.05,
-                0.7, 0.15, 0.15, 3);
+                0.60, 0.10, 0.10, 0.20, 3, 30);
     }
 
     public static AlnsParams fast() {
         return new AlnsParams(50.0, 0.999, 0.30, 200, 50,
                 9.0, 3.0, 1.0, 0.1, 0.05,
-                0.7, 0.15, 0.15, 3);
+                0.60, 0.10, 0.10, 0.20, 3, 30);
     }
 }

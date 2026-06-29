@@ -59,7 +59,8 @@ public class AlnsEngine implements RouteOptimizer {
         if (callback != null) {
             callback.accept(new PlanProgressSnapshot(
                     "GREEDY_INIT", 0, p.maxIterations(),
-                    best.getAssignments().size(), batches.size(), bestObj));
+                    best.getAssignments().size(), batches.size(), bestObj,
+                    0, 0, "", ""));
         }
 
         List<DestroyOperator> destroyOps = List.of(
@@ -67,44 +68,44 @@ public class AlnsEngine implements RouteOptimizer {
                 new RelatedRemoval(),
                 new WorstRemoval(p.pNoise())
         );
-        RepairOperator repairOp = new RegretKInsertion();
+        RepairOperator repairOp = new RegretKInsertion(p.connectMinGapMinutes());
 
         double[] dWeights = {1.0, 1.0, 1.0};
         double[] dScores = {0.0, 0.0, 0.0};
         int[] dUses = {0, 0, 0};
 
-        for (int iter = 0; iter < p.maxIterations(); iter++) {
-            AlnsSolution candidate = current.deepCopy();
+        // Snapshot of the last accepted state — restored on rejection instead of deepCopy per iter.
+        AlnsSolution.Snapshot currentSnap = current.snapshot();
+        double bestObjAtSegStart = bestObj;
+        int stagnantSegments = 0;
+        final int MAX_STAGNANT_SEGMENTS = 3; // stop if bestObj unchanged for 3 consecutive segments
 
+        for (int iter = 0; iter < p.maxIterations(); iter++) {
             int q = Math.max(1, (int) Math.ceil(p.qPct() * batches.size()));
 
             int dIdx = selectByRoulette(dWeights, rng);
-            destroyOps.get(dIdx).destroy(candidate, batches, q, rng);
-            repairOp.repair(candidate, batches, flights, p.kRegret(), rng);
+            // Mutate current in-place; restore from snapshot if rejected.
+            destroyOps.get(dIdx).destroy(current, batches, q, rng);
+            repairOp.repair(current, batches, flights, p.kRegret(), rng);
 
-            double candidateObj = evaluate(candidate, p);
+            double candidateObj = evaluate(current, p);
             double delta = candidateObj - currentObj;
 
-            boolean accepted = false;
-            if (delta <= 0) {
-                accepted = true;
-            } else {
-                double prob = Math.exp(-delta / T);
-                if (rng.nextDouble() < prob) accepted = true;
-            }
+            boolean accepted = delta <= 0 || rng.nextDouble() < Math.exp(-delta / T);
 
             if (accepted) {
-                current = candidate;
                 currentObj = candidateObj;
+                currentSnap = current.snapshot(); // new rollback baseline
 
                 if (candidateObj < bestObj) {
-                    best = candidate.deepCopy();
+                    best = current.deepCopy(); // deepCopy only when actually improving best
                     bestObj = candidateObj;
                     dScores[dIdx] += p.sigma1();
                 } else {
                     dScores[dIdx] += p.sigma2();
                 }
             } else {
+                current.restore(currentSnap); // rollback without rebuilding flightMap/batchMap
                 dScores[dIdx] += p.sigma3();
             }
             dUses[dIdx]++;
@@ -119,15 +120,29 @@ public class AlnsEngine implements RouteOptimizer {
                 if (callback != null) {
                     callback.accept(new PlanProgressSnapshot(
                             "OPTIMIZING", iter + 1, p.maxIterations(),
-                            best.getAssignments().size(), batches.size(), bestObj));
+                            best.getAssignments().size(), batches.size(), bestObj,
+                            0, 0, "", ""));
                 }
+
+                // Early termination: stop if best objective hasn't improved across MAX_STAGNANT_SEGMENTS
+                if (bestObj >= bestObjAtSegStart) {
+                    stagnantSegments++;
+                    if (stagnantSegments >= MAX_STAGNANT_SEGMENTS) {
+                        log.debug("ALNS terminación anticipada en iter {} — {} segmentos sin mejora", iter + 1, stagnantSegments);
+                        break;
+                    }
+                } else {
+                    stagnantSegments = 0;
+                }
+                bestObjAtSegStart = bestObj;
             }
         }
 
         if (callback != null) {
             callback.accept(new PlanProgressSnapshot(
                     "COMPLETE", p.maxIterations(), p.maxIterations(),
-                    best.getAssignments().size(), batches.size(), bestObj));
+                    best.getAssignments().size(), batches.size(), bestObj,
+                    0, 0, "", ""));
         }
 
         Duration elapsed = Duration.between(start, Instant.now());
@@ -153,7 +168,7 @@ public class AlnsEngine implements RouteOptimizer {
                 .collect(Collectors.toList());
 
         AlnsSolution solution = new AlnsSolution(flights, affected);
-        RepairOperator repair = new RegretKInsertion();
+        RepairOperator repair = new RegretKInsertion(p.connectMinGapMinutes());
         repair.repair(solution, affected, flights, p.kRegret(), rng);
 
         Instant start = Instant.now();
@@ -183,16 +198,41 @@ public class AlnsEngine implements RouteOptimizer {
         for (BaggageBatch batch : sorted) {
             String origin = batch.getOriginAirport().getIataCode();
             String dest = batch.getDestinationAirport().getIataCode();
+            int qty = batch.getQuantity();
 
-            Optional<Flight> bestFlight = flightsByOrigin.getOrDefault(origin, Collections.emptyList())
+            Optional<Flight> directFlight = flightsByOrigin.getOrDefault(origin, Collections.emptyList())
                     .stream()
                     .filter(f -> f.getDestinationAirport().getIataCode().equals(dest))
                     .filter(f -> !f.getDepartureTime().isBefore(batch.getAvailableFrom()))
-                    .filter(f -> solution.canAssign(f.getId(), batch.getQuantity()))
+                    .filter(f -> solution.canAssign(f.getId(), qty))
                     .min(Comparator.comparing(Flight::getDepartureTime));
 
-            if (bestFlight.isPresent()) {
-                solution.assign(batch.getId(), List.of(bestFlight.get().getId()));
+            if (directFlight.isPresent()) {
+                solution.assign(batch.getId(), List.of(directFlight.get().getId()));
+                continue;
+            }
+
+            // Fallback: find best 2-hop connection (earliest arrival at destination)
+            Flight bestF1 = null;
+            Flight bestF2 = null;
+            for (Flight f1 : flightsByOrigin.getOrDefault(origin, Collections.emptyList())) {
+                if (f1.getDepartureTime().isBefore(batch.getAvailableFrom())) continue;
+                if (!solution.canAssign(f1.getId(), qty)) continue;
+                String hub = f1.getDestinationAirport().getIataCode();
+                if (hub.equals(dest)) continue;
+                for (Flight f2 : flightsByOrigin.getOrDefault(hub, Collections.emptyList())) {
+                    if (!f2.getDestinationAirport().getIataCode().equals(dest)) continue;
+                    if (!solution.canAssign(f2.getId(), qty)) continue;
+                    long gap = Duration.between(f1.getArrivalTime(), f2.getDepartureTime()).toMinutes();
+                    if (gap < p.connectMinGapMinutes()) continue;
+                    if (bestF2 == null || f2.getArrivalTime().isBefore(bestF2.getArrivalTime())) {
+                        bestF1 = f1;
+                        bestF2 = f2;
+                    }
+                }
+            }
+            if (bestF1 != null) {
+                solution.assign(batch.getId(), List.of(bestF1.getId(), bestF2.getId()));
             }
         }
 
@@ -208,15 +248,29 @@ public class AlnsEngine implements RouteOptimizer {
 
         double totalCapacity = 0;
         double totalOverload = 0;
+        double usedCapacityWithLoad = 0;
+        double actualLoadWithLoad = 0;
         for (Flight f : solution.getFlightMap().values()) {
-            int used = f.getCurrentLoad() + solution.getExtraLoad().getOrDefault(f.getId(), 0);
+            int extra = solution.getExtraLoad().getOrDefault(f.getId(), 0);
+            int used = f.getCurrentLoad() + extra;
             totalCapacity += f.getBaggageCapacity();
             if (used > f.getBaggageCapacity()) totalOverload += used - f.getBaggageCapacity();
+            if (used > 0) {
+                usedCapacityWithLoad += f.getBaggageCapacity();
+                actualLoadWithLoad += used;
+            }
         }
         double comp2 = totalCapacity > 0 ? p.w2() * (totalOverload / totalCapacity) : 0.0;
 
+        // Penalize low utilization on flights that carry any load (incentivizes consolidation)
+        double comp4 = 0.0;
+        if (usedCapacityWithLoad > 0) {
+            double avgUtil = actualLoadWithLoad / usedCapacityWithLoad;
+            comp4 = p.w4() * (1.0 - avgUtil);
+        }
+
         int assigned = total - unassigned;
-        if (assigned == 0) return comp1 + comp2;
+        if (assigned == 0) return comp1 + comp2 + comp4;
 
         double totalWait = 0;
         for (Long batchId : solution.getAssignments().keySet()) {
@@ -224,7 +278,7 @@ public class AlnsEngine implements RouteOptimizer {
         }
         double comp3 = p.w3() * (totalWait / ((double) assigned * 1440.0));
 
-        return comp1 + comp2 + comp3;
+        return comp1 + comp2 + comp3 + comp4;
     }
 
     private int selectByRoulette(double[] weights, Random rng) {

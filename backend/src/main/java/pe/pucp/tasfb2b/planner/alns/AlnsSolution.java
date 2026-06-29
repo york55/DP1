@@ -40,6 +40,26 @@ public class AlnsSolution {
         return copy;
     }
 
+    // Lightweight snapshot of mutable state only — shares flightMap/batchMap with source.
+    // Use snapshot()/restore() inside the ALNS loop instead of deepCopy() to avoid
+    // rebuilding the flight and batch lookup tables on every iteration.
+    public record Snapshot(Map<Long, List<Long>> assignments, Set<Long> bank, Map<Long, Integer> extraLoad) {}
+
+    public Snapshot snapshot() {
+        Map<Long, List<Long>> assignCopy = new HashMap<>(assignments.size());
+        assignments.forEach((k, v) -> assignCopy.put(k, new ArrayList<>(v)));
+        return new Snapshot(assignCopy, new LinkedHashSet<>(bank), new HashMap<>(extraLoad));
+    }
+
+    public void restore(Snapshot snap) {
+        assignments.clear();
+        snap.assignments().forEach((k, v) -> assignments.put(k, new ArrayList<>(v)));
+        bank.clear();
+        bank.addAll(snap.bank());
+        extraLoad.clear();
+        extraLoad.putAll(snap.extraLoad());
+    }
+
     public void assign(Long batchId, List<Long> flightIds) {
         if (!bank.contains(batchId)) return;
         BaggageBatch batch = batchMap.get(batchId);
