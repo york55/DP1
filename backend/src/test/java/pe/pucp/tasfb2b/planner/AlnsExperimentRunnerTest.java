@@ -132,10 +132,10 @@ class AlnsExperimentRunnerTest {
 
         // Define 4 experiment parameter configurations
         List<ExperimentConfig> configs = List.of(
-                new ExperimentConfig("Config 1 (Default)", new AlnsParams(100.0, 0.9995, 0.25, 1000, 100, 9.0, 3.0, 1.0, 0.1, 0.05, 0.7, 0.15, 0.15, 3)),
-                new ExperimentConfig("Config 2 (Fast & Aggressive)", new AlnsParams(50.0, 0.99, 0.35, 300, 50, 9.0, 3.0, 1.0, 0.1, 0.05, 0.7, 0.15, 0.15, 2)),
-                new ExperimentConfig("Config 3 (High Temperature)", new AlnsParams(500.0, 0.999, 0.20, 1000, 100, 9.0, 3.0, 1.0, 0.1, 0.05, 0.7, 0.15, 0.15, 3)),
-                new ExperimentConfig("Config 4 (Intensive Search)", new AlnsParams(100.0, 0.9997, 0.15, 2000, 100, 9.0, 3.0, 1.0, 0.1, 0.05, 0.7, 0.15, 0.15, 4))
+                new ExperimentConfig("Config 1 (Default)", new AlnsParams(100.0, 0.9995, 0.25, 1000, 100, 9.0, 3.0, 1.0, 0.1, 0.05, 0.7, 0.15, 0.15, 0.0, 3, 30)),
+                new ExperimentConfig("Config 2 (Fast & Aggressive)", new AlnsParams(50.0, 0.99, 0.35, 300, 50, 9.0, 3.0, 1.0, 0.1, 0.05, 0.7, 0.15, 0.15, 0.0, 2, 30)),
+                new ExperimentConfig("Config 3 (High Temperature)", new AlnsParams(500.0, 0.999, 0.20, 1000, 100, 9.0, 3.0, 1.0, 0.1, 0.05, 0.7, 0.15, 0.15, 0.0, 3, 30)),
+                new ExperimentConfig("Config 4 (Intensive Search)", new AlnsParams(100.0, 0.9997, 0.15, 2000, 100, 9.0, 3.0, 1.0, 0.1, 0.05, 0.7, 0.15, 0.15, 0.0, 4, 30))
         );
 
         System.out.println("\n=== EXPERIMENTOS ALNS A GRAN ESCALA INICIADOS ===");
