@@ -114,7 +114,7 @@ export default function RealtimeMapPage() {
   const flightLayer = useRef(null)
 
   const [lastUpdate, setLastUpdate] = useState(null)
-  const [panelOpen, setPanelOpen] = useState(true)
+  const [panelOpen, setPanelOpen] = useState(false)
   const [airports, setAirports] = useState([])
   const [flights, setFlights] = useState([])
   const [shipments, setShipments] = useState([])
@@ -469,7 +469,7 @@ export default function RealtimeMapPage() {
           sx={{
             position: 'absolute',
             top: 16,
-            right: 16,
+            right: 8,
             zIndex: 2000,
             width: 40,
             height: 40,
