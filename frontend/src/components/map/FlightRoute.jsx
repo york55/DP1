@@ -26,8 +26,8 @@ function FlightRoute({ flight, airportsByCode }) {
       positions={positions}
       pathOptions={{
         color: isInFlight ? '#FB8C00' : '#2E75B6',
-        weight: isInFlight ? 0.75 : 0.6,
-        opacity: isInFlight ? 0.85 : 0.4,
+        weight: isInFlight ? 0.5 : 0.4,
+        opacity: isInFlight ? 0.45 : 0.2,
         dashArray: isInFlight ? '8 6' : '4 6',
       }}
     />

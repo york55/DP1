@@ -4,8 +4,6 @@ import L from 'leaflet'
 import { PLANE_IMAGES } from './planeIcon'
 import { getSemaphoreColor } from '../../utils/semaphoreUtils'
 import { useSimulationContext } from '../../context/SimulationContext'
-import { createReactPopup } from '../../utils/leafletPopup'
-import FlightMapPopup from './FlightMapPopup'
 
 const DRAW_SIZE = 24   // CSS pixels the plane bitmap is drawn at
 const CLICK_HIT_PX = 14  // click detection radius in CSS pixels
@@ -56,12 +54,12 @@ function computePlanePositions(flights, airportsByCode, simulatedTime) {
  * A requestAnimationFrame loop redraws at ~60fps, interpolating plane positions
  * from animClockRef so movement is smooth between WebSocket ticks.
  */
-export default function PlaneCanvasLayer({ flights, airportsByCode }) {
+export default function PlaneCanvasLayer({ flights, airportsByCode, onPlaneClick, planePopupRef, activePlaneFlightId }) {
   const map = useMap()
   const canvasRef = useRef(null)
   const positionsRef = useRef([])
   const drawRef = useRef(null)
-  const activePlanePopupRef = useRef(null) // { popup, flightId }
+  const activePlaneFlightIdRef = useRef(activePlaneFlightId)
 
   let context = null
   try { context = useSimulationContext() } catch (_) {}
@@ -72,8 +70,13 @@ export default function PlaneCanvasLayer({ flights, airportsByCode }) {
   // Keep stable refs to latest props so the rAF callback never closes over stale values
   const flightsRef = useRef(flights)
   const airportsByCodeRef = useRef(airportsByCode)
+  const onPlaneClickRef = useRef(onPlaneClick)
+  const planePopupRefRef = useRef(planePopupRef)
   useEffect(() => { flightsRef.current = flights }, [flights])
   useEffect(() => { airportsByCodeRef.current = airportsByCode }, [airportsByCode])
+  useEffect(() => { onPlaneClickRef.current = onPlaneClick }, [onPlaneClick])
+  useEffect(() => { planePopupRefRef.current = planePopupRef }, [planePopupRef])
+  useEffect(() => { activePlaneFlightIdRef.current = activePlaneFlightId }, [activePlaneFlightId])
 
   // drawRef always holds the latest draw function without needing effect re-runs.
   // We use a ref instead of useCallback so map event listeners never go stale.
@@ -91,7 +94,7 @@ export default function PlaneCanvasLayer({ flights, airportsByCode }) {
       for (const { latlng, angleRad, color } of positionsRef.current) {
         const img = PLANE_IMAGES[color]
         if (!img?.complete || !img.naturalWidth) continue
-        const pt = map.latLngToLayerPoint(latlng)
+        const pt = map.latLngToContainerPoint(latlng)
         ctx.save()
         ctx.translate(pt.x, pt.y)
         ctx.rotate(angleRad)
@@ -100,11 +103,15 @@ export default function PlaneCanvasLayer({ flights, airportsByCode }) {
       }
       ctx.restore()
 
-      // Keep open popup anchored to the plane's current position
-      if (activePlanePopupRef.current) {
-        const { popup, flightId } = activePlanePopupRef.current
-        const pos = positionsRef.current.find(p => p.flight.id === flightId)
-        if (pos) popup.setLatLng(pos.latlng)
+      // Track the React popup overlay to the plane's current position
+      const popupDom = planePopupRefRef.current?.current
+      if (popupDom && activePlaneFlightIdRef.current != null) {
+        const pos = positionsRef.current.find(p => String(p.flight.id) === String(activePlaneFlightIdRef.current))
+        if (pos) {
+          const pt = map.latLngToContainerPoint(pos.latlng)
+          popupDom.style.left = pt.x + 'px'
+          popupDom.style.top = pt.y + 'px'
+        }
       }
     }
   })
@@ -134,18 +141,14 @@ export default function PlaneCanvasLayer({ flights, airportsByCode }) {
   useEffect(() => {
     const dpr = window.devicePixelRatio || 1
     const canvas = document.createElement('canvas')
-    canvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;'
+    // z-index 405: above overlay pane (400 — polylines) but below marker/tooltip/popup panes.
+    // Canvas must live on map.getContainer() (not inside a translated Leaflet pane) so its
+    // coordinate space stays fixed to the viewport. If placed inside leaflet-map-pane the
+    // CSS transform that Leaflet applies when panning shifts the canvas off-screen, creating
+    // an invisible clipping box equal to the initial viewport size.
+    canvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:405;'
     canvasRef.current = canvas
-
-    // Place canvas inside a custom Leaflet pane (inside leaflet-map-pane) so the
-    // tooltip pane (z-index 650) and popup pane (700) naturally stack above planes.
-    // Appending directly to map.getContainer() would put it above all panes.
-    if (!map.getPane('planePane')) {
-      const pane = map.createPane('planePane')
-      pane.style.zIndex = 405
-      pane.style.pointerEvents = 'none'
-    }
-    map.getPane('planePane').appendChild(canvas)
+    map.getContainer().appendChild(canvas)
 
     function resize() {
       const { x, y } = map.getSize()
@@ -165,33 +168,23 @@ export default function PlaneCanvasLayer({ flights, airportsByCode }) {
         if (Math.hypot(pt.x - cx, pt.y - cy) < CLICK_HIT_PX) {
           setSelectedFlightId?.(flight.id)
           setActivePanelTab?.(1)
-          const popup = L.popup({ offset: [0, -14], minWidth: 190, maxWidth: 220, autoPan: false })
-            .setLatLng(latlng)
-            .setContent(createReactPopup(FlightMapPopup, { flight }))
-            .openOn(map)
-          activePlanePopupRef.current = { popup, flightId: flight.id }
+          onPlaneClickRef.current?.({ flight, x: pt.x, y: pt.y })
           return
         }
       }
-    }
-
-    function onPopupClose(e) {
-      if (activePlanePopupRef.current && e.popup === activePlanePopupRef.current.popup) {
-        activePlanePopupRef.current = null
-      }
+      // Clicked away from any plane — close the popup
+      onPlaneClickRef.current?.(null)
     }
 
     resize()
     map.on('resize', resize)
     map.on('move zoom moveend zoomend viewreset', onMove)
     map.on('click', onMapClick)
-    map.on('popupclose', onPopupClose)
 
     return () => {
       map.off('resize', resize)
       map.off('move zoom moveend zoomend viewreset', onMove)
       map.off('click', onMapClick)
-      map.off('popupclose', onPopupClose)
       canvas.remove()
       canvasRef.current = null
     }
