@@ -188,6 +188,7 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
 
   const baseAirports = staticAirports ?? (context ? context.filteredAirports : propsAirports)
   const baseFlights = context ? context.filteredFlights : propsFlights
+  const simulatedTime = context?.simulationState?.simulatedTime ?? null
 
   // Unique continent values for region chips — derived from live airport data.
   // 'unknown' from the DB is normalized to 'Sudamérica' (matches useSimulation patch).
@@ -287,12 +288,13 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
         <AirportPaneSetup />
         <MapFocusController />
 
-        {/* Flight route polylines */}
+        {/* Flight route polylines — trimmed to remaining segment for IN_FLIGHT */}
         {visibleFlights.map(flight => (
           <FlightRoute
             key={flight.id}
             flight={flight}
             airportsByCode={airportsByCode}
+            simulatedTime={simulatedTime}
           />
         ))}
 
