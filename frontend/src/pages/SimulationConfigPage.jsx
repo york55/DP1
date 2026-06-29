@@ -78,25 +78,6 @@ const flightColumns = [
   },
 ]
 
-function SummaryCard({ label, value, color = '#1F3864' }) {
-  return (
-    <Paper
-      elevation={1}
-      sx={{
-        p: 1.5,
-        textAlign: 'center',
-        flex: 1,
-        borderTop: `3px solid ${color}`,
-        borderRadius: 1,
-      }}
-    >
-      <Typography sx={{ fontSize: 20, fontWeight: 700, color }}>{value}</Typography>
-      <Typography variant="caption" sx={{ color: '#6B7280', fontSize: '0.65rem' }}>
-        {label}
-      </Typography>
-    </Paper>
-  )
-}
 
 export default function SimulationConfigPage() {
   const navigate = useNavigate()
@@ -115,13 +96,11 @@ export default function SimulationConfigPage() {
   const [flightsExpanded, setFlightsExpanded] = useState(false)
   const [airports, setAirports] = useState([])
   const [flights, setFlights] = useState([])
-  const [flightScheduleCount, setFlightScheduleCount] = useState(0)
   const [loadingData, setLoadingData] = useState(true)
   const [starting, setStarting] = useState(false)
   const [creatingBatches, setCreatingBatches] = useState(false)
   const [isWaitingToStart, setIsWaitingToStart] = useState(false)
 
-  const [storeStatus, setStoreStatus] = useState(null)
   const [uploadedFiles, setUploadedFiles] = useState([])
   const [batchProgressMap, setBatchProgressMap] = useState({})
 
@@ -130,8 +109,6 @@ export default function SimulationConfigPage() {
   const isResizing = useRef(false)
   const containerRef = useRef(null)
   const stompClientRef = useRef(null)
-
-  const periodFlightCount = flightScheduleCount
 
   const handleResizeStart = (e) => {
     e.preventDefault()
@@ -158,23 +135,20 @@ export default function SimulationConfigPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [airportsRes, flightsRes, storeRes, flightPlansRes, uploadsRes] = await Promise.all([
+        const [airportsRes, flightsRes, uploadsRes] = await Promise.all([
           apiClient.get('/airports'),
           apiClient.get('/flights'),
-          apiClient.get('/envios/estado'),
-          apiClient.get('/flight-plans'),
           apiClient.get('/sim/uploads/archivos'),
         ])
 
         setAirports(airportsRes.data.map((a) => ({
           ...a, lat: a.latitude, lon: a.longitude,
+          iata: a.iata || a.iataCode,
           maxCapacity: a.warehouseCapacity, occupancy: a.currentOccupancy,
         })))
         // Solo mostrar vuelos plantilla (frequency=DAILY), no las instancias
         // generadas por corridas anteriores que aún no fueron limpiadas
         setFlights(flightsRes.data.filter(f => f.frequency === 'DAILY' || !f.frequency))
-        setFlightScheduleCount(flightPlansRes.data.length)
-        setStoreStatus(storeRes.data)
         setUploadedFiles(uploadsRes.data)
       } catch (err) {
         console.error('Error fetching simulation data:', err)
@@ -306,7 +280,7 @@ export default function SimulationConfigPage() {
               <CircularProgress />
             </Box>
           ) : (
-            <WorldMap airports={airports} flights={[]} simulatedTime={null} />
+            <WorldMap airports={airports} staticAirports={airports} flights={[]} simulatedTime={null} />
           )}
         </Box>
 
@@ -326,77 +300,70 @@ export default function SimulationConfigPage() {
             backgroundColor: '#FFFFFF', display: 'flex', flexDirection: 'column',
           }}
         >
-          <Box sx={{ p: 2.5, flex: 1, overflow: 'auto' }}>
-            <Typography variant="h6" sx={{ fontWeight: 700, color: '#1F3864', mb: 0.5, fontSize: '1rem' }}>
-              Simulación por Período
-            </Typography>
-            <Typography variant="body2" sx={{ color: '#6B7280', mb: 2.5, fontSize: '0.8rem' }}>
-              Configure los parámetros y presione Iniciar para comenzar.
-            </Typography>
-
-            <Divider sx={{ mb: 2 }} />
-
-            {/* Period */}
-            <Box sx={{ mb: 2.5 }}>
-              <Typography sx={{ fontSize: '0.8rem', fontWeight: 600, color: '#1F3864', mb: 0.5 }}>
-                Duración del período
-              </Typography>
-              <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: '#1F3864' }}>
-                5 días
+          <Box sx={{ p: 2, flex: 1, overflow: 'auto' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+              <LuggageIcon sx={{ fontSize: 18, color: '#1F3864' }} />
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#1F3864', fontSize: '0.95rem' }}>
+                Simulación por Período
               </Typography>
             </Box>
 
-            {/* Start date */}
-            <FormControl sx={{ mb: 2.5, width: '100%' }}>
-              <FormLabel sx={{ fontSize: '0.8rem', fontWeight: 600, color: '#1F3864', mb: 1, display: 'block' }}>
-                Fecha de inicio
-              </FormLabel>
-              <DateTimePicker
-                value={startDate}
-                onChange={(newVal) => setStartDate(newVal)}
-                slotProps={{
-                  textField: {
-                    size: 'small', fullWidth: true,
-                    sx: { '& .MuiOutlinedInput-root': { fontSize: '0.82rem' } },
-                  },
-                }}
-              />
-            </FormControl>
+            <Divider sx={{ mb: 2 }} />
+
+            {/* Period + Start date row */}
+            <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-end', mb: 2 }}>
+              <Box sx={{ flexShrink: 0 }}>
+                <Typography sx={{ fontSize: '0.72rem', fontWeight: 600, color: '#6B7280', mb: 0.5 }}>
+                  Duración
+                </Typography>
+                <Chip label="5 días" size="small"
+                  sx={{ fontWeight: 700, backgroundColor: '#EEF2FF', color: '#1F3864', fontSize: '0.72rem' }} />
+              </Box>
+              <FormControl sx={{ flex: 1 }}>
+                <FormLabel sx={{ fontSize: '0.72rem', fontWeight: 600, color: '#6B7280', mb: 0.5, display: 'block' }}>
+                  Fecha de inicio
+                </FormLabel>
+                <DateTimePicker
+                  value={startDate}
+                  onChange={(newVal) => setStartDate(newVal)}
+                  slotProps={{
+                    textField: {
+                      size: 'small', fullWidth: true,
+                      sx: { '& .MuiOutlinedInput-root': { fontSize: '0.8rem' } },
+                    },
+                  }}
+                />
+              </FormControl>
+            </Box>
 
             {/* Envíos store status */}
-            <Box sx={{ mb: 2.5 }}>
-              <Typography variant="caption"
-                sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}>
+            <Box sx={{ mb: 2 }}>
+              <Typography sx={{ fontSize: '0.72rem', fontWeight: 600, color: '#6B7280', mb: 0.75 }}>
                 Datos de Envíos
               </Typography>
 
               {uploadedFiles.length > 0 ? (
                 <Paper elevation={0}
-                  sx={{ p: 1.5, border: '1px solid #A5D6A7', borderRadius: 1, backgroundColor: '#F1F8E9' }}>
+                  sx={{ p: 1.25, border: '1px solid #A5D6A7', borderRadius: 1, backgroundColor: '#F1F8E9' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <InventoryIcon sx={{ fontSize: 18, color: '#2E7D32' }} />
-                    <Box sx={{ flex: 1 }}>
-                      <Typography sx={{ fontSize: '0.78rem', fontWeight: 700, color: '#2E7D32' }}>
-                        {uploadedFiles.length} archivo{uploadedFiles.length !== 1 ? 's' : ''} disponibles en servidor
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#558B2F', fontSize: '0.68rem' }}>
-                        Se leerá solo el rango seleccionado al iniciar
-                      </Typography>
-                    </Box>
-                    <Chip label="Listo" size="small"
-                      sx={{ backgroundColor: '#C8E6C9', color: '#1B5E20', fontWeight: 700, fontSize: '0.62rem' }} />
+                    <InventoryIcon sx={{ fontSize: 16, color: '#2E7D32' }} />
+                    <Typography sx={{ fontSize: '0.75rem', fontWeight: 700, color: '#2E7D32', flex: 1 }}>
+                      {uploadedFiles.length} archivo{uploadedFiles.length !== 1 ? 's' : ''} listos
+                    </Typography>
+                    <Chip label="OK" size="small"
+                      sx={{ backgroundColor: '#C8E6C9', color: '#1B5E20', fontWeight: 700, fontSize: '0.6rem', height: 20 }} />
                   </Box>
                 </Paper>
               ) : (
-                <Alert severity="warning" sx={{ fontSize: '0.75rem', py: 0.5 }}
+                <Alert severity="warning" sx={{ fontSize: '0.72rem', py: 0.5 }}
                   action={
                     <Tooltip title="Ir al módulo de envíos">
                       <IconButton size="small" onClick={() => navigate('/envios')}>
-                        <OpenInNewIcon sx={{ fontSize: 16 }} />
+                        <OpenInNewIcon sx={{ fontSize: 14 }} />
                       </IconButton>
                     </Tooltip>
                   }>
-                  Sin archivos subidos. Sube los archivos primero.
+                  Sin archivos subidos.
                 </Alert>
               )}
 
@@ -432,22 +399,6 @@ export default function SimulationConfigPage() {
               )}
             </Box>
 
-            {/* Summary cards */}
-            <Box sx={{ mb: 2.5 }}>
-              <Typography variant="caption"
-                sx={{ fontWeight: 600, color: '#1F3864', display: 'block', mb: 1, fontSize: '0.78rem' }}>
-                Resumen del escenario
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                <SummaryCard label="Aeropuertos" value={airports.length} color="#1F3864" />
-                <SummaryCard label="Vuelos" value={periodFlightCount} color="#2E75B6" />
-                <SummaryCard label="Archivos subidos"
-                  value={uploadedFiles.length || '—'}
-                  color="#2E7D32" />
-              </Box>
-            </Box>
-
-
             {/* Start button */}
             <Button
               variant="contained" fullWidth size="large"
@@ -455,13 +406,13 @@ export default function SimulationConfigPage() {
               onClick={handleStart}
               disabled={starting || creatingBatches}
               sx={{
-                backgroundColor: '#1F3864', fontWeight: 700, fontSize: '0.9rem', py: 1.5,
+                backgroundColor: '#1F3864', fontWeight: 700, fontSize: '0.88rem', py: 1.25,
                 '&:hover': { backgroundColor: '#162D4F' },
               }}>
               {creatingBatches ? 'PREPARANDO ENVÍOS...' : starting ? 'INICIANDO...' : 'INICIAR SIMULACIÓN'}
             </Button>
 
-            <Divider sx={{ my: 2 }} />
+            <Divider sx={{ my: 1.5 }} />
 
             {/* Collapsible flights table */}
             <Box>

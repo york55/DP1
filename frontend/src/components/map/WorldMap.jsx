@@ -6,7 +6,7 @@ import FlightRoute from './FlightRoute'
 import PlaneCanvasLayer from './PlaneCanvasLayer'
 import MapLegend from './MapLegend'
 import { useSimulationContext } from '../../context/SimulationContext'
-import { initPlaneIcon } from './planeIcon'
+import { initPlaneIcons } from './planeIcon'
 import { initWarehouseIcons } from './warehouseIcons'
 
 function MapFocusController() {
@@ -85,15 +85,16 @@ function AirportPaneSetup() {
  * WorldMap — renders the full interactive world map with airports and flight routes.
  * @param {Array} airports - array of airport objects (with live occupancy)
  * @param {Array} flights - array of flight objects
+ * @param {Array} staticAirports - when provided, overrides context/props airports (e.g. config page preview)
  * @param {Date|null} simulatedTime - current simulated time for progress calculation
  * @param {*} resizeTrigger - any value whose change signals a container resize
  */
-function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], simulatedTime = null, resizeTrigger }) {
+function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], staticAirports, resizeTrigger }) {
   // Rasterize icons once on mount. When both resolve, bump iconsVersion so all
   // children re-render once and pick up the PNG L.icon instead of the divIcon fallback.
   const [iconsVersion, setIconsVersion] = useState(0)
   useEffect(() => {
-    Promise.all([initPlaneIcon(), initWarehouseIcons()]).then(() => setIconsVersion(1))
+    Promise.all([initPlaneIcons(), initWarehouseIcons()]).then(() => setIconsVersion(1))
   }, [])
 
   let context = null
@@ -103,7 +104,7 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], si
     // context not available
   }
 
-  const airports = context ? context.filteredAirports : propsAirports
+  const airports = staticAirports ?? (context ? context.filteredAirports : propsAirports)
   const flights = context ? context.filteredFlights : propsFlights
 
   // Show all IN_FLIGHT flights with valid airport assignments.
@@ -178,7 +179,6 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], si
         <PlaneCanvasLayer
           flights={visibleFlights}
           airportsByCode={airportsByCode}
-          simulatedTime={simulatedTime}
         />
 
         {/* Airport markers */}

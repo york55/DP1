@@ -7,54 +7,22 @@ import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogActions from '@mui/material/DialogActions'
-import PauseIcon from '@mui/icons-material/Pause'
-import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import CancelIcon from '@mui/icons-material/Cancel'
 import { useSimulationContext } from '../../context/SimulationContext'
 
 export default function SimulationControls() {
   const navigate = useNavigate()
-  const { simulationState, pauseSimulation, resumeSimulation, cancelSimulation } = useSimulationContext()
+  const { simulationState, cancelSimulation } = useSimulationContext()
   const { status } = simulationState
 
   const [confirmOpen, setConfirmOpen] = useState(false)
 
-  const isPaused = status === 'paused'
-  const isRunning = status === 'running'
   const isIdle = status === 'idle'
   const isFinished = status === 'finished'
 
   return (
     <>
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-        <Button
-          variant="contained"
-          startIcon={<PauseIcon />}
-          onClick={pauseSimulation}
-          disabled={!isRunning}
-          size="small"
-          sx={{
-            backgroundColor: '#E65100',
-            '&:hover': { backgroundColor: '#BF360C' },
-            '&.Mui-disabled': { backgroundColor: '#BFBFBF' },
-          }}
-        >
-          Pausar
-        </Button>
-        <Button
-          variant="contained"
-          startIcon={<PlayArrowIcon />}
-          onClick={resumeSimulation}
-          disabled={isRunning || isIdle || isFinished}
-          size="small"
-          sx={{
-            backgroundColor: '#2E7D32',
-            '&:hover': { backgroundColor: '#1B5E20' },
-            '&.Mui-disabled': { backgroundColor: '#BFBFBF' },
-          }}
-        >
-          Reanudar
-        </Button>
         <Button
           variant="outlined"
           startIcon={<CancelIcon />}

@@ -1,8 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
-import { PLANE_IMAGE } from './planeIcon'
+import { PLANE_IMAGES } from './planeIcon'
+import { getSemaphoreColor } from '../../utils/semaphoreUtils'
 import { useSimulationContext } from '../../context/SimulationContext'
+import { createReactPopup } from '../../utils/leafletPopup'
+import FlightMapPopup from './FlightMapPopup'
 
 const DRAW_SIZE = 24   // CSS pixels the plane bitmap is drawn at
 const CLICK_HIT_PX = 14  // click detection radius in CSS pixels
@@ -10,7 +13,6 @@ const CLICK_HIT_PX = 14  // click detection radius in CSS pixels
 function lerp(a, b, t) { return a + (b - a) * t }
 
 // Computes {latlng, angleRad, flight} for each visible in-flight plane.
-// Called at most 1Hz (when simulatedTime or flight data changes).
 function computePlanePositions(flights, airportsByCode, simulatedTime) {
   const out = []
   for (const f of flights) {
@@ -40,7 +42,9 @@ function computePlanePositions(flights, airportsByCode, simulatedTime) {
       y: lerp(p1.y, p2.y, progress),
     })
 
-    out.push({ latlng: L.latLng(ll.lat, ll.lng), angleRad, flight: f })
+    const pct = f.capacity > 0 ? (f.bagsAboard || 0) / f.capacity * 100 : 0
+    const color = getSemaphoreColor(pct)
+    out.push({ latlng: L.latLng(ll.lat, ll.lng), angleRad, flight: f, color })
   }
   return out
 }
@@ -49,20 +53,27 @@ function computePlanePositions(flights, airportsByCode, simulatedTime) {
  * PlaneCanvasLayer — renders all in-flight planes onto a single <canvas> element
  * positioned over the Leaflet map container.
  *
- * Replacing N individual Leaflet Marker DOM elements with a single canvas eliminates
- * per-plane DOM node creation, style mutations, and React reconciliation on every tick.
- * Redraws happen only when flight data changes (≤1Hz) or the map pans/zooms.
+ * A requestAnimationFrame loop redraws at ~60fps, interpolating plane positions
+ * from animClockRef so movement is smooth between WebSocket ticks.
  */
-export default function PlaneCanvasLayer({ flights, airportsByCode, simulatedTime }) {
+export default function PlaneCanvasLayer({ flights, airportsByCode }) {
   const map = useMap()
   const canvasRef = useRef(null)
   const positionsRef = useRef([])
   const drawRef = useRef(null)
+  const activePlanePopupRef = useRef(null) // { popup, flightId }
 
   let context = null
   try { context = useSimulationContext() } catch (_) {}
   const setSelectedFlightId = context?.setSelectedFlightId
   const setActivePanelTab = context?.setActivePanelTab
+  const animClockRef = context?.animClockRef
+
+  // Keep stable refs to latest props so the rAF callback never closes over stale values
+  const flightsRef = useRef(flights)
+  const airportsByCodeRef = useRef(airportsByCode)
+  useEffect(() => { flightsRef.current = flights }, [flights])
+  useEffect(() => { airportsByCodeRef.current = airportsByCode }, [airportsByCode])
 
   // drawRef always holds the latest draw function without needing effect re-runs.
   // We use a ref instead of useCallback so map event listeners never go stale.
@@ -74,38 +85,67 @@ export default function PlaneCanvasLayer({ flights, airportsByCode, simulatedTim
       const ctx = canvas.getContext('2d')
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      if (!PLANE_IMAGE?.complete || !PLANE_IMAGE.naturalWidth) return
-
       const half = DRAW_SIZE / 2
       ctx.save()
       ctx.scale(dpr, dpr)  // one scale call for HiDPI; all coords below are CSS pixels
-      for (const { latlng, angleRad } of positionsRef.current) {
-        const pt = map.latLngToContainerPoint(latlng)
+      for (const { latlng, angleRad, color } of positionsRef.current) {
+        const img = PLANE_IMAGES[color]
+        if (!img?.complete || !img.naturalWidth) continue
+        const pt = map.latLngToLayerPoint(latlng)
         ctx.save()
         ctx.translate(pt.x, pt.y)
         ctx.rotate(angleRad)
-        ctx.drawImage(PLANE_IMAGE, -half, -half, DRAW_SIZE, DRAW_SIZE)
+        ctx.drawImage(img, -half, -half, DRAW_SIZE, DRAW_SIZE)
         ctx.restore()
       }
       ctx.restore()
+
+      // Keep open popup anchored to the plane's current position
+      if (activePlanePopupRef.current) {
+        const { popup, flightId } = activePlanePopupRef.current
+        const pos = positionsRef.current.find(p => p.flight.id === flightId)
+        if (pos) popup.setLatLng(pos.latlng)
+      }
     }
   })
 
-  // Recompute positions when flight data or time changes, then redraw.
-  // This is the only path that runs React's reconciler — max 1Hz from simulatedTime.
+  // rAF loop: recomputes plane positions at ~60fps using interpolated sim time.
+  // Reads flights/airports via refs to avoid stale closures without restarting the loop.
   useEffect(() => {
-    positionsRef.current = computePlanePositions(flights, airportsByCode, simulatedTime)
-    drawRef.current?.()
-  }, [flights, airportsByCode, simulatedTime])
+    let rafId
+    function tick() {
+      const clock = animClockRef?.current
+      let simTime = null
+      if (clock?.lastTickSimTime && clock?.lastTickRealTime && clock?.simMsPerRealMs) {
+        simTime = new Date(
+          clock.lastTickSimTime.getTime() +
+          (Date.now() - clock.lastTickRealTime) * clock.simMsPerRealMs
+        )
+      }
+      positionsRef.current = computePlanePositions(flightsRef.current, airportsByCodeRef.current, simTime)
+      drawRef.current?.()
+      rafId = requestAnimationFrame(tick)
+    }
+    rafId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafId)
+  }, [animClockRef])
 
   // Mount the canvas and wire up Leaflet events. Runs once per map instance.
   useEffect(() => {
     const dpr = window.devicePixelRatio || 1
     const canvas = document.createElement('canvas')
-    // pointer-events:none lets map pan/click pass through; we intercept via map.on('click')
-    canvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:410;'
+    canvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;'
     canvasRef.current = canvas
-    map.getContainer().appendChild(canvas)
+
+    // Place canvas inside a custom Leaflet pane (inside leaflet-map-pane) so the
+    // tooltip pane (z-index 650) and popup pane (700) naturally stack above planes.
+    // Appending directly to map.getContainer() would put it above all panes.
+    if (!map.getPane('planePane')) {
+      const pane = map.createPane('planePane')
+      pane.style.zIndex = 405
+      pane.style.pointerEvents = 'none'
+    }
+    map.getPane('planePane').appendChild(canvas)
 
     function resize() {
       const { x, y } = map.getSize()
@@ -125,8 +165,19 @@ export default function PlaneCanvasLayer({ flights, airportsByCode, simulatedTim
         if (Math.hypot(pt.x - cx, pt.y - cy) < CLICK_HIT_PX) {
           setSelectedFlightId?.(flight.id)
           setActivePanelTab?.(1)
+          const popup = L.popup({ offset: [0, -14], minWidth: 190, maxWidth: 220, autoPan: false })
+            .setLatLng(latlng)
+            .setContent(createReactPopup(FlightMapPopup, { flight }))
+            .openOn(map)
+          activePlanePopupRef.current = { popup, flightId: flight.id }
           return
         }
+      }
+    }
+
+    function onPopupClose(e) {
+      if (activePlanePopupRef.current && e.popup === activePlanePopupRef.current.popup) {
+        activePlanePopupRef.current = null
       }
     }
 
@@ -134,11 +185,13 @@ export default function PlaneCanvasLayer({ flights, airportsByCode, simulatedTim
     map.on('resize', resize)
     map.on('move zoom moveend zoomend viewreset', onMove)
     map.on('click', onMapClick)
+    map.on('popupclose', onPopupClose)
 
     return () => {
       map.off('resize', resize)
       map.off('move zoom moveend zoomend viewreset', onMove)
       map.off('click', onMapClick)
+      map.off('popupclose', onPopupClose)
       canvas.remove()
       canvasRef.current = null
     }

@@ -15,39 +15,35 @@ export default function AirportPopup({ airport, incomingCount = 0, outgoingCount
   const currentBags = currentOccupancy ?? Math.round((occupancy / 100) * maxCapacity)
 
   return (
-    <Box sx={{ minWidth: 200, fontFamily: '"Roboto", sans-serif' }}>
+    <Box sx={{ minWidth: 180, fontFamily: '"Roboto", sans-serif' }}>
       {/* Header */}
-      <Box sx={{ mb: 1 }}>
-        <Typography
-          sx={{ fontSize: 22, fontWeight: 700, color: '#1F3864', lineHeight: 1 }}
-        >
+      <Box sx={{ mb: 0.5 }}>
+        <Typography sx={{ fontSize: 17, fontWeight: 700, color: '#1F3864', lineHeight: 1 }}>
           {iata}
         </Typography>
-        <Typography sx={{ fontSize: 13, color: '#6B7280' }}>
+        <Typography sx={{ fontSize: 11, color: '#6B7280' }}>
           {city}, {country}
         </Typography>
       </Box>
 
-      <Divider sx={{ my: 0.75 }} />
+      <Divider sx={{ my: 0.5 }} />
 
-      {/* Semaphore */}
-      <Box sx={{ mb: 1 }}>
-        <SemaphoreChip occupancyPct={occupancy} />
-      </Box>
-
-      {/* Capacity bar */}
-      <Box sx={{ mb: 1 }}>
+      {/* Semaphore + Capacity bar */}
+      <Box sx={{ mb: 0.5 }}>
+        <Box sx={{ mb: 0.5 }}>
+          <SemaphoreChip occupancyPct={occupancy} />
+        </Box>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.25 }}>
-          <Typography sx={{ fontSize: 11, color: '#6B7280' }}>Capacidad</Typography>
-          <Typography sx={{ fontSize: 11, fontWeight: 600 }}>
-            {currentBags} / {maxCapacity > 0 ? maxCapacity : '—'} maletas
+          <Typography sx={{ fontSize: 10, color: '#6B7280' }}>Capacidad</Typography>
+          <Typography sx={{ fontSize: 10, fontWeight: 600 }}>
+            {currentBags} / {maxCapacity > 0 ? maxCapacity : '—'} maletas ({occupancy.toFixed(1)}%)
           </Typography>
         </Box>
         <LinearProgress
           variant="determinate"
           value={Math.min(occupancy, 100)}
           sx={{
-            height: 6,
+            height: 5,
             borderRadius: 3,
             backgroundColor: '#E0E0E0',
             '& .MuiLinearProgress-bar': {
@@ -57,22 +53,22 @@ export default function AirportPopup({ airport, incomingCount = 0, outgoingCount
         />
       </Box>
 
-      <Divider sx={{ my: 0.75 }} />
+      <Divider sx={{ my: 0.5 }} />
 
       {/* Flight counts */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
         <Box sx={{ textAlign: 'center' }}>
-          <Typography sx={{ fontSize: 16, fontWeight: 700, color: '#1F3864' }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#1F3864' }}>
             {incomingCount}
           </Typography>
-          <Typography sx={{ fontSize: 10, color: '#6B7280' }}>Vuelos entrada</Typography>
+          <Typography sx={{ fontSize: 9, color: '#6B7280' }}>Vuelos entrada</Typography>
         </Box>
         <Divider orientation="vertical" flexItem />
         <Box sx={{ textAlign: 'center' }}>
-          <Typography sx={{ fontSize: 16, fontWeight: 700, color: '#1F3864' }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#1F3864' }}>
             {outgoingCount}
           </Typography>
-          <Typography sx={{ fontSize: 10, color: '#6B7280' }}>Vuelos salida</Typography>
+          <Typography sx={{ fontSize: 9, color: '#6B7280' }}>Vuelos salida</Typography>
         </Box>
       </Box>
     </Box>

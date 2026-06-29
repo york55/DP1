@@ -3,11 +3,11 @@ import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import TextField from '@mui/material/TextField'
 import MenuItem from '@mui/material/MenuItem'
-import Drawer from '@mui/material/Drawer'
 import Typography from '@mui/material/Typography'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import CloseIcon from '@mui/icons-material/Close'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
@@ -105,6 +105,173 @@ export default function WarehousesTab() {
     },
   ]
 
+  // Inline detail view — replaces table when a warehouse is selected (same pattern as FlightsTab)
+  if (selectedWarehouse) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* Header */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1, py: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <IconButton size="small" onClick={() => setSelectedAirportCode(null)}>
+              <ArrowBackIcon fontSize="small" />
+            </IconButton>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1F3864' }}>
+              Almacén: {selectedWarehouse.id}
+            </Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setSelectedAirportCode(null)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Box>
+
+        <Divider />
+
+        {/* Info Summary */}
+        <Box sx={{ px: 1.5, py: 1.5, display: 'flex', flexDirection: 'column', gap: 0.8 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2" color="text.secondary">Ubicación:</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>{selectedWarehouse.city}, {selectedWarehouse.country}</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2" color="text.secondary">Región:</Typography>
+            <Typography variant="body2">{selectedWarehouse.continent}</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="body2" color="text.secondary">Ocupación:</Typography>
+            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {selectedWarehouse.currentOccupancy || 0} / {selectedWarehouse.warehouseCapacity || 500}
+              </Typography>
+              <SemaphoreChip occupancyPct={selectedWarehouse.occupancy || 0} />
+            </Box>
+          </Box>
+          {selectedWarehouse.nextDeparture && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography variant="body2" color="text.secondary">Próxima Salida:</Typography>
+              <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                {selectedWarehouse.nextDepartureFlight} ({formatFlightTime(selectedWarehouse.nextDeparture)})
+              </Typography>
+            </Box>
+          )}
+          {selectedWarehouse.nextArrival && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography variant="body2" color="text.secondary">Próxima Llegada:</Typography>
+              <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                {selectedWarehouse.nextArrivalFlight} ({formatFlightTime(selectedWarehouse.nextArrival)})
+              </Typography>
+            </Box>
+          )}
+        </Box>
+
+        <Divider />
+
+        {/* Tabs */}
+        <Tabs
+          value={detailTab}
+          onChange={(e, v) => setDetailTab(v)}
+          variant="fullWidth"
+          sx={{ minHeight: 36, '& .MuiTab-root': { py: 1, minHeight: 36, fontSize: '0.75rem' } }}
+        >
+          <Tab label="Stock" />
+          <Tab label="Flujos UT" />
+        </Tabs>
+
+        {/* Tab content */}
+        <Box sx={{ flex: 1, overflowY: 'auto', px: 1, mt: 0.5 }}>
+          {detailTab === 0 ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1565C0', mb: 0.5 }}>
+                  En tránsito / Por Salir ({warehouseDetails.transitShipments.length})
+                </Typography>
+                <List dense>
+                  {warehouseDetails.transitShipments.length === 0 ? (
+                    <Typography variant="caption" sx={{ color: 'text.secondary', pl: 1 }}>Ninguno</Typography>
+                  ) : (
+                    warehouseDetails.transitShipments.map(s => (
+                      <ListItem key={s.id} sx={{ px: 0, py: 0.2 }}>
+                        <ListItemText
+                          primary={<Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{s.id}</Typography>}
+                          secondary={`Destino: ${s.destination}`}
+                        />
+                        <Chip label={`${s.totalBags} maletas`} size="small" variant="outlined" />
+                      </ListItem>
+                    ))
+                  )}
+                </List>
+              </Box>
+              <Divider />
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#2E7D32', mb: 0.5 }}>
+                  Destino Final / Entregado ({warehouseDetails.deliveredShipments.length})
+                </Typography>
+                <List dense>
+                  {warehouseDetails.deliveredShipments.length === 0 ? (
+                    <Typography variant="caption" sx={{ color: 'text.secondary', pl: 1 }}>Ninguno</Typography>
+                  ) : (
+                    warehouseDetails.deliveredShipments.map(s => (
+                      <ListItem key={s.id} sx={{ px: 0, py: 0.2 }}>
+                        <ListItemText
+                          primary={<Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{s.id}</Typography>}
+                          secondary={`Cliente: ${s.client}`}
+                        />
+                        <Chip label={`${s.totalBags} maletas`} size="small" color="success" variant="outlined" />
+                      </ListItem>
+                    ))
+                  )}
+                </List>
+              </Box>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#E65100', mb: 0.5 }}>
+                  Vuelos Entrantes ({warehouseDetails.incomingFlights.length})
+                </Typography>
+                <List dense>
+                  {warehouseDetails.incomingFlights.length === 0 ? (
+                    <Typography variant="caption" sx={{ color: 'text.secondary', pl: 1 }}>Ninguno</Typography>
+                  ) : (
+                    warehouseDetails.incomingFlights.map(f => (
+                      <ListItem key={f.id} sx={{ px: 0, py: 0.2 }}>
+                        <ListItemText
+                          primary={<Typography variant="caption" sx={{ fontWeight: 700 }}>{f.id}</Typography>}
+                          secondary={`Origen: ${f.origin} | Llegada: ${formatFlightTime(f.arrivalUTC)}`}
+                        />
+                        <Chip label={`${f.bagsAboard} maletas`} size="small" color="warning" variant="outlined" />
+                      </ListItem>
+                    ))
+                  )}
+                </List>
+              </Box>
+              <Divider />
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1F3864', mb: 0.5 }}>
+                  Vuelos Salientes ({warehouseDetails.outgoingFlights.length})
+                </Typography>
+                <List dense>
+                  {warehouseDetails.outgoingFlights.length === 0 ? (
+                    <Typography variant="caption" sx={{ color: 'text.secondary', pl: 1 }}>Ninguno</Typography>
+                  ) : (
+                    warehouseDetails.outgoingFlights.map(f => (
+                      <ListItem key={f.id} sx={{ px: 0, py: 0.2 }}>
+                        <ListItemText
+                          primary={<Typography variant="caption" sx={{ fontWeight: 700 }}>{f.id}</Typography>}
+                          secondary={`Destino: ${f.destination} | Salida: ${formatFlightTime(f.departureUTC)}`}
+                        />
+                        <Chip label={`${f.bagsAboard} maletas`} size="small" variant="outlined" />
+                      </ListItem>
+                    ))
+                  )}
+                </List>
+              </Box>
+            </Box>
+          )}
+        </Box>
+      </Box>
+    )
+  }
+
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 1 }}>
       {/* Filters */}
@@ -158,181 +325,6 @@ export default function WarehousesTab() {
           }}
         />
       </Box>
-
-      {/* Warehouse Detail Drawer */}
-      <Drawer
-        anchor="right"
-        open={Boolean(selectedWarehouse)}
-        onClose={() => setSelectedAirportCode(null)}
-        PaperProps={{ sx: { width: 360, p: 2 } }}
-      >
-        {selectedWarehouse && (
-          <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {/* Header */}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#1F3864' }}>
-                Almacén: {selectedWarehouse.id}
-              </Typography>
-              <IconButton onClick={() => setSelectedWarehouse(null)} size="small">
-                <CloseIcon />
-              </IconButton>
-            </Box>
-
-            <Divider />
-
-            {/* Info Summary */}
-            <Box sx={{ my: 2, display: 'flex', flexDirection: 'column', gap: 0.8 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">Ubicación:</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{selectedWarehouse.city}, {selectedWarehouse.country}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">Región/Continente:</Typography>
-                <Typography variant="body2">{selectedWarehouse.continent}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2" color="text.secondary">Ocupación:</Typography>
-                <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {selectedWarehouse.currentOccupancy || 0} / {selectedWarehouse.warehouseCapacity || 500}
-                  </Typography>
-                  <SemaphoreChip occupancyPct={selectedWarehouse.occupancy || 0} />
-                </Box>
-              </Box>
-              {selectedWarehouse.nextDeparture && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="text.secondary">Próxima Salida:</Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                    {selectedWarehouse.nextDepartureFlight} ({formatFlightTime(selectedWarehouse.nextDeparture)})
-                  </Typography>
-                </Box>
-              )}
-              {selectedWarehouse.nextArrival && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="text.secondary">Próxima Llegada:</Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                    {selectedWarehouse.nextArrivalFlight} ({formatFlightTime(selectedWarehouse.nextArrival)})
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-
-            <Divider />
-
-            {/* Tabs inside Drawer */}
-            <Tabs
-              value={detailTab}
-              onChange={(e, v) => setDetailTab(v)}
-              variant="fullWidth"
-              sx={{ minHeight: 36, mt: 1, '& .MuiTab-root': { py: 1, minHeight: 36, fontSize: '0.75rem' } }}
-            >
-              <Tab label="Stock" />
-              <Tab label="Flujos UT" />
-            </Tabs>
-
-            {/* Tab Panels */}
-            <Box sx={{ flex: 1, overflowY: 'auto', mt: 1 }}>
-              {detailTab === 0 ? (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {/* Transit shipments (waiting departure) */}
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1565C0', mb: 0.5 }}>
-                      En tránsito / Por Salir ({warehouseDetails.transitShipments.length})
-                    </Typography>
-                    <List dense>
-                      {warehouseDetails.transitShipments.length === 0 ? (
-                        <Typography variant="caption" sx={{ color: 'text.secondary', pl: 1 }}>Ninguno</Typography>
-                      ) : (
-                        warehouseDetails.transitShipments.map(s => (
-                          <ListItem key={s.id} sx={{ px: 0, py: 0.2 }}>
-                            <ListItemText
-                              primary={<Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{s.id}</Typography>}
-                              secondary={`Destino: ${s.destination}`}
-                            />
-                            <Chip label={`${s.totalBags} maletas`} size="small" variant="outlined" />
-                          </ListItem>
-                        ))
-                      )}
-                    </List>
-                  </Box>
-
-                  <Divider />
-
-                  {/* Delivered shipments (final destination here) */}
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#2E7D32', mb: 0.5 }}>
-                      Destino Final / Entregado ({warehouseDetails.deliveredShipments.length})
-                    </Typography>
-                    <List dense>
-                      {warehouseDetails.deliveredShipments.length === 0 ? (
-                        <Typography variant="caption" sx={{ color: 'text.secondary', pl: 1 }}>Ninguno</Typography>
-                      ) : (
-                        warehouseDetails.deliveredShipments.map(s => (
-                          <ListItem key={s.id} sx={{ px: 0, py: 0.2 }}>
-                            <ListItemText
-                              primary={<Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{s.id}</Typography>}
-                              secondary={`Cliente: ${s.client}`}
-                            />
-                            <Chip label={`${s.totalBags} maletas`} size="small" color="success" variant="outlined" />
-                          </ListItem>
-                        ))
-                      )}
-                    </List>
-                  </Box>
-                </Box>
-              ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {/* Incoming flights */}
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#E65100', mb: 0.5 }}>
-                      Vuelos Entrantes / Incoming ({warehouseDetails.incomingFlights.length})
-                    </Typography>
-                    <List dense>
-                      {warehouseDetails.incomingFlights.length === 0 ? (
-                        <Typography variant="caption" sx={{ color: 'text.secondary', pl: 1 }}>Ninguno</Typography>
-                      ) : (
-                        warehouseDetails.incomingFlights.map(f => (
-                          <ListItem key={f.id} sx={{ px: 0, py: 0.2 }}>
-                            <ListItemText
-                              primary={<Typography variant="caption" sx={{ fontWeight: 700 }}>{f.id}</Typography>}
-                              secondary={`Origen: ${f.origin} | Llegada: ${formatFlightTime(f.arrivalUTC)}`}
-                            />
-                            <Chip label={`${f.bagsAboard} maletas`} size="small" color="warning" variant="outlined" />
-                          </ListItem>
-                        ))
-                      )}
-                    </List>
-                  </Box>
-
-                  <Divider />
-
-                  {/* Outgoing flights */}
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1F3864', mb: 0.5 }}>
-                      Vuelos Salientes / Outgoing ({warehouseDetails.outgoingFlights.length})
-                    </Typography>
-                    <List dense>
-                      {warehouseDetails.outgoingFlights.length === 0 ? (
-                        <Typography variant="caption" sx={{ color: 'text.secondary', pl: 1 }}>Ninguno</Typography>
-                      ) : (
-                        warehouseDetails.outgoingFlights.map(f => (
-                          <ListItem key={f.id} sx={{ px: 0, py: 0.2 }}>
-                            <ListItemText
-                              primary={<Typography variant="caption" sx={{ fontWeight: 700 }}>{f.id}</Typography>}
-                              secondary={`Destino: ${f.destination} | Salida: ${formatFlightTime(f.departureUTC)}`}
-                            />
-                            <Chip label={`${f.bagsAboard} maletas`} size="small" variant="outlined" />
-                          </ListItem>
-                        ))
-                      )}
-                    </List>
-                  </Box>
-                </Box>
-              )}
-            </Box>
-          </Box>
-        )}
-      </Drawer>
     </Box>
   )
 }

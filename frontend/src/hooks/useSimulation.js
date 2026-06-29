@@ -87,6 +87,8 @@ export function useSimulation() {
   const lastTickSimTimeRef = useRef(null)
   const lastTickRealTimeRef = useRef(null)
   const simMsPerRealMsRef = useRef(null)
+  // Stable ref exposed to PlaneCanvasLayer for 60fps rAF animation
+  const animClockRef = useRef({ lastTickSimTime: null, lastTickRealTime: null, simMsPerRealMs: null })
 
   useEffect(() => {
     simTimeRef.current = simulationState.simulatedTime
@@ -283,6 +285,7 @@ export function useSimulation() {
     )
 
     lastTickSimTimeRef.current = simTime
+    animClockRef.current = { lastTickSimTime: simTime, lastTickRealTime: now, simMsPerRealMs: simMsPerRealMsRef.current }
     lastTickRealTimeRef.current = now
 
     if (!firstBatchReadyRef.current) {
@@ -479,6 +482,8 @@ export function useSimulation() {
           lat: a.latitude,
           lon: a.longitude,
           occupancy: a.occupancyPct || 0,
+          // TODO: fix continent in DB — temporary patch for airports returning 'unknown'
+          continent: (!a.continent || a.continent.toLowerCase() === 'unknown') ? 'Sudamérica' : a.continent,
         }))
         : []
 
@@ -658,6 +663,8 @@ export function useSimulation() {
           lat: a.latitude,
           lon: a.longitude,
           occupancy: a.occupancyPct || 0,
+          // TODO: fix continent in DB — temporary patch for airports returning 'unknown'
+          continent: (!a.continent || a.continent.toLowerCase() === 'unknown') ? 'Sudamérica' : a.continent,
         }))
         : []
 
@@ -843,6 +850,7 @@ export function useSimulation() {
     notifications,
     planningProgress,
     firstBatchReady,
+    animClockRef,
     startSimulation,
     pauseSimulation,
     resumeSimulation,
