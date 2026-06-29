@@ -6,8 +6,16 @@ import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
+import Button from '@mui/material/Button'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogContentText from '@mui/material/DialogContentText'
+import DialogActions from '@mui/material/DialogActions'
+import CircularProgress from '@mui/material/CircularProgress'
 import CloseIcon from '@mui/icons-material/Close'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import BlockIcon from '@mui/icons-material/Block'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
@@ -44,6 +52,7 @@ function FlightStatusChip({ status }) {
 
 export default function FlightsTab() {
   const {
+    simulationState,
     flights,
     shipments,
     selectedFlightId,
@@ -57,9 +66,26 @@ export default function FlightsTab() {
     flightSemaphore,
     setFlightSemaphore,
     filteredFlights,
+    cancelFlightDuringSimulation,
   } = useSimulationContext()
 
   const [detailTab, setDetailTab] = useState(0)
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+
+  const handleCancelFlight = async () => {
+    if (!selectedFlight) return
+    setCancelling(true)
+    try {
+      await cancelFlightDuringSimulation(selectedFlight.id)
+      setCancelDialogOpen(false)
+      setSelectedFlightId(null)
+    } catch (e) {
+      console.error('Error cancelando vuelo:', e)
+    } finally {
+      setCancelling(false)
+    }
+  }
 
   // Get unique airports for filters
   const origins = useMemo(() => {
@@ -110,49 +136,49 @@ export default function FlightsTab() {
     {
       field: 'id',
       headerName: 'ID',
-      width: 100,
+      width: 65,
       renderCell: (params) => (
-        <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', fontWeight: 600 }}>{params.value}</span>
+        <span style={{ fontFamily: 'monospace', fontSize: '0.78rem', fontWeight: 600 }}>{params.value}</span>
       ),
     },
     {
       field: 'route',
       headerName: 'Ruta',
-      width: 100,
+      width: 105,
       valueGetter: (params) => `${params.row.origin} → ${params.row.destination}`,
     },
     {
       field: 'bagsAboard',
       headerName: 'Ocupación',
-      width: 180,
+      width: 160,
       renderCell: (params) => {
         const capacity = params.row.capacity || 1
         const pct = (params.value / capacity) * 100
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <span style={{ fontSize: '0.78rem', minWidth: '50px' }}>{`${params.value}/${capacity}`}</span>
+            <span style={{ fontSize: '0.78rem', minWidth: '46px' }}>{`${params.value}/${capacity}`}</span>
             <SemaphoreChip occupancyPct={pct} />
           </Box>
         )
       },
     },
     {
+      field: 'status',
+      headerName: 'Estado',
+      width: 110,
+      renderCell: (params) => <FlightStatusChip status={params.value} />,
+    },
+    {
       field: 'departureUTC',
       headerName: 'Salida UTC',
-      width: 95,
+      width: 90,
       renderCell: (params) => formatFlightTime(params.value),
     },
     {
       field: 'arrivalUTC',
       headerName: 'Llegada UTC',
-      width: 95,
+      width: 90,
       renderCell: (params) => formatFlightTime(params.value),
-    },
-    {
-      field: 'status',
-      headerName: 'Estado',
-      width: 110,
-      renderCell: (params) => <FlightStatusChip status={params.value} />,
     },
   ]
 
@@ -206,9 +232,72 @@ export default function FlightsTab() {
             <Typography variant="body2" color="text.secondary">Estado:</Typography>
             <FlightStatusChip status={selectedFlight.status} />
           </Box>
+
+          {selectedFlight.status === 'SCHEDULED' && (
+            <Button
+              variant="outlined"
+              size="small"
+              fullWidth
+              startIcon={<BlockIcon />}
+              onClick={() => setCancelDialogOpen(true)}
+              sx={{
+                mt: 0.5,
+                borderColor: '#C62828',
+                color: '#C62828',
+                fontSize: '0.75rem',
+                '&:hover': { borderColor: '#B71C1C', backgroundColor: 'rgba(198,40,40,0.06)' },
+              }}
+            >
+              Cancelar este vuelo
+            </Button>
+          )}
         </Box>
 
         <Divider />
+
+        {/* Confirm cancel dialog */}
+        <Dialog open={cancelDialogOpen} onClose={() => setCancelDialogOpen(false)} maxWidth="xs" fullWidth>
+          <DialogTitle sx={{ fontWeight: 700, color: '#1F3864', fontSize: '0.95rem' }}>
+            ¿Cancelar vuelo {selectedFlight.id}?
+          </DialogTitle>
+          <DialogContent>
+            {(() => {
+              const simNow = simulationState?.simulatedTime ? new Date(simulationState.simulatedTime) : null
+              const dep = selectedFlight.departureUTC ? new Date(selectedFlight.departureUTC) : null
+              const minutesLeft = simNow && dep ? (dep - simNow) / 60000 : Infinity
+              const nextDayRule = minutesLeft < 60
+              return (
+                <>
+                  <DialogContentText sx={{ fontSize: '0.82rem' }}>
+                    Ruta: <strong>{selectedFlight.origin} → {selectedFlight.destination}</strong>.
+                    El ALNS replanificará automáticamente los lotes de equipaje afectados.
+                  </DialogContentText>
+                  {nextDayRule && (
+                    <DialogContentText sx={{ fontSize: '0.78rem', mt: 1, color: '#E65100' }}>
+                      ⚠ Faltan menos de 60 min para la salida. Se aplicará la regla de negocio:
+                      se cancelará la <strong>siguiente instancia</strong> de este vuelo en la ruta.
+                    </DialogContentText>
+                  )}
+                </>
+              )
+            })()}
+          </DialogContent>
+          <DialogActions sx={{ px: 2, pb: 2, gap: 1 }}>
+            <Button onClick={() => setCancelDialogOpen(false)} size="small" variant="outlined" disabled={cancelling}>
+              Mantener vuelo
+            </Button>
+            <Button
+              onClick={handleCancelFlight}
+              size="small"
+              variant="contained"
+              color="error"
+              disabled={cancelling}
+              startIcon={cancelling ? <CircularProgress size={14} color="inherit" /> : <BlockIcon />}
+            >
+              {cancelling ? 'Cancelando...' : 'Sí, cancelar'}
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Tabs */}
         <Tabs

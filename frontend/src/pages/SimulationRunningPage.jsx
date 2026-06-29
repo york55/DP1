@@ -10,9 +10,15 @@ import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import LinearProgress from '@mui/material/LinearProgress'
 import CircularProgress from '@mui/material/CircularProgress'
+import Badge from '@mui/material/Badge'
+import Popover from '@mui/material/Popover'
+import List from '@mui/material/List'
+import ListItem from '@mui/material/ListItem'
+import Alert from '@mui/material/Alert'
 import LuggageIcon from '@mui/icons-material/Luggage'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
+import NotificationsIcon from '@mui/icons-material/Notifications'
 import WorldMap from '../components/map/WorldMap'
 import SimulationPanel from '../components/simulation/SimulationPanel'
 import SimulationControls from '../components/simulation/SimulationControls'
@@ -73,9 +79,20 @@ export default function SimulationRunningPage() {
     shipments,
     planningProgress,
     firstBatchReady,
+    notifications,
+    bellUnreadCount,
+    markBellRead,
   } = useSimulationContext()
 
   const { status, simulatedTime, elapsedSeconds, config } = simulationState
+
+  const [bellAnchor, setBellAnchor] = useState(null)
+
+  const handleBellOpen = (e) => {
+    setBellAnchor(e.currentTarget)
+    markBellRead()
+  }
+  const handleBellClose = () => setBellAnchor(null)
 
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
@@ -230,9 +247,57 @@ export default function SimulationRunningPage() {
 
           <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.5 }} />
 
+          {/* Bell */}
+          <Tooltip title="Historial de notificaciones">
+            <IconButton size="small" onClick={handleBellOpen} sx={{ color: '#90CAF9' }}>
+              <Badge badgeContent={bellUnreadCount} color="error" max={99}>
+                <NotificationsIcon sx={{ fontSize: 20 }} />
+              </Badge>
+            </IconButton>
+          </Tooltip>
+
+          <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.5 }} />
+
           <SimulationControls />
         </Toolbar>
       </AppBar>
+
+      {/* Notification history popover */}
+      <Popover
+        open={Boolean(bellAnchor)}
+        anchorEl={bellAnchor}
+        onClose={handleBellClose}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        PaperProps={{ sx: { width: 360, maxHeight: 420, display: 'flex', flexDirection: 'column' } }}
+      >
+        <Box sx={{ px: 2, py: 1.25, borderBottom: '1px solid #BFBFBF', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography sx={{ fontWeight: 700, fontSize: '0.85rem', color: '#1F3864' }}>
+            Notificaciones
+          </Typography>
+          <Typography sx={{ fontSize: '0.72rem', color: '#6B7280' }}>
+            {notifications.length === 0 ? 'Sin notificaciones' : `${notifications.length} total`}
+          </Typography>
+        </Box>
+        <List dense disablePadding sx={{ overflowY: 'auto', flex: 1 }}>
+          {notifications.length === 0 && (
+            <ListItem sx={{ py: 2, justifyContent: 'center' }}>
+              <Typography sx={{ fontSize: '0.78rem', color: '#9CA3AF' }}>Sin notificaciones aún</Typography>
+            </ListItem>
+          )}
+          {[...notifications].reverse().map(n => (
+            <ListItem key={n.id} disablePadding sx={{ px: 1, py: 0.4 }}>
+              <Alert
+                severity={n.type === 'error' ? 'error' : n.type === 'warning' ? 'warning' : n.type === 'success' ? 'success' : 'info'}
+                sx={{ width: '100%', fontSize: '0.75rem', py: 0.25, opacity: n.dismissed ? 0.55 : 1 }}
+                icon={false}
+              >
+                {n.message}
+              </Alert>
+            </ListItem>
+          ))}
+        </List>
+      </Popover>
 
       {/* Main Content */}
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>

@@ -10,6 +10,7 @@ export const simulationApi = {
   stop: (id) => client.put(`/simulations/${id}/stop`).then(r => r.data),
   getKpis: (id) => client.get(`/simulations/${id}/kpis`).then(r => r.data),
   resetDb: () => client.delete('/simulations/reset').then(r => r.data),
+  cancelFlight: (simId, flightId) => client.post(`/simulations/${simId}/cancel-flight/${flightId}`).then(r => r.data),
 }
 
 export const airportApi = {

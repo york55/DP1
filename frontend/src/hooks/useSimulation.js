@@ -63,6 +63,7 @@ export function useSimulation() {
   const [flightSemaphore, setFlightSemaphore] = useState('ALL')
 
   const [notifications, setNotifications] = useState([])
+  const [bellUnreadCount, setBellUnreadCount] = useState(0)
 
   const [planningProgress, setPlanningProgress] = useState({
     phase: '',
@@ -72,6 +73,10 @@ export function useSimulation() {
     totalBatches: 0,
     currentObjective: 0,
   })
+
+  // blockHistory: array of { blockIndex, totalBlocks, windowStart, windowEnd, assignedBatches, totalBatches, status }
+  const [blockHistory, setBlockHistory] = useState([])
+  const [totalSimBlocks, setTotalSimBlocks] = useState(0)
 
   const [firstBatchReady, setFirstBatchReady] = useState(false)
   const firstBatchReadyRef = useRef(false)
@@ -246,12 +251,17 @@ export function useSimulation() {
     } catch (e) { simLogger.warn('loadShipments error: ' + e.message) }
   }, [])
 
-  const addNotification = useCallback((message, type = 'info', persistent = false) => {
-    setNotifications(prev => [...prev, makeNotification(message, type, persistent)])
+  const addNotification = useCallback((message, type = 'info') => {
+    setNotifications(prev => [...prev, makeNotification(message, type, false)])
+    setBellUnreadCount(prev => prev + 1)
   }, [])
 
   const dismissNotification = useCallback((id) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, dismissed: true } : n))
+  }, [])
+
+  const markBellRead = useCallback(() => {
+    setBellUnreadCount(0)
   }, [])
 
   // Handle WebSocket tick events from backend
@@ -407,8 +417,60 @@ export function useSimulation() {
         totalBatches: snap.totalBatches,
       }))
       setSimulationState(prev => ({ ...prev, status: 'planning' }))
+      setTotalSimBlocks(snap.totalBlocks || snap.totalBatches)
+      setBlockHistory(prev => [
+        ...prev.map(b => b.status === 'active' ? { ...b, status: 'done' } : b),
+        {
+          blockIndex: snap.blockIndex ?? snap.assignedBatches,
+          totalBlocks: snap.totalBlocks || snap.totalBatches,
+          windowStart: snap.blockWindowStart || null,
+          windowEnd: snap.blockWindowEnd || null,
+          assignedBatches: 0,
+          totalBatches: 0,
+          status: 'active',
+        },
+      ])
       return
     }
+    const newStatus = snap.phase === 'COMPLETE' ? 'done' : 'active'
+    const blockIdx = snap.blockIndex ?? -1
+
+    setBlockHistory(prev => {
+      // Find existing entry by blockIndex (background blocks never fire BLOCK_START)
+      const byIndex = blockIdx >= 0 ? prev.find(b => b.blockIndex === blockIdx) : null
+
+      if (byIndex) {
+        return prev.map(b => b.blockIndex === blockIdx
+          ? { ...b, assignedBatches: snap.assignedBatches, totalBatches: snap.totalBatches, status: newStatus }
+          : b
+        )
+      }
+
+      // No entry yet for this blockIndex — background block started without BLOCK_START
+      if (blockIdx >= 0 && snap.blockWindowStart) {
+        return [
+          ...prev.map(b => b.status === 'active' ? { ...b, status: 'done' } : b),
+          {
+            blockIndex: blockIdx,
+            totalBlocks: snap.totalBlocks || 0,
+            windowStart: snap.blockWindowStart || null,
+            windowEnd: snap.blockWindowEnd || null,
+            assignedBatches: snap.assignedBatches,
+            totalBatches: snap.totalBatches,
+            status: newStatus,
+          },
+        ]
+      }
+
+      // Fallback: update any active block by status
+      return prev.map(b => b.status === 'active'
+        ? { ...b, assignedBatches: snap.assignedBatches, totalBatches: snap.totalBatches, status: newStatus }
+        : b
+      )
+    })
+
+    if (snap.totalBlocks > 0) setTotalSimBlocks(snap.totalBlocks)
+
     setPlanningProgress({
       phase: snap.phase,
       iteration: snap.iteration,
@@ -421,14 +483,15 @@ export function useSimulation() {
 
   const handleAlert = useCallback((alert) => {
     const typeMap = { DELAY: 'warning', CRITICAL_OCCUPANCY: 'error', CANCELLATION: 'error' }
-    addNotification(alert.message, typeMap[alert.type] || 'info',
-      alert.type === 'CRITICAL_OCCUPANCY' || alert.type === 'CANCELLATION')
+    addNotification(alert.message, typeMap[alert.type] || 'info')
   }, [addNotification])
 
   const startSimulation = useCallback(async (config) => {
     notifCounter = 0
     firstBatchReadyRef.current = false
     setFirstBatchReady(false)
+    setBlockHistory([])
+    setTotalSimBlocks(0)
 
     const startDate = config.startDate instanceof Date
       ? config.startDate
@@ -454,6 +517,7 @@ export function useSimulation() {
       }
     })
     setNotifications([])
+    setBellUnreadCount(0)
 
     try {
       const simDto = await simulationApi.create({
@@ -521,7 +585,7 @@ export function useSimulation() {
         simulationId: simDto.id,
       })
 
-      addNotification('Planificando rutas en segundo plano, la simulación iniciará en breve...', 'info', true)
+      addNotification('Planificando rutas en segundo plano, la simulación iniciará en breve...', 'info')
 
       await loadShipments()
       if (shipmentPollRef.current) clearInterval(shipmentPollRef.current)
@@ -531,7 +595,7 @@ export function useSimulation() {
     } catch (err) {
       simLogger.error('Error al iniciar simulación:', err.message)
       console.warn('[useSimulation] Backend no disponible:', err.message)
-      addNotification('Error al iniciar la simulación. Revisa la conexión con el backend.', 'error', true)
+      addNotification('Error al iniciar la simulación. Revisa la conexión con el backend.', 'error')
       statusRef.current = 'idle'
       setSimulationState(prev => ({ ...prev, status: 'idle' }))
     }
@@ -589,9 +653,20 @@ export function useSimulation() {
       }
     })
     setNotifications([])
+    setBellUnreadCount(0)
     simIdRef.current = null
     statusRef.current = 'idle'
   }, [])
+
+  const cancelFlightDuringSimulation = useCallback(async (flightId) => {
+    const simId = simIdRef.current
+    if (!simId) throw new Error('No hay simulación activa')
+    const result = await simulationApi.cancelFlight(simId, flightId)
+    const msg = result?.appliedNextDay
+      ? `Regla <1h aplicada: se canceló el vuelo siguiente (ID ${result.cancelledFlightId}) en la misma ruta. ALNS replanificando.`
+      : `Vuelo ${result?.cancelledFlightId ?? flightId} cancelado. El ALNS está replanificando las rutas afectadas.`
+    addNotification(msg, 'warning')
+  }, [addNotification])
 
   const cancelSimulation = useCallback(async () => {
     firstBatchReadyRef.current = false
@@ -630,6 +705,7 @@ export function useSimulation() {
       }
     })
     setNotifications([])
+    setBellUnreadCount(0)
   }, [])
 
   // ── attachToSimulation ───────────────────────────────────────────────────────
@@ -849,6 +925,8 @@ export function useSimulation() {
     ...simulationData,
     notifications,
     planningProgress,
+    blockHistory,
+    totalSimBlocks,
     firstBatchReady,
     animClockRef,
     startSimulation,
@@ -856,7 +934,10 @@ export function useSimulation() {
     resumeSimulation,
     resetSimulation,
     cancelSimulation,
+    cancelFlightDuringSimulation,
     dismissNotification,
+    bellUnreadCount,
+    markBellRead,
     attachToSimulation,
 
     // Selection states
