@@ -11,16 +11,15 @@ import Tooltip from '@mui/material/Tooltip'
 import LinearProgress from '@mui/material/LinearProgress'
 import CircularProgress from '@mui/material/CircularProgress'
 import LuggageIcon from '@mui/icons-material/Luggage'
-import AccessTimeIcon from '@mui/icons-material/AccessTime'
-import TimerIcon from '@mui/icons-material/Timer'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import WorldMap from '../components/map/WorldMap'
 import SimulationPanel from '../components/simulation/SimulationPanel'
 import SimulationControls from '../components/simulation/SimulationControls'
+import ClockPanel from '../components/simulation/ClockPanel'
 import NotificationStack from '../components/common/NotificationStack'
 import { useSimulationContext } from '../context/SimulationContext'
-import { formatUTCFull, formatElapsed } from '../utils/timeUtils'
+
 
 const STATUS_LABELS = {
   planning: { label: 'Planificando bloque...', color: '#1565C0', bg: '#E3F2FD' },
@@ -49,7 +48,7 @@ export default function SimulationRunningPage() {
 
   // Sidebar resize / collapse state
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
   const isDragging = useRef(false)
   const dragStartX = useRef(0)
   const dragStartWidth = useRef(0)
@@ -132,24 +131,6 @@ export default function SimulationRunningPage() {
             sx={{ backgroundColor: statusInfo.bg, color: statusInfo.color, fontWeight: 700, fontSize: '0.65rem', height: 22 }}
           />
 
-          <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.5 }} />
-
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <AccessTimeIcon sx={{ fontSize: 14, color: '#90CAF9' }} />
-            <Typography variant="caption" sx={{ color: '#FFFFFF', fontFamily: 'monospace', fontSize: '0.75rem' }}>
-              {simulatedTime ? formatUTCFull(simulatedTime) : '-- --- ---- --:--:-- UTC'}
-            </Typography>
-          </Box>
-
-          <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.5 }} />
-
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <TimerIcon sx={{ fontSize: 14, color: '#90CAF9' }} />
-            <Typography variant="caption" sx={{ color: '#90CAF9', fontFamily: 'monospace', fontSize: '0.75rem' }}>
-              {formatElapsed(elapsedSeconds || 0)}
-            </Typography>
-          </Box>
-
           <Box sx={{ flex: 1 }} />
 
           {delayedCount > 0 && (
@@ -173,10 +154,35 @@ export default function SimulationRunningPage() {
       </AppBar>
 
       {/* Main Content */}
-      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden', mb: '36px' }}>
+      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Map — fills remaining space */}
         <Box sx={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <WorldMap airports={airports} flights={flights} simulatedTime={simulatedTime} resizeTrigger={collapsed ? 'collapsed' : panelWidth} />
+          <ClockPanel simulatedTime={simulatedTime} elapsedSeconds={elapsedSeconds} startDate={config?.startDate} />
+
+          {/* Collapse / expand button — always overlaid on map right edge */}
+          <Tooltip title={collapsed ? 'Expandir panel' : 'Colapsar panel'} placement="left">
+            <IconButton
+              size="small"
+              onClick={() => setCollapsed(v => !v)}
+              sx={{
+                position: 'absolute',
+                top: '50%',
+                right: 0,
+                transform: 'translateY(-50%)',
+                zIndex: 2000,
+                width: 20,
+                height: 48,
+                borderRadius: '4px 0 0 4px',
+                backgroundColor: '#1F3864',
+                color: '#90CAF9',
+                boxShadow: '-2px 0 6px rgba(0,0,0,0.25)',
+                '&:hover': { backgroundColor: '#2E75B6', color: '#FFFFFF' },
+              }}
+            >
+              {collapsed ? <ChevronLeftIcon sx={{ fontSize: 16 }} /> : <ChevronRightIcon sx={{ fontSize: 16 }} />}
+            </IconButton>
+          </Tooltip>
 
           {/* Planning overlay — shown while ALNS is computing routes and until first tick is visualized */}
           {(status === 'planning' || (status === 'running' && !firstBatchReady)) && (
@@ -237,49 +243,21 @@ export default function SimulationRunningPage() {
           )}
         </Box>
 
-        {/* Drag handle + collapse toggle button */}
-        <Box
-          sx={{ position: 'relative', display: 'flex', alignItems: 'stretch', flexShrink: 0, width: collapsed ? 20 : undefined }}
-        >
-          {/* Drag handle (only when not collapsed) */}
-          {!collapsed && (
-            <Box
-              onMouseDown={startDrag}
-              sx={{
-                width: 5,
-                cursor: 'col-resize',
-                backgroundColor: '#BFBFBF',
-                flexShrink: 0,
-                transition: 'background-color 0.15s',
-                '&:hover': { backgroundColor: '#2E75B6' },
-              }}
-            />
-          )}
-
-          {/* Floating collapse / expand button */}
-          <Tooltip title={collapsed ? 'Expandir panel' : 'Colapsar panel'} placement="left">
-            <IconButton
-              size="small"
-              onClick={() => setCollapsed(v => !v)}
-              sx={{
-                position: 'absolute',
-                top: '50%',
-                left: collapsed ? 0 : -18,
-                transform: 'translateY(-50%)',
-                zIndex: 20,
-                width: 20,
-                height: 48,
-                borderRadius: collapsed ? '0 4px 4px 0' : '4px 0 0 4px',
-                backgroundColor: '#1F3864',
-                color: '#90CAF9',
-                boxShadow: collapsed ? '2px 0 6px rgba(0,0,0,0.25)' : '-2px 0 6px rgba(0,0,0,0.25)',
-                '&:hover': { backgroundColor: '#2E75B6', color: '#FFFFFF' },
-              }}
-            >
-              {collapsed ? <ChevronRightIcon sx={{ fontSize: 16 }} /> : <ChevronLeftIcon sx={{ fontSize: 16 }} />}
-            </IconButton>
-          </Tooltip>
-        </Box>
+        {/* Drag handle (only when not collapsed) */}
+        {!collapsed && (
+          <Box
+            onMouseDown={startDrag}
+            sx={{
+              position: 'relative',
+              width: 5,
+              flexShrink: 0,
+              cursor: 'col-resize',
+              backgroundColor: '#BFBFBF',
+              transition: 'background-color 0.15s',
+              '&:hover': { backgroundColor: '#2E75B6' },
+            }}
+          />
+        )}
 
         {/* Right panel — hidden when collapsed */}
         {!collapsed && (
