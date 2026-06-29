@@ -6,5 +6,9 @@ public record PlanProgressSnapshot(
         int maxIterations,
         int assignedBatches,
         int totalBatches,
-        double currentObjective
+        double currentObjective,
+        int blockIndex,
+        int totalBlocks,
+        String blockWindowStart,
+        String blockWindowEnd
 ) {}

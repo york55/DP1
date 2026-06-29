@@ -133,8 +133,8 @@ public class BlockOrchestrator {
                     // First block must be planned synchronously — nothing to play yet.
                     log.info("Simulación {}: BUFFERING bloque 0 de {}", simId, totalBlocks);
                     setStatus(simId, SimulationStatus.BUFFERING);
-                    webSocketPublisher.publishBlockStart(simId, 0, totalBlocks);
-                    simBlock = planBlock(simId, sim, blockStart, blockEnd, 0, simEnd);
+                    webSocketPublisher.publishBlockStart(simId, 0, totalBlocks, blockStart, blockEnd);
+                    simBlock = planBlock(simId, sim, blockStart, blockEnd, 0, totalBlocks, simEnd);
                 } else {
                     // Subsequent blocks were planned in background during the previous playback.
                     // Resolve the future — should already be done; log a warning if we had to wait.
@@ -199,7 +199,7 @@ public class BlockOrchestrator {
                 simId, nextBlock, totalBlocks);
 
         state.nextBlockFuture = state.plannerExecutor.submit(
-                () -> planBlock(simId, sim, nextStart, nextEnd, nextBlock, simEnd)
+                () -> planBlock(simId, sim, nextStart, nextEnd, nextBlock, totalBlocks, simEnd)
         );
     }
 
@@ -239,7 +239,7 @@ public class BlockOrchestrator {
     // ─── Planning & Playback ─────────────────────────────────────────────────────
 
     private SimulationBlock planBlock(Long simId, Simulation sim, LocalDateTime blockStart,
-                                      LocalDateTime blockEnd, int blockIndex, LocalDateTime simEnd) {
+                                      LocalDateTime blockEnd, int blockIndex, int totalBlocks, LocalDateTime simEnd) {
         try {
             // Only plan batches not yet routed that become available within this block.
             // Using findUnroutedBatches prevents re-planning batches already assigned in prior blocks
@@ -274,7 +274,12 @@ public class BlockOrchestrator {
                     .pendingBatches(pending)
                     .simulatedNow(blockStart)
                     .alnsParams(plannerService.buildAlnsParams(sim))
-                    .progressCallback(snap -> webSocketPublisher.publishPlanProgress(simId, snap))
+                    .progressCallback(snap -> webSocketPublisher.publishPlanProgress(simId,
+                            new pe.pucp.tasfb2b.planner.PlanProgressSnapshot(
+                                    snap.phase(), snap.iteration(), snap.maxIterations(),
+                                    snap.assignedBatches(), snap.totalBatches(), snap.currentObjective(),
+                                    blockIndex, totalBlocks,
+                                    blockStart.toString(), blockEnd.toString())))
                     .build();
 
             log.info("Simulación {}: planificando {} lotes para bloque {}", simId, pending.size(), blockIndex);

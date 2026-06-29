@@ -1,5 +1,6 @@
 package pe.pucp.tasfb2b.websocket;
 
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -39,11 +40,13 @@ public class WebSocketEventPublisher {
         messagingTemplate.convertAndSend("/topic/alerts", event);
     }
 
-    public void publishBlockStart(Long simulationId, int blockIndex, int totalBlocks) {
+    public void publishBlockStart(Long simulationId, int blockIndex, int totalBlocks,
+                                   LocalDateTime blockWindowStart, LocalDateTime blockWindowEnd) {
         String destination = "/topic/simulation/" + simulationId + "/plan-progress";
-        // Reuse plan-progress channel with BLOCK_START phase so the frontend knows which day is being planned
-        var payload = new pe.pucp.tasfb2b.planner.PlanProgressSnapshot(
-                "BLOCK_START", 0, totalBlocks, blockIndex, totalBlocks, 0.0);
+        var payload = new PlanProgressSnapshot(
+                "BLOCK_START", 0, totalBlocks, blockIndex, totalBlocks, 0.0,
+                blockIndex, totalBlocks,
+                blockWindowStart.toString(), blockWindowEnd.toString());
         messagingTemplate.convertAndSend(destination, payload);
     }
 
