@@ -15,18 +15,20 @@ public record AlnsParams(
         double w2,
         double w3,
         double w4,
+        double w5,
         int kRegret,
-        int connectMinGapMinutes
+        int connectMinGapMinutes,
+        int maxHops
 ) {
     public static AlnsParams defaults() {
         return new AlnsParams(100.0, 0.9995, 0.25, 200, 100,
                 9.0, 3.0, 1.0, 0.1, 0.05,
-                0.60, 0.10, 0.10, 0.20, 3, 30);
+                0.50, 0.10, 0.10, 0.15, 0.25, 3, 30, 3);
     }
 
     public static AlnsParams fast() {
         return new AlnsParams(50.0, 0.999, 0.30, 200, 50,
                 9.0, 3.0, 1.0, 0.1, 0.05,
-                0.60, 0.10, 0.10, 0.20, 3, 30);
+                0.50, 0.10, 0.10, 0.15, 0.25, 3, 30, 3);
     }
 }

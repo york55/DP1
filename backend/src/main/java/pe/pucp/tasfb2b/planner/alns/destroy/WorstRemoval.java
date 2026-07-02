@@ -37,10 +37,16 @@ public class WorstRemoval implements DestroyOperator {
         }
     }
 
+    // Peso con el que se castiga el atraso frente al SLA respecto al simple tiempo de
+    // espera para embarcar. Antes esta función solo miraba waitMin, así que un lote que
+    // ya iba a llegar tarde no tenía ninguna prioridad especial para ser reconsiderado.
+    private static final double LATENESS_WEIGHT = 10.0;
+
     private double computeCost(Long batchId, AlnsSolution solution, Map<Long, Integer> quantities) {
         long waitMin = solution.getWaitingMinutes(batchId);
+        long lateMin = solution.getLatenessMinutes(batchId);
         int qty = quantities.getOrDefault(batchId, 1);
-        return waitMin * qty;
+        return (waitMin + lateMin * LATENESS_WEIGHT) * qty;
     }
 
     @Override

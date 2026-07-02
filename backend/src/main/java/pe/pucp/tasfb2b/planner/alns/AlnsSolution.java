@@ -4,6 +4,7 @@ import pe.pucp.tasfb2b.domain.BaggageBatch;
 import pe.pucp.tasfb2b.domain.Flight;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -136,6 +137,28 @@ public class AlnsSolution {
         Flight firstFlight = flightMap.get(fids.get(0));
         if (firstFlight == null) return 0;
         return Duration.between(batch.getAvailableFrom(), firstFlight.getDepartureTime()).toMinutes();
+    }
+
+    /** Hora de llegada estimada al destino final (último tramo asignado), o null si no tiene ruta. */
+    public LocalDateTime getEstimatedArrival(Long batchId) {
+        List<Long> fids = assignments.get(batchId);
+        if (fids == null || fids.isEmpty()) return null;
+        Flight lastFlight = flightMap.get(fids.get(fids.size() - 1));
+        return lastFlight != null ? lastFlight.getArrivalTime() : null;
+    }
+
+    /**
+     * Minutos por los que la llegada estimada excede el deadline SLA del lote
+     * (1 día mismo continente / 2 días distinto continente). Retorna 0 si llega a tiempo
+     * o si no tiene ruta asignada — este es el "sensor" que faltaba en la búsqueda del ALNS.
+     */
+    public long getLatenessMinutes(Long batchId) {
+        BaggageBatch batch = batchMap.get(batchId);
+        if (batch == null) return 0;
+        LocalDateTime arrival = getEstimatedArrival(batchId);
+        if (arrival == null) return 0;
+        LocalDateTime deadline = DeadlineUtil.computeDeadline(batch);
+        return Math.max(0, Duration.between(deadline, arrival).toMinutes());
     }
 
     public Map<Long, Flight> getFlightMap() {

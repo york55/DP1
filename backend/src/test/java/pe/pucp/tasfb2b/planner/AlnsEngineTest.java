@@ -136,8 +136,9 @@ class AlnsEngineTest {
     @Test
     void testSaAcceptsWorseWithPositiveProbability() {
         // With t0=1000 (high temperature) SA should accept worse solutions more
+        // w5=0.0 y maxHops=2 preservan el comportamiento previo a la penalización SLA.
         AlnsParams highTemp = new AlnsParams(1000.0, 0.999, 0.5, 50, 25,
-                9.0, 3.0, 1.0, 0.1, 0.05, 0.7, 0.15, 0.15, 0.0, 2, 30);
+                9.0, 3.0, 1.0, 0.1, 0.05, 0.7, 0.15, 0.15, 0.0, 0.0, 2, 30, 2);
 
         SimulationContext ctx = SimulationContext.builder()
                 .airports(List.of(lima, miami))
@@ -154,8 +155,9 @@ class AlnsEngineTest {
 
     @Test
     void testFullAlnsReducesObjectiveOverIterations() {
+        // w5=0.0 y maxHops=2 preservan el comportamiento previo a la penalización SLA.
         AlnsParams moreIter = new AlnsParams(100.0, 0.999, 0.25, 200, 50,
-                9.0, 3.0, 1.0, 0.1, 0.05, 0.7, 0.15, 0.15, 0.0, 3, 30);
+                9.0, 3.0, 1.0, 0.1, 0.05, 0.7, 0.15, 0.15, 0.0, 0.0, 3, 30, 2);
 
         SimulationContext ctx = SimulationContext.builder()
                 .airports(List.of(lima, miami, bogota))

@@ -112,7 +112,8 @@ public class PlannerService {
                 sim.getMaxIterations() != null ? sim.getMaxIterations() : defaultMaxIterations,
                 defaultSegLen, defaults.sigma1(), defaults.sigma2(), defaults.sigma3(),
                 defaults.rho(), defaults.pNoise(), defaults.w1(), defaults.w2(), defaults.w3(),
-                defaults.w4(), defaults.kRegret(), defaults.connectMinGapMinutes()
+                defaults.w4(), defaults.w5(), defaults.kRegret(), defaults.connectMinGapMinutes(),
+                defaults.maxHops()
         );
     }
 
