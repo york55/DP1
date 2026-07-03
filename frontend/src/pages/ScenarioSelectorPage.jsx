@@ -206,9 +206,9 @@ export default function ScenarioSelectorPage() {
               icon={<WarningIcon />}
               title="Simulación de Colapso"
               description="Evalúa la resiliencia del sistema bajo condiciones extremas: cancelaciones masivas, tormentas, cierres de aeropuertos y acumulación crítica de maletas."
-              badge="Próximamente"
-              onSelect={() => { }}
-              disabled={true}
+              badge="Disponible"
+              onSelect={() => navigate('/clp/config')}
+              disabled={false}
             />
           </Grid>
         </Grid>

@@ -4,6 +4,7 @@ import CssBaseline from '@mui/material/CssBaseline'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import { SimulationProvider } from './context/SimulationContext'
+import { ClpSimulationProvider } from './context/ClpSimulationContext'
 import AppRouter from './routes/AppRouter'
 import DevFooter from './components/common/DevFooter'
 import theme from './theme/theme'
@@ -14,8 +15,10 @@ export default function App() {
       <CssBaseline />
       <LocalizationProvider dateAdapter={AdapterDateFns}>
         <SimulationProvider>
-          <AppRouter />
-          {/* <DevFooter /> */}
+          <ClpSimulationProvider>
+            <AppRouter />
+            {/* <DevFooter /> */}
+          </ClpSimulationProvider>
         </SimulationProvider>
       </LocalizationProvider>
     </ThemeProvider>

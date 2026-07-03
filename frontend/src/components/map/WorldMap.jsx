@@ -36,7 +36,7 @@ function getAirportSemaphoreKey(pct) {
   return getFlightSemaphoreKey(pct)
 }
 
-function MapFocusController() {
+function MapFocusController({ standalone }) {
   const map = useMap()
   const lastCenteredAirport = useRef(null)
   const lastCenteredFlight = useRef(null)
@@ -46,7 +46,7 @@ function MapFocusController() {
   } catch (e) {
     // context not available
   }
-  if (!context) return null
+  if (!context || standalone) return null
 
   const { selectedAirportCode, selectedFlightId, airportsWithTimes, flights, simulationState } = context
 
@@ -151,7 +151,7 @@ function MapAirportTracker({ airport, popupRef }) {
  * @param {Date|null} simulatedTime - current simulated time for progress calculation
  * @param {*} resizeTrigger - any value whose change signals a container resize
  */
-function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], staticAirports, resizeTrigger }) {
+function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], staticAirports, resizeTrigger, standalone = false }) {
   // Rasterize icons once on mount. When both resolve, bump iconsVersion so all
   // children re-render once and pick up the PNG L.icon instead of the divIcon fallback.
   const [iconsVersion, setIconsVersion] = useState(0)
@@ -187,8 +187,8 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
     // context not available
   }
 
-  const baseAirports = staticAirports ?? (context ? context.filteredAirports : propsAirports)
-  const baseFlights = context ? context.filteredFlights : propsFlights
+  const baseAirports = staticAirports ?? ((context && !standalone) ? context.filteredAirports : propsAirports)
+  const baseFlights = (context && !standalone) ? context.filteredFlights : propsFlights
   const simulatedTime = context?.simulationState?.simulatedTime ?? null
   const planningProgress = context?.planningProgress ?? { phase: '', iteration: 0, maxIterations: 1000, assignedBatches: 0, totalBatches: 0, currentObjective: 0 }
   const blockHistory = context?.blockHistory ?? []
@@ -290,7 +290,7 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
         />
         <MapResizer trigger={resizeTrigger} />
         <AirportPaneSetup />
-        <MapFocusController />
+        <MapFocusController standalone={standalone} />
 
         {/* Flight route polylines — trimmed to remaining segment for IN_FLIGHT */}
         {visibleFlights.map(flight => (
