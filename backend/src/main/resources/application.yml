@@ -5,7 +5,8 @@ spring:
   application:
     name: tasfb2b
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/tasfb2b}
+    #url: ${DB_URL:jdbc:mysql://localhost:3306/tasfb2b}
+    url: ${DB_URL:jdbc:mysql://tasfb2b-mysql:3306/tasfb2b?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:Abcd.1234#}
     driver-class-name: com.mysql.cj.jdbc.Driver
