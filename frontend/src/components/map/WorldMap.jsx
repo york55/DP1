@@ -151,7 +151,7 @@ function MapAirportTracker({ airport, popupRef }) {
  * @param {Date|null} simulatedTime - current simulated time for progress calculation
  * @param {*} resizeTrigger - any value whose change signals a container resize
  */
-function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], staticAirports, resizeTrigger, standalone = false }) {
+function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], staticAirports, resizeTrigger, standalone = false, simulatedTime: propsSimulatedTime = null, animClockRef: propsAnimClockRef = null }) {
   // Rasterize icons once on mount. When both resolve, bump iconsVersion so all
   // children re-render once and pick up the PNG L.icon instead of the divIcon fallback.
   const [iconsVersion, setIconsVersion] = useState(0)
@@ -189,7 +189,8 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
 
   const baseAirports = staticAirports ?? ((context && !standalone) ? context.filteredAirports : propsAirports)
   const baseFlights = (context && !standalone) ? context.filteredFlights : propsFlights
-  const simulatedTime = context?.simulationState?.simulatedTime ?? null
+  const simulatedTime = standalone ? propsSimulatedTime : (context?.simulationState?.simulatedTime ?? propsSimulatedTime)
+  const animClockRef = standalone ? propsAnimClockRef : (context?.animClockRef ?? propsAnimClockRef)
   const planningProgress = context?.planningProgress ?? { phase: '', iteration: 0, maxIterations: 1000, assignedBatches: 0, totalBatches: 0, currentObjective: 0 }
   const blockHistory = context?.blockHistory ?? []
   const totalSimBlocks = context?.totalSimBlocks ?? 0
@@ -309,6 +310,7 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
           onPlaneClick={handlePlaneClick}
           planePopupRef={planePopupRef}
           activePlaneFlightId={activePlaneFlightId}
+          animClockRefOverride={animClockRef}
         />
 
         {/* Airport markers */}

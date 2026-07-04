@@ -50,7 +50,7 @@ export default function ClpSimulationRunningPage() {
   const navigate = useNavigate()
   const {
     simulationState, airports, flights, kpis,
-    planningProgress, firstBatchReady,
+    planningProgress, firstBatchReady, animClockRef,
     pauseSimulation, resumeSimulation, cancelSimulation,
   } = useClpSimulationContext()
 
@@ -174,7 +174,7 @@ export default function ClpSimulationRunningPage() {
       {/* Main content */}
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <Box sx={{ flex: 1, position: 'relative', minWidth: 0 }}>
-          <WorldMap airports={airports} flights={flights} simulatedTime={simulatedTime} resizeTrigger={collapsed ? 'collapsed' : panelWidth} standalone />
+          <WorldMap airports={airports} flights={flights} simulatedTime={simulatedTime} resizeTrigger={collapsed ? 'collapsed' : panelWidth} standalone animClockRef={animClockRef} />
 
           <Tooltip title={collapsed ? 'Expandir KPIs' : 'Colapsar panel'} placement="left">
             <IconButton size="small" onClick={() => setCollapsed(v => !v)}

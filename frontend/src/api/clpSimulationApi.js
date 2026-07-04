@@ -14,5 +14,5 @@ export const clpSimulationApi = {
   stop:    (id)  => client.put(`/clp/simulations/${id}/stop`).then(r => r.data),
   getKpis: (id)  => client.get(`/clp/simulations/${id}/kpis`).then(r => r.data),
   resetDb: ()    => client.delete('/clp/simulations/reset').then(r => r.data),
-  getActive: ()  => client.get('/clp/simulations/active'),
+  getActive: ()  => client.get('/clp/simulations/active').then(r => r.status === 204 ? null : r.data),
 }

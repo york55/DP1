@@ -54,7 +54,7 @@ function computePlanePositions(flights, airportsByCode, simulatedTime) {
  * A requestAnimationFrame loop redraws at ~60fps, interpolating plane positions
  * from animClockRef so movement is smooth between WebSocket ticks.
  */
-export default function PlaneCanvasLayer({ flights, airportsByCode, onPlaneClick, planePopupRef, activePlaneFlightId }) {
+export default function PlaneCanvasLayer({ flights, airportsByCode, onPlaneClick, planePopupRef, activePlaneFlightId, animClockRefOverride = null }) {
   const map = useMap()
   const canvasRef = useRef(null)
   const positionsRef = useRef([])
@@ -65,7 +65,7 @@ export default function PlaneCanvasLayer({ flights, airportsByCode, onPlaneClick
   try { context = useSimulationContext() } catch (_) {}
   const setSelectedFlightId = context?.setSelectedFlightId
   const setActivePanelTab = context?.setActivePanelTab
-  const animClockRef = context?.animClockRef
+  const animClockRef = animClockRefOverride ?? context?.animClockRef
 
   // Keep stable refs to latest props so the rAF callback never closes over stale values
   const flightsRef = useRef(flights)
