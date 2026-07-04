@@ -43,10 +43,12 @@ public class WorstRemoval implements DestroyOperator {
     private static final double LATENESS_WEIGHT = 10.0;
 
     private double computeCost(Long batchId, AlnsSolution solution, Map<Long, Integer> quantities) {
-        long waitMin = solution.getWaitingMinutes(batchId);
+        // Tiempo en tierra total (origen + layovers en hubs): un lote con un layover de 20h
+        // en un hub es tan candidato a reconsiderarse como uno que espera 20h en el origen.
+        long groundMin = solution.getGroundMinutes(batchId);
         long lateMin = solution.getLatenessMinutes(batchId);
         int qty = quantities.getOrDefault(batchId, 1);
-        return (waitMin + lateMin * LATENESS_WEIGHT) * qty;
+        return (groundMin + lateMin * LATENESS_WEIGHT) * qty;
     }
 
     @Override

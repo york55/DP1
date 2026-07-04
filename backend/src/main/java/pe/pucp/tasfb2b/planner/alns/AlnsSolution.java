@@ -139,6 +139,34 @@ public class AlnsSolution {
         return Duration.between(batch.getAvailableFrom(), firstFlight.getDepartureTime()).toMinutes();
     }
 
+    /**
+     * Minutos TOTALES que el lote pasa en tierra: espera en el origen antes de embarcar
+     * MÁS la suma de los gaps de conexión en cada hub intermedio. Antes solo se medía la
+     * espera en el origen (getWaitingMinutes), así que una conexión con 20 horas de layover
+     * — 20 horas de maletas ocupando el almacén del hub, que es justo lo que provoca el
+     * colapso por ocupación — le costaba CERO al planificador.
+     */
+    public long getGroundMinutes(Long batchId) {
+        BaggageBatch batch = batchMap.get(batchId);
+        if (batch == null) return 0;
+        List<Long> fids = assignments.get(batchId);
+        if (fids == null || fids.isEmpty()) return 0;
+
+        Flight first = flightMap.get(fids.get(0));
+        if (first == null) return 0;
+        long total = Math.max(0, Duration.between(batch.getAvailableFrom(),
+                first.getDepartureTime()).toMinutes());
+
+        for (int i = 1; i < fids.size(); i++) {
+            Flight prev = flightMap.get(fids.get(i - 1));
+            Flight next = flightMap.get(fids.get(i));
+            if (prev == null || next == null) continue;
+            total += Math.max(0, Duration.between(prev.getArrivalTime(),
+                    next.getDepartureTime()).toMinutes());
+        }
+        return total;
+    }
+
     /** Hora de llegada estimada al destino final (último tramo asignado), o null si no tiene ruta. */
     public LocalDateTime getEstimatedArrival(Long batchId) {
         List<Long> fids = assignments.get(batchId);

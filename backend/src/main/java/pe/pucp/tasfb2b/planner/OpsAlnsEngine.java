@@ -47,7 +47,11 @@ public class OpsAlnsEngine {
         OpsAlnsSolution best    = current.deepCopy();
         double bestObj          = evaluate(best, params);
         double currentObj       = bestObj;
-        double T                = params.t0();
+        // Misma calibración que AlnsEngine: el objetivo es normalizado (~0..1), un T0=100
+        // legado aceptaba prácticamente cualquier deterioro y el SA no convergía.
+        double T = params.t0() > 1.0
+                ? Math.max(1e-4, 0.10 * Math.max(bestObj, 0.05))
+                : params.t0();
 
         // Pesos de los 3 operadores de destrucción
         double[] dWeights = {1.0, 1.0, 1.0};
@@ -99,9 +103,9 @@ public class OpsAlnsEngine {
         }
 
         Duration elapsed = Duration.between(start, Instant.now());
-        log.info("OpsAlns completado: asignados={}, sin_asignar={}, obj={:.4f}, tiempo={}ms",
+        log.info("OpsAlns completado: asignados={}, sin_asignar={}, obj={}, tiempo={}ms",
                 best.getAssignments().size(), best.getBankSize(),
-                bestObj, elapsed.toMillis());
+                String.format("%.4f", bestObj), elapsed.toMillis());
 
         return buildRoutes(best);
     }
