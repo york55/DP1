@@ -37,7 +37,7 @@ public class OpsFlightStatusService {
 
     private final OpsFlightRepository flightRepo;
     private final OpsShipmentRepository shipmentRepo;
-	private final OpsShipmentRouteRepository routeRepo;
+    private final OpsShipmentRouteRepository routeRepo;
 
     @Transactional
 	public void syncFlightStatuses() {
@@ -58,5 +58,5 @@ public class OpsFlightStatusService {
 					departed, landed, shipmentsInFlight, delivered);
 		}
 	}
-	
+
 }

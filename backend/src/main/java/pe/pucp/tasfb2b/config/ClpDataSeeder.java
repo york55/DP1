@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 import pe.pucp.tasfb2b.domain.Airport;
 import pe.pucp.tasfb2b.domain.ClpAirport;
 import pe.pucp.tasfb2b.domain.ClpFlight;
@@ -14,6 +15,7 @@ import pe.pucp.tasfb2b.repository.AirportRepository;
 import pe.pucp.tasfb2b.repository.ClpAirportRepository;
 import pe.pucp.tasfb2b.repository.ClpFlightRepository;
 import pe.pucp.tasfb2b.repository.FlightRepository;
+
 
 import java.util.HashMap;
 import java.util.List;
@@ -36,6 +38,7 @@ public class ClpDataSeeder implements CommandLineRunner {
     private final ClpFlightRepository clpFlightRepo;
 
     @Override
+    @Transactional
     public void run(String... args) {
         seedAirports();
         seedFlights();
