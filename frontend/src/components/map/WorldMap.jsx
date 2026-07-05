@@ -293,13 +293,12 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
         <AirportPaneSetup />
         <MapFocusController standalone={standalone} />
 
-        {/* Flight route polylines — trimmed to remaining segment for IN_FLIGHT */}
+        {/* Flight route polylines — always show the full origin → destination route */}
         {visibleFlights.map(flight => (
           <FlightRoute
             key={flight.id}
             flight={flight}
             airportsByCode={airportsByCode}
-            simulatedTime={simulatedTime}
           />
         ))}
 

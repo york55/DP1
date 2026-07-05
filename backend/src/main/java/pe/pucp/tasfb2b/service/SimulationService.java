@@ -154,6 +154,7 @@ public class SimulationService {
 
         blockOrchestrator.stop(id);
         simulationEngine.removeState(id);
+        airportRepo.resetAllOccupancies();
         sim.setStatus(SimulationStatus.FINISHED);
         simulationRepo.save(sim);
 
