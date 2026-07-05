@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import TextField from '@mui/material/TextField'
@@ -6,8 +7,10 @@ import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 import Alert from '@mui/material/Alert'
 import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
 import LockIcon from '@mui/icons-material/Lock'
 import PersonIcon from '@mui/icons-material/Person'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { useOpsAuth } from '../../context/OpsAuthContext'
 
 const inputSx = {
@@ -21,6 +24,7 @@ const inputSx = {
 }
 
 export default function OpsLoginPage() {
+  const navigate = useNavigate()
   const { login, loading, error } = useOpsAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -38,7 +42,23 @@ export default function OpsLoginPage() {
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: '#F2F2F2',
+      position: 'relative',
     }}>
+      <IconButton
+        onClick={() => navigate('/')}
+        sx={{
+          position: 'absolute',
+          top: 24,
+          left: 24,
+          backgroundColor: '#FFFFFF',
+          boxShadow: '0 2px 10px rgba(31,56,100,0.15)',
+          color: '#1F3864',
+          '&:hover': { backgroundColor: '#F8FAFF' },
+        }}
+      >
+        <ArrowBackIcon />
+      </IconButton>
+
       <Paper
         component="form"
         onSubmit={handleSubmit}

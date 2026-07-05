@@ -40,22 +40,16 @@ public class EnvioController {
             return ResponseEntity.badRequest().body("El nombre del cliente es demasiado largo.");
 
         try {
-            String lineaRegistrada = envioService.registrarEnvio(
+            String externalId = envioService.registrarEnvio(
                     request.getAlmacenOrigen(),
                     request.getAlmacenDestino(),
                     request.getCantidadMaletas(),
                     request.getCliente().trim()
             );
 
-            // idEnvio: primera parte de la línea (secuencial del archivo)
-            // El externalId de BD (ENV-YYYYMMDD-XXXXXX) está en el log; si lo necesitas
-            // en la respuesta, expón también un método getLastExternalId() en el service.
-            String idEnvio = lineaRegistrada.split("-")[0];
-
             return ResponseEntity.ok(Map.of(
                     "mensaje",  "Envío registrado exitosamente.",
-                    "idEnvio",  idEnvio,
-                    "registro", lineaRegistrada
+                    "idEnvio",  externalId
             ));
 
         } catch (IllegalArgumentException e) {
