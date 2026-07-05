@@ -127,6 +127,7 @@ public class OpsMapService {
                                 s.getOriginIata(),
                                 s.getDestIata(),
                                 s.getBagCount(),
+                                s.getClientCode(),
                                 s.getStatus(),
                                 s.getRegisteredAt(),
                                 s.getDeadlineUtc(),

@@ -31,7 +31,7 @@ public class OpsShipment {
     @Column(name = "bag_count", nullable = false)
     private Integer bagCount;
 
-    @Column(name = "client_code", length = 10)
+    @Column(name = "client_code", length = 100)
     private String clientCode;
 
     @Column(name = "status", length = 20)

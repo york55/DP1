@@ -40,15 +40,16 @@ public class EnvioService {
 
     /**
      * Registra un envío:
-     *  1. Persiste en la BD (tabla ops_shipment).
-     *  2. Escribe la línea en el archivo _envios_<ORIGEN>_.txt.
+     *  1. Persiste en la BD (tabla ops_shipment), incluyendo el cliente ingresado.
+     *  2. Escribe la línea en el archivo _envios_<ORIGEN>_.txt (formato original, sin cambios).
      *
      * @return La línea completa escrita en el archivo (igual que antes).
      */
     @Transactional
     public String registrarEnvio(String almacenOrigen,
                                   String almacenDestino,
-                                  String cantidadMaletas) throws IOException {
+                                  String cantidadMaletas,
+                                  String cliente) throws IOException {
 
         LocalDateTime now = LocalDateTime.now();
 
@@ -73,15 +74,16 @@ public class EnvioService {
         shipment.setOriginIata(almacenOrigen);
         shipment.setDestIata(almacenDestino);
         shipment.setBagCount(Integer.parseInt(cantidadMaletas));
+        shipment.setClientCode(cliente);
         shipment.setStatus("PENDING");
         shipment.setDeadlineUtc(deadline);
         shipment.setLastUpdated(now);
 
         OpsShipment saved = shipmentRepo.save(shipment);
-        log.info("Envío persistido en BD: {} ({} → {}, {} maletas, deadline: {})",
-            externalId, almacenOrigen, almacenDestino, cantidadMaletas, deadline);
+        log.info("Envío persistido en BD: {} ({} → {}, {} maletas, cliente: {}, deadline: {})",
+            externalId, almacenOrigen, almacenDestino, cantidadMaletas, cliente, deadline);
 
-        // ── 2. Escritura en archivo ───────────────────────────────────────
+        // ── 2. Escritura en archivo (formato original, no se modifica) ────
         Path dir     = Paths.get(directorioEnvios);
         Files.createDirectories(dir);
         Path archivo = dir.resolve("_envios_" + almacenOrigen + "_.txt");

@@ -24,6 +24,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
+import PersonIcon from '@mui/icons-material/Person'
+import LockIcon from '@mui/icons-material/Lock'
 import client from '../../api/client'
 
 const inputSx = {
@@ -36,13 +38,16 @@ const inputSx = {
   '& .MuiInputLabel-root.Mui-focused': { color: '#1F3864' },
 }
 
-export default function BaggageRegistrationPage() {
+export default function BaggageRegistrationPage({ user }) {
+  // El origen ya no se elige: es el aeropuerto del usuario autenticado.
+  const origenFijo = user?.airportIata || ''
+
   // ─── Estado existente ───────────────────────────────────────────────────────
   const [aeropuertos, setAeropuertos]               = useState([])
   const [loadingAeropuertos, setLoadingAeropuertos] = useState(true)
-  const [origen, setOrigen]                         = useState('')
   const [destino, setDestino]                       = useState('')
   const [cantidad, setCantidad]                     = useState('')
+  const [cliente, setCliente]                       = useState('')
   const [loading, setLoading]                       = useState(false)
   const [envios, setEnvios]                         = useState([])
   const [loadingEnvios, setLoadingEnvios]           = useState(false)
@@ -79,6 +84,8 @@ export default function BaggageRegistrationPage() {
 
   useEffect(() => { fetchEnvios() }, [fetchEnvios])
 
+  const aeropuertoOrigen = aeropuertos.find(a => a.iataCode === origenFijo)
+
   // ─── Handlers modo manual ───────────────────────────────────────────────────
   const handleCantidad = (e) => {
     const val = e.target.value.replace(/\D/g, '').slice(0, 3)
@@ -88,25 +95,34 @@ export default function BaggageRegistrationPage() {
   const cantidadFormateada = cantidad.padStart(3, '0')
 
   const handleRegistrar = async () => {
-    if (!origen || !destino || !cantidad || parseInt(cantidad) < 1) {
+    if (!origenFijo) {
+      setSnack({ open: true, msg: 'No se pudo determinar tu almacén de origen. Vuelve a iniciar sesión.', severity: 'error' })
+      return
+    }
+    if (!destino || !cantidad || parseInt(cantidad) < 1) {
       setSnack({ open: true, msg: 'Completa todos los campos correctamente.', severity: 'warning' })
       return
     }
-    if (origen === destino) {
+    if (!cliente.trim()) {
+      setSnack({ open: true, msg: 'Ingresa el nombre del cliente.', severity: 'warning' })
+      return
+    }
+    if (origenFijo === destino) {
       setSnack({ open: true, msg: 'El almacén origen y destino no pueden ser iguales.', severity: 'warning' })
       return
     }
     setLoading(true)
     try {
       const res = await client.post('/envios/registrar', {
-        almacenOrigen:   origen,
+        almacenOrigen:   origenFijo,
         almacenDestino:  destino,
         cantidadMaletas: cantidadFormateada,
+        cliente:         cliente.trim(),
       })
       setSnack({ open: true, msg: `Envío registrado: ${res.data.idEnvio}`, severity: 'success' })
-      setOrigen('')
       setDestino('')
       setCantidad('')
+      setCliente('')
       fetchEnvios()
     } catch (err) {
       const msg = typeof err.response?.data === 'string'
@@ -119,40 +135,31 @@ export default function BaggageRegistrationPage() {
   }
 
   // ─── Lógica carga masiva ────────────────────────────────────────────────────
-
-  /**
-   * Extrae el código IATA de origen desde el nombre del archivo.
-   * Formato esperado: _envios_XXXX_.txt  (ej. _envios_SKBO_.txt → origen SKBO)
-   */
-  const parsearOrigenDesdeNombre = (nombre) => {
-    const match = nombre.match(/_envios_([A-Z0-9]{2,4})_/i)
-    return match ? match[1].toUpperCase() : null
-  }
+  // Nota: el origen de la carga masiva también queda fijado al almacén del
+  // usuario autenticado; el código de aeropuerto en el nombre del archivo ya
+  // no se usa para determinar el origen, solo como referencia informativa.
 
   /**
    * Parsea el contenido de un archivo .txt línea a línea.
    * Formato de línea: 000000001-20260618-15-59-LOWW-002-0000500
    *   [0] id (ignorado)  [1] fecha  [2] hora  [3] min
    *   [4] iata destino   [5] cantidad maletas  [6] otro campo
-   * El origen viene del nombre del archivo; el destino de partes[4].
+   * El origen es siempre el almacén del usuario autenticado.
    */
   const parsearArchivoTxt = (nombre, contenido) => {
-    const orig = parsearOrigenDesdeNombre(nombre)
-    if (!orig) return null
-
     const lineas = contenido.split('\n').filter(l => l.trim())
     const registros = lineas.map((linea, idx) => {
       const partes = linea.trim().split('-')
       if (partes.length < 6) return null
       return {
         _key:     `${nombre}-${idx}`,
-        origen:   orig,       // del nombre del archivo
-        destino:  partes[4],  // dentro del archivo
+        origen:   origenFijo,  // siempre el del usuario logueado
+        destino:  partes[4],
         cantidad: partes[5],
       }
     }).filter(Boolean)
 
-    return { filename: nombre, origen: orig, registros }
+    return { filename: nombre, origen: origenFijo, registros }
   }
 
   const cargarArchivos = useCallback((files) => {
@@ -168,7 +175,7 @@ export default function BaggageRegistrationPage() {
         if (!parsed) {
           setSnack({
             open: true,
-            msg: `Nombre inválido: "${file.name}". Debe seguir el formato _envios_IATA_.txt`,
+            msg: `No se pudo leer el archivo "${file.name}".`,
             severity: 'warning',
           })
           return
@@ -185,7 +192,7 @@ export default function BaggageRegistrationPage() {
       reader.readAsText(file)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [origenFijo])
 
   const eliminarArchivo = (filename) =>
     setArchivosParseados(prev => prev.filter(a => a.filename !== filename))
@@ -199,11 +206,17 @@ export default function BaggageRegistrationPage() {
   /**
    * Procesa los registros secuencialmente reutilizando el mismo endpoint
    * de registro manual. El backend asigna el ID siguiente; el ID del archivo
-   * es ignorado.
+   * es ignorado. El cliente para la carga masiva se toma del campo
+   * "Cliente" del formulario (aplica a todos los registros del lote).
    */
   const procesarMasivo = async () => {
     const todos = archivosParseados.flatMap(a => a.registros)
     if (todos.length === 0) return
+
+    if (!cliente.trim()) {
+      setSnack({ open: true, msg: 'Ingresa el cliente que aplica a este lote antes de procesar.', severity: 'warning' })
+      return
+    }
 
     setProcesando(true)
     setProgreso(0)
@@ -219,6 +232,7 @@ export default function BaggageRegistrationPage() {
           almacenOrigen:   r.origen,
           almacenDestino:  r.destino,
           cantidadMaletas: r.cantidad,
+          cliente:         cliente.trim(),
         })
         exitosos++
       } catch {
@@ -289,6 +303,23 @@ export default function BaggageRegistrationPage() {
           top: { md: 24 },
         }}>
 
+          {/* Origen fijo (almacén del usuario autenticado) */}
+          <Box sx={{
+            display: 'flex', alignItems: 'center', gap: 1.5,
+            p: 1.5, borderRadius: '10px',
+            backgroundColor: '#F0F4FB', border: '1px solid #DCE4F2',
+          }}>
+            <LockIcon sx={{ color: '#6B7280', fontSize: 18 }} />
+            <Box sx={{ flex: 1 }}>
+              <Typography sx={{ fontSize: '0.68rem', color: '#6B7280', fontWeight: 600, letterSpacing: '0.03em' }}>
+                ALMACÉN ORIGEN (FIJO)
+              </Typography>
+              <Typography sx={{ fontSize: '0.9rem', fontWeight: 700, color: '#1F3864' }}>
+                {origenFijo || '—'}{aeropuertoOrigen ? ` · ${aeropuertoOrigen.name}, ${aeropuertoOrigen.country}` : ''}
+              </Typography>
+            </Box>
+          </Box>
+
           {/* Toggle de modo */}
           <Box sx={{
             display: 'flex',
@@ -327,6 +358,18 @@ export default function BaggageRegistrationPage() {
             ))}
           </Box>
 
+          {/* Cliente (aplica a ambos modos) */}
+          <TextField
+            label="Cliente"
+            value={cliente}
+            onChange={e => setCliente(e.target.value.slice(0, 100))}
+            fullWidth
+            sx={inputSx}
+            placeholder="Nombre del cliente"
+            InputProps={{ startAdornment: <PersonIcon sx={{ color: '#6B7280', mr: 1, fontSize: 20 }} /> }}
+            helperText={modoActivo === 'masivo' ? 'Se aplicará a todos los registros del lote' : undefined}
+          />
+
           {/* ════════════════ MODO MANUAL ════════════════ */}
           {modoActivo === 'manual' && (
             <>
@@ -337,18 +380,6 @@ export default function BaggageRegistrationPage() {
               ) : (
                 <>
                   <FormControl fullWidth sx={inputSx}>
-                    <InputLabel>Almacén Origen</InputLabel>
-                    <Select
-                      value={origen}
-                      label="Almacén Origen"
-                      onChange={e => setOrigen(e.target.value)}
-                      startAdornment={<FlightTakeoffIcon sx={{ color: '#6B7280', mr: 1, fontSize: 20 }} />}
-                    >
-                      {aeropuertos.map(a => renderMenuItem(a, destino))}
-                    </Select>
-                  </FormControl>
-
-                  <FormControl fullWidth sx={inputSx}>
                     <InputLabel>Almacén Destino</InputLabel>
                     <Select
                       value={destino}
@@ -356,7 +387,7 @@ export default function BaggageRegistrationPage() {
                       onChange={e => setDestino(e.target.value)}
                       startAdornment={<FlightLandIcon sx={{ color: '#6B7280', mr: 1, fontSize: 20 }} />}
                     >
-                      {aeropuertos.map(a => renderMenuItem(a, origen))}
+                      {aeropuertos.map(a => renderMenuItem(a, origenFijo))}
                     </Select>
                   </FormControl>
 
@@ -451,7 +482,7 @@ export default function BaggageRegistrationPage() {
                   o haz clic para seleccionar
                 </Typography>
                 <Chip
-                  label="_envios_IATA_.txt"
+                  label={`Origen: ${origenFijo || '—'}`}
                   size="small"
                   sx={{
                     mt: 0.5,
@@ -745,6 +776,11 @@ export default function BaggageRegistrationPage() {
                         sx={{ backgroundColor: '#E8EEF7', color: '#1F3864', fontWeight: 700, fontSize: '0.72rem' }}
                       />
                     </Box>
+                    {e.clientCode && (
+                      <Typography sx={{ fontSize: '0.72rem', color: '#6B7280', mt: 0.5 }}>
+                        Cliente: <strong style={{ color: '#1F3864' }}>{e.clientCode}</strong>
+                      </Typography>
+                    )}
                   </Box>
 
                   <Box sx={{ textAlign: 'center', minWidth: 64 }}>

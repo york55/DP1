@@ -133,6 +133,19 @@ CREATE TABLE OPS_PLANNER_RUN (
     notes               VARCHAR(200)
 );
 
+-- USUARIO
+CREATE TABLE OPS_USER (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    full_name       VARCHAR(100) NOT NULL,
+    username        VARCHAR(20) UNIQUE NOT NULL,
+    password        VARCHAR(100) NOT NULL,
+    airport_iata    CHAR(4),
+
+    CONSTRAINT fk_user_airport
+        FOREIGN KEY (airport_iata)
+        REFERENCES OPS_AIRPORT(iata_code)
+);
+
 -- INDICES
 CREATE INDEX idx_ops_flight_date_status
     ON OPS_FLIGHT(flight_date, status);

@@ -8,6 +8,7 @@ public record OpsShipmentResponse(
     String originIata,
     String destIata,
     int    bagCount,
+    String cliente,
     String status,
     LocalDateTime registeredAt,
     LocalDateTime deadlineUtc,

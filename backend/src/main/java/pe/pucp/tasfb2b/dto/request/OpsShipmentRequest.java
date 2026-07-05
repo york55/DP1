@@ -8,4 +8,5 @@ public class OpsShipmentRequest {
     private String almacenOrigen;
     private String almacenDestino;
     private String cantidadMaletas;
+    private String cliente;
 }
