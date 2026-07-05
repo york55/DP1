@@ -16,6 +16,7 @@ import LuggageIcon from '@mui/icons-material/Luggage'
 import FlightIcon from '@mui/icons-material/Flight'
 import SettingsIcon from '@mui/icons-material/Settings'
 import InventoryIcon from '@mui/icons-material/Inventory'
+import { useSimulationContext } from '../context/SimulationContext'
 
 const ACCENT_SIM = '#1F3864'
 const ACCENT_CFG = '#92400E'
@@ -106,12 +107,17 @@ function ScenarioCard({ icon, title, description, badge, onSelect, disabled, var
 
 export default function ScenarioSelectorPage() {
   const navigate = useNavigate()
+  const { attachToSimulation } = useSimulationContext()
 
   const handleSimulacionPeriodo = async () => {
     try {
       const res = await fetch('/api/simulations/active')
       if (res.ok && res.status !== 204) {
-        // Hay una simulación corriendo — ir directo a verla
+        // Hay una simulación corriendo — enganchar este navegador a esa sesión
+        // (por si nuestro contexto local nunca la vio, ej. otro usuario/PC la
+        // inició después de que cargamos esta página) y luego ir a verla.
+        const active = await res.json()
+        await attachToSimulation(active)
         navigate('/simulation/running')
         return
       }

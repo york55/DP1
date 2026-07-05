@@ -716,9 +716,14 @@ export function useSimulation() {
   const attachToSimulation = useCallback(async (active) => {
     try {
       simIdRef.current = active.id
+      // El backend envía fechas naive en UTC (sin sufijo 'Z'); si no se fuerza
+      // el parseo a UTC, new Date() las interpreta en la zona horaria local del
+      // navegador, desalineando startDate/simulatedTime y rompiendo el cálculo
+      // de "transcurrido" en fmtSimElapsed.
+      const asUtc = (str) => str ? new Date(String(str).endsWith('Z') ? str : str + 'Z') : null
       const simTime = active.simulatedTime
-        ? new Date(active.simulatedTime)
-        : new Date(active.startDate)
+        ? asUtc(active.simulatedTime)
+        : asUtc(active.startDate)
       simTimeRef.current = simTime
       const frontendStatus = active.status === 'PLAYING' ? 'running'
         : active.status === 'BUFFERING' ? 'planning'
@@ -767,9 +772,9 @@ export function useSimulation() {
 
       let currentDay = 1
       if (active.simulatedTime && active.startDate) {
-        const start = new Date(active.startDate)
+        const start = asUtc(active.startDate)
         start.setUTCHours(0, 0, 0, 0)
-        const current = new Date(active.simulatedTime)
+        const current = asUtc(active.simulatedTime)
         const diffDays = Math.floor((current.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
         currentDay = diffDays + 1
       }
@@ -779,7 +784,7 @@ export function useSimulation() {
         simulatedTime: simTime,
         currentDay,
         elapsedSeconds: 0,
-        config: { period: active.periodDays, startDate: new Date(active.startDate) },
+        config: { period: active.periodDays, startDate: asUtc(active.startDate) },
         simulationId: active.id,
       })
 
