@@ -141,21 +141,22 @@ export default function BaggageRegistrationPage({ user }) {
 
   /**
    * Parsea el contenido de un archivo .txt línea a línea.
-   * Formato de línea: 000000001-20260618-15-59-LOWW-002-0000500
-   *   [0] id (ignorado)  [1] fecha  [2] hora  [3] min
-   *   [4] iata destino   [5] cantidad maletas  [6] otro campo
+   * Formato de línea: HH-mm-DESTINO-cantidad-cliente
+   *   [0] hora  [1] minuto  [2] iata destino  [3] cantidad maletas
+   *   [4..] cliente (puede contener guiones)
    * El origen es siempre el almacén del usuario autenticado.
    */
   const parsearArchivoTxt = (nombre, contenido) => {
     const lineas = contenido.split('\n').filter(l => l.trim())
     const registros = lineas.map((linea, idx) => {
       const partes = linea.trim().split('-')
-      if (partes.length < 6) return null
+      if (partes.length < 5) return null
       return {
         _key:     `${nombre}-${idx}`,
         origen:   origenFijo,  // siempre el del usuario logueado
-        destino:  partes[4],
-        cantidad: partes[5],
+        destino:  partes[2],
+        cantidad: partes[3],
+        cliente:  partes.slice(4).join('-'),
       }
     }).filter(Boolean)
 
@@ -205,16 +206,17 @@ export default function BaggageRegistrationPage({ user }) {
 
   /**
    * Procesa los registros secuencialmente reutilizando el mismo endpoint
-   * de registro manual. El backend asigna el ID siguiente; el ID del archivo
-   * es ignorado. El cliente para la carga masiva se toma del campo
-   * "Cliente" del formulario (aplica a todos los registros del lote).
+   * de registro manual. El backend asigna el ID automáticamente.
+   * El cliente se toma del archivo; si está vacío, se usa el campo del formulario.
    */
   const procesarMasivo = async () => {
     const todos = archivosParseados.flatMap(a => a.registros)
     if (todos.length === 0) return
 
-    if (!cliente.trim()) {
-      setSnack({ open: true, msg: 'Ingresa el cliente que aplica a este lote antes de procesar.', severity: 'warning' })
+    // Si ningún registro del archivo tiene cliente, exigir el campo del form
+    const algunoSinCliente = todos.some(r => !r.cliente || !r.cliente.trim())
+    if (algunoSinCliente && !cliente.trim()) {
+      setSnack({ open: true, msg: 'Algunos registros no tienen cliente. Ingresa uno en el campo para usarlo como respaldo.', severity: 'warning' })
       return
     }
 
@@ -227,12 +229,13 @@ export default function BaggageRegistrationPage({ user }) {
 
     for (let i = 0; i < todos.length; i++) {
       const r = todos[i]
+      const clienteFinal = (r.cliente && r.cliente.trim()) ? r.cliente.trim() : cliente.trim()
       try {
         await client.post('/envios/registrar', {
           almacenOrigen:   r.origen,
           almacenDestino:  r.destino,
           cantidadMaletas: r.cantidad,
-          cliente:         cliente.trim(),
+          cliente:         clienteFinal,
         })
         exitosos++
       } catch {
@@ -367,7 +370,7 @@ export default function BaggageRegistrationPage({ user }) {
             sx={inputSx}
             placeholder="Nombre del cliente"
             InputProps={{ startAdornment: <PersonIcon sx={{ color: '#6B7280', mr: 1, fontSize: 20 }} /> }}
-            helperText={modoActivo === 'masivo' ? 'Se aplicará a todos los registros del lote' : undefined}
+            helperText={modoActivo === 'masivo' ? 'Respaldo si el archivo no incluye cliente' : undefined}
           />
 
           {/* ════════════════ MODO MANUAL ════════════════ */}
@@ -480,6 +483,9 @@ export default function BaggageRegistrationPage({ user }) {
                 </Typography>
                 <Typography sx={{ color: '#9CA3AF', fontSize: '0.75rem' }}>
                   o haz clic para seleccionar
+                </Typography>
+                <Typography sx={{ color: '#B0B8C9', fontSize: '0.65rem', fontFamily: 'monospace', mt: 0.5 }}>
+                  Formato: HH-mm-DESTINO-cantidad-cliente
                 </Typography>
                 <Chip
                   label={`Origen: ${origenFijo || '—'}`}
