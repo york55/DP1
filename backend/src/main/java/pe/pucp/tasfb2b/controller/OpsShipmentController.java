@@ -27,6 +27,8 @@ public class OpsShipmentController {
         if (req.getCantidadMaletas() == null || !req.getCantidadMaletas().matches("\\d{1,3}")
                 || Integer.parseInt(req.getCantidadMaletas()) < 1)
             return ResponseEntity.badRequest().body("La cantidad debe ser entre 1 y 999.");
+        if (req.getCliente() == null || req.getCliente().isBlank())
+            return ResponseEntity.badRequest().body("El cliente es obligatorio.");
 
         try {
             OpsShipmentResponse response = shipmentService.register(req);
