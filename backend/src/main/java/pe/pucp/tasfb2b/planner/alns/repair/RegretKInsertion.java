@@ -42,6 +42,9 @@ public class RegretKInsertion implements RepairOperator {
     // El engine crea una instancia nueva de este operador por cada optimize()/replan(), así
     // que la caché nunca sobrevive a un cambio de ventana de vuelos.
     private Map<Long, List<Candidate>> candidateCache;
+    // Por lote: conjunto de TODOS los vuelos que aparecen en sus candidatos cacheados.
+    // Se usa para la recomputación incremental del regret en repair().
+    private Map<Long, Set<Long>> footprintCache;
 
     private record Candidate(List<Long> flightIds, double staticCost) {}
 
@@ -67,57 +70,97 @@ public class RegretKInsertion implements RepairOperator {
 
         if (candidateCache == null) {
             candidateCache = buildCandidateCache(allBatches, flightsByOrigin);
+            footprintCache = buildFootprintCache();
         }
 
         Set<Long> bankSnapshot = new LinkedHashSet<>(solution.getBank());
 
+        // Recomputación INCREMENTAL del regret: insertar un lote solo cambia la capacidad
+        // de los (≤3) vuelos de su ruta, así que solo hay que re-evaluar los lotes cuyo
+        // "footprint" de candidatos toca alguno de esos vuelos. Antes se recalculaba el
+        // regret de TODO el banco tras CADA inserción — O(banco² × candidatos) por repair,
+        // que a escala de miles de lotes por bloque domina el tiempo total.
+        Map<Long, Double> regretOf = new HashMap<>();
+        Map<Long, List<Long>> chosenOf = new HashMap<>();
+        for (Long batchId : bankSnapshot) {
+            computeEntry(batchId, kRegret, flightsByOrigin, solution, regretOf, chosenOf);
+        }
+
         while (!bankSnapshot.isEmpty()) {
             Long bestBatchId = null;
             double bestRegret = Double.NEGATIVE_INFINITY;
-            List<Long> bestFlightSequence = null;
-
             for (Long batchId : bankSnapshot) {
-                BaggageBatch batch = solution.getBatchMap().get(batchId);
-                if (batch == null) continue;
-
-                List<Candidate> feasible = feasibleCandidates(batchId, batch,
-                        flightsByOrigin, solution);
-
-                double regret;
-                List<Long> chosen;
-
-                if (feasible.isEmpty()) {
-                    regret = Double.MAX_VALUE;
-                    chosen = null;
-                } else if (feasible.size() == 1) {
-                    regret = feasible.get(0).staticCost() + 10000.0;
-                    chosen = feasible.get(0).flightIds();
-                } else {
-                    double cost0 = feasible.get(0).staticCost();
-                    int idx = Math.min(kRegret - 1, feasible.size() - 1);
-                    double costK = feasible.get(idx).staticCost();
-                    // Con el costo lexicográfico, un lote cuya mejor opción es puntual pero
-                    // cuya k-ésima ya es tardía obtiene un regret enorme (~LATE_BASE_PENALTY)
-                    // y se inserta primero, protegiendo su último cupo puntual antes de que
-                    // otro lote con más alternativas se lo lleve.
-                    regret = costK - cost0;
-                    chosen = feasible.get(0).flightIds();
-                }
-
+                double regret = regretOf.getOrDefault(batchId, Double.NEGATIVE_INFINITY);
                 if (regret > bestRegret) {
                     bestRegret = regret;
                     bestBatchId = batchId;
-                    bestFlightSequence = chosen;
                 }
             }
-
             if (bestBatchId == null) break;
+
+            List<Long> bestFlightSequence = chosenOf.get(bestBatchId);
+            bankSnapshot.remove(bestBatchId);
+            regretOf.remove(bestBatchId);
+            chosenOf.remove(bestBatchId);
 
             if (bestFlightSequence != null) {
                 solution.assign(bestBatchId, bestFlightSequence);
+                // Solo los lotes que podrían usar alguno de los vuelos recién cargados
+                // necesitan re-evaluarse.
+                for (Long other : bankSnapshot) {
+                    Set<Long> footprint = footprintCache.getOrDefault(other, Collections.emptySet());
+                    for (Long fid : bestFlightSequence) {
+                        if (footprint.contains(fid)) {
+                            computeEntry(other, kRegret, flightsByOrigin, solution, regretOf, chosenOf);
+                            break;
+                        }
+                    }
+                }
             }
-            bankSnapshot.remove(bestBatchId);
         }
+    }
+
+    private void computeEntry(Long batchId, int kRegret,
+                               Map<String, List<Flight>> flightsByOrigin,
+                               AlnsSolution solution,
+                               Map<Long, Double> regretOf, Map<Long, List<Long>> chosenOf) {
+        BaggageBatch batch = solution.getBatchMap().get(batchId);
+        if (batch == null) {
+            regretOf.put(batchId, Double.NEGATIVE_INFINITY);
+            chosenOf.put(batchId, null);
+            return;
+        }
+        List<Candidate> feasible = feasibleCandidates(batchId, batch, flightsByOrigin, solution);
+
+        if (feasible.isEmpty()) {
+            regretOf.put(batchId, Double.MAX_VALUE);
+            chosenOf.put(batchId, null);
+        } else if (feasible.size() == 1) {
+            regretOf.put(batchId, feasible.get(0).staticCost() + 10000.0);
+            chosenOf.put(batchId, feasible.get(0).flightIds());
+        } else {
+            double cost0 = feasible.get(0).staticCost();
+            int idx = Math.min(kRegret - 1, feasible.size() - 1);
+            double costK = feasible.get(idx).staticCost();
+            // Con el costo lexicográfico, un lote cuya mejor opción es puntual pero cuya
+            // k-ésima ya es tardía obtiene un regret enorme (~LATE_BASE_PENALTY) y se
+            // inserta primero, protegiendo su último cupo puntual antes de que otro lote
+            // con más alternativas se lo lleve.
+            regretOf.put(batchId, costK - cost0);
+            chosenOf.put(batchId, feasible.get(0).flightIds());
+        }
+    }
+
+    private Map<Long, Set<Long>> buildFootprintCache() {
+        Map<Long, Set<Long>> footprints = new HashMap<>(candidateCache.size() * 2);
+        for (Map.Entry<Long, List<Candidate>> e : candidateCache.entrySet()) {
+            Set<Long> fp = new HashSet<>();
+            for (Candidate c : e.getValue()) {
+                fp.addAll(c.flightIds());
+            }
+            footprints.put(e.getKey(), fp);
+        }
+        return footprints;
     }
 
     // ── Selección de candidatos factibles (capacidad) ─────────────────────────
@@ -279,6 +322,103 @@ public class RegretKInsertion implements RepairOperator {
         List<Long> ids = new ArrayList<>(legs.size());
         for (Flight f : legs) ids.add(f.getId());
         return new Candidate(ids, cost);
+    }
+
+    // ── Pase de rescate por eyección ──────────────────────────────────────────
+    // Escenario objetivo (el observado en la simulación: un envío de 8 maletas tardío con
+    // los almacenes llenos): las rutas puntuales del lote SÍ existen, pero sus vuelos están
+    // ocupados por lotes que tienen otras alternativas puntuales. La búsqueda estocástica
+    // puede o no encontrar el intercambio; este pase lo hace determinísticamente:
+    // por cada lote víctima (tardío o sin asignar), por cada ruta puntual candidata, intenta
+    // liberar los tramos bloqueados moviendo a los bloqueadores a rutas puntuales propias
+    // que NO usen el vuelo bloqueado. Todo con snapshot/rollback: si no se logra completar
+    // la jugada, la solución queda exactamente como estaba. Nunca crea un tardío nuevo.
+
+    private static final int EJECTION_BUDGET_PER_ATTEMPT = 6;
+
+    @Override
+    public int rescue(AlnsSolution solution) {
+        if (candidateCache == null) return 0;
+
+        List<Long> victims = new ArrayList<>();
+        for (Long id : solution.getAssignedBatchIds()) {
+            if (solution.getLatenessMinutes(id) > 0) victims.add(id);
+        }
+        victims.addAll(solution.getBank());
+
+        int rescued = 0;
+        for (Long victimId : victims) {
+            BaggageBatch victim = solution.getBatchMap().get(victimId);
+            if (victim == null) continue;
+            if (tryRescueOne(victimId, victim.getQuantity(), solution)) rescued++;
+        }
+        return rescued;
+    }
+
+    private boolean tryRescueOne(Long victimId, int qty, AlnsSolution solution) {
+        List<Candidate> cands = candidateCache.getOrDefault(victimId, Collections.emptyList());
+        for (Candidate cand : cands) {
+            // La caché está ordenada por costo: al llegar al primer tardío ya no hay
+            // candidatos puntuales que probar.
+            if (cand.staticCost() >= LATE_BASE_PENALTY) break;
+
+            AlnsSolution.Snapshot snap = solution.snapshot();
+            if (tryPlaceWithEjection(victimId, qty, cand, solution)) {
+                return true;
+            }
+            solution.restore(snap);
+        }
+        return false;
+    }
+
+    private boolean tryPlaceWithEjection(Long victimId, int qty, Candidate cand,
+                                          AlnsSolution solution) {
+        if (!solution.getAssignment(victimId).isEmpty()) {
+            solution.unassign(victimId);
+        }
+        int budget = EJECTION_BUDGET_PER_ATTEMPT;
+        for (Long fid : cand.flightIds()) {
+            while (!solution.canAssign(fid, qty)) {
+                if (budget-- <= 0) return false;
+                if (!ejectOneBlocker(fid, victimId, solution)) return false;
+            }
+        }
+        solution.assign(victimId, cand.flightIds());
+        return !solution.getAssignment(victimId).isEmpty();
+    }
+
+    /**
+     * Mueve UN lote del vuelo bloqueado hacia una ruta puntual alternativa propia que no
+     * use ese vuelo. Se prueban primero los lotes más grandes (liberan más espacio por
+     * movimiento). Retorna false si ningún ocupante tiene alternativa puntual factible.
+     */
+    private boolean ejectOneBlocker(Long blockedFlightId, Long victimId, AlnsSolution solution) {
+        List<Long> occupants = solution.getBatchesOnFlight(blockedFlightId);
+        occupants.sort(Comparator.comparingInt((Long id) -> {
+            BaggageBatch b = solution.getBatchMap().get(id);
+            return b != null ? b.getQuantity() : 0;
+        }).reversed());
+
+        for (Long xId : occupants) {
+            if (xId.equals(victimId)) continue;
+            BaggageBatch x = solution.getBatchMap().get(xId);
+            if (x == null) continue;
+            int xq = x.getQuantity();
+
+            for (Candidate alt : candidateCache.getOrDefault(xId, Collections.emptyList())) {
+                if (alt.staticCost() >= LATE_BASE_PENALTY) break; // solo alternativas puntuales
+                if (alt.flightIds().contains(blockedFlightId)) continue; // debe LIBERAR el vuelo
+
+                List<Long> originalRoute = new ArrayList<>(solution.getAssignment(xId));
+                solution.unassign(xId);
+                if (allLegsFit(alt.flightIds(), xq, solution)) {
+                    solution.assign(xId, alt.flightIds());
+                    return true;
+                }
+                solution.assign(xId, originalRoute); // esta alternativa no cabe: revertir
+            }
+        }
+        return false;
     }
 
     @Override

@@ -61,8 +61,11 @@ public class ClpSimulationEngine {
     private final ExecutorService replanExecutor = Executors.newSingleThreadExecutor(
             r -> new Thread(r, "clp-replan-bg"));
 
+    private static final int DELAYED_SHIPMENT_COLLAPSE_THRESHOLD = 2;
+
     /** Result of tick(): null = error/stopped, non-null = simNow + collapse info */
-    public record TickResult(LocalDateTime simNow, boolean collapsed, ClpAirport collapsedAirport) {}
+    public record TickResult(LocalDateTime simNow, boolean collapsed,
+                              ClpAirport collapsedAirport, String collapseReason) {}
 
     public void initSimulation(Long simulationId) {
         ClpSimulation sim = simulationRepo.findById(simulationId).orElseThrow();
@@ -111,8 +114,8 @@ public class ClpSimulationEngine {
             // 5. Update airport occupancy
             updateAirportOccupancy(simNow);
 
-            // 6. *** COLLAPSE CHECK *** — any airport > 100%?
-            ClpAirport collapsedAirport = checkCollapse();
+            // 6. *** COLLAPSE CHECK *** — warehouse >100% OR delayed >= threshold
+            TickResult collapseResult = checkCollapse(simNow);
 
             // 7. Persist KPI snapshot
             ClpKpiSnapshot kpi = persistKpi(sim, simNow);
@@ -139,7 +142,9 @@ public class ClpSimulationEngine {
                 }
             });
 
-            return new TickResult(simNow, collapsedAirport != null, collapsedAirport);
+            return collapseResult != null
+                    ? collapseResult
+                    : new TickResult(simNow, false, null, null);
 
         } catch (Exception e) {
             log.error("[CLP] Error en tick de simulación {}: {}", simulationId, e.getMessage(), e);
@@ -149,16 +154,30 @@ public class ClpSimulationEngine {
 
     // ── COLLAPSE DETECTION ──────────────────────────────────────────────────
 
-    private ClpAirport checkCollapse() {
+    /** Checks both collapse conditions: warehouse >100% OR delayed shipments >= threshold */
+    private TickResult checkCollapse(LocalDateTime simNow) {
+        // Condition 1: Any airport warehouse above 100%
         List<ClpAirport> airports = airportRepo.findAll();
         for (ClpAirport a : airports) {
             if (a.getOccupancyPct() > 100.0) {
-                log.warn("[CLP] ¡COLAPSO DETECTADO! Aeropuerto {} al {:.1f}%",
-                        a.getIataCode(), a.getOccupancyPct());
-                return a;
+                log.warn("[CLP] ¡COLAPSO POR ALMACÉN! Aeropuerto {} al {}%",
+                        a.getIataCode(), String.format("%.1f", a.getOccupancyPct()));
+                return new TickResult(simNow, true, a,
+                        "Almacén del aeropuerto " + a.getIataCode()
+                                + " superó el 100% (" + String.format("%.1f", a.getOccupancyPct()) + "%)");
             }
         }
-        return null;
+
+        // Condition 2: Delayed shipments >= threshold
+        long delayedCount = shipmentRepo.countByStatus(ShipmentStatus.DELAYED);
+        if (delayedCount >= DELAYED_SHIPMENT_COLLAPSE_THRESHOLD) {
+            log.warn("[CLP] ¡COLAPSO POR RETRASOS! {} envíos retrasados (umbral: {})",
+                    delayedCount, DELAYED_SHIPMENT_COLLAPSE_THRESHOLD);
+            return new TickResult(simNow, true, null,
+                    delayedCount + " envíos retrasados (umbral: " + DELAYED_SHIPMENT_COLLAPSE_THRESHOLD + ")");
+        }
+
+        return null; // no collapse
     }
 
     // ── Same logic as SimulationEngine but using Clp entities ────────────────

@@ -95,8 +95,14 @@ public class AlnsEngine implements RouteOptimizer {
         int stagnantSegments = 0;
         final int MAX_STAGNANT_SEGMENTS = 3; // stop if bestObj unchanged for 3 consecutive segments
 
+        // Tope absoluto de destrucción: con miles de lotes por bloque, qPct=0.25 destruiría
+        // (y repararía) cientos o miles de lotes POR ITERACIÓN. Movimientos de ~100 lotes
+        // son suficientes para que el ALNS explore bien, y mantienen el costo por iteración
+        // acotado sin importar el tamaño de la instancia.
+        final int qCap = 100;
+
         for (int iter = 0; iter < p.maxIterations(); iter++) {
-            int q = Math.max(1, (int) Math.ceil(p.qPct() * batches.size()));
+            int q = Math.min(qCap, Math.max(1, (int) Math.ceil(p.qPct() * batches.size())));
 
             int dIdx = selectByRoulette(dWeights, rng);
             // Mutate current in-place; restore from snapshot if rejected.
@@ -161,6 +167,18 @@ public class AlnsEngine implements RouteOptimizer {
         }
 
         Duration elapsed = Duration.between(start, Instant.now());
+
+        // Pase final de rescate determinístico: si quedó algún lote tardío o sin asignar,
+        // intenta liberarle una ruta puntual eyectando bloqueadores hacia sus alternativas.
+        // Garantiza los arreglos "a un intercambio de distancia" que la búsqueda estocástica
+        // podría no haber encontrado.
+        int rescued = repairOp.rescue(best);
+        if (rescued > 0) {
+            bestObj = evaluate(best, p);
+            log.info("Rescate por eyección: {} lotes recuperados a rutas puntuales, obj={}",
+                    rescued, String.format("%.4f", bestObj));
+        }
+
         List<Route> routes = buildRoutes(best, batches, flights, context.getSimulatedNow(), "ALNS");
 
         int assigned = best.getAssignments().size();
@@ -185,6 +203,7 @@ public class AlnsEngine implements RouteOptimizer {
         AlnsSolution solution = new AlnsSolution(flights, affected);
         RepairOperator repair = new RegretKInsertion(p.connectMinGapMinutes(), p.maxHops());
         repair.repair(solution, affected, flights, p.kRegret(), rng);
+        repair.rescue(solution);
 
         Instant start = Instant.now();
         List<Route> routes = buildRoutes(solution, affected, flights, context.getSimulatedNow(), "ALNS");
@@ -199,12 +218,24 @@ public class AlnsEngine implements RouteOptimizer {
         return "ALNS";
     }
 
+    // ── Escala de penalizaciones NO DILUIDAS (por lote, sin dividir por el total) ──
+    // Con la regla "1 retraso = colapso", un solo lote tardío debe pesar más que CUALQUIER
+    // mejora posible de espera/utilización. Antes comp1 y comp5 se normalizaban por el
+    // total de lotes: con ~3500 envíos en almacén, un lote tardío sumaba
+    // 0.35 × 1/3500 ≈ 0.0001 al objetivo — menos que el ruido del componente de espera —
+    // así que el recocido podía aceptar (y elegir como "best") una solución que sacrificaba
+    // un envío haciéndolo tardío a cambio de reducir un poco la espera global. Ese es
+    // exactamente el mecanismo detrás de "1 retraso al día 3.5 con 3559 envíos en almacén".
+    // Jerarquía estricta: SIN ASIGNAR (nunca sale del almacén) > TARDÍO > tiempo en tierra.
+    private static final double UNASSIGNED_PENALTY_PER_BATCH = 2.0;
+    private static final double LATE_PENALTY_PER_BATCH = 1.0;
+
     private double evaluate(AlnsSolution solution, AlnsParams p) {
         int total = solution.getBatchMap().size();
         if (total == 0) return 0.0;
 
         int unassigned = solution.getBankSize();
-        double comp1 = p.w1() * ((double) unassigned / total);
+        double comp1 = UNASSIGNED_PENALTY_PER_BATCH * unassigned;
 
         double totalCapacity = 0;
         double totalOverload = 0;
@@ -233,28 +264,24 @@ public class AlnsEngine implements RouteOptimizer {
         if (assigned == 0) return comp1 + comp2 + comp4;
 
         double totalWait = 0;
-        double totalLateFraction = 0;
+        double comp5 = 0.0;
         for (Long batchId : solution.getAssignments().keySet()) {
             // Tiempo en tierra TOTAL (espera en origen + layovers en hubs). Cada minuto en
             // tierra son maletas ocupando un almacén — la variable que dispara el colapso
             // por ocupación >100% — así que el objetivo ahora lo ve completo, no solo la
             // espera antes del primer embarque.
             totalWait += solution.getGroundMinutes(batchId);
-            // Minutos de atraso normalizados a "días de atraso" y acotados a 1.0 (1 día tarde
-            // ya pesa lo máximo posible; no queremos que un atraso de 5 días opaque en la suma
-            // a diez lotes con 1 minuto de atraso cada uno).
+            // Cada lote tardío suma una penalización FIJA grande más un término acotado por
+            // cuán tarde llega (1 día tarde ya pesa lo máximo). Sin dividir por assigned:
+            // 1 tardío ≈ 1.0–1.35 en un objetivo que sin tardíos vale ~0.05, así que la
+            // búsqueda siempre prefiere eliminar el retraso antes que cualquier otra mejora,
+            // y 2 tardíos siempre es peor que 1.
             long lateMin = solution.getLatenessMinutes(batchId);
             if (lateMin > 0) {
-                totalLateFraction += Math.min(1.0, lateMin / 1440.0);
+                comp5 += LATE_PENALTY_PER_BATCH + p.w5() * Math.min(1.0, lateMin / 1440.0);
             }
         }
         double comp3 = p.w3() * (totalWait / ((double) assigned * 1440.0));
-
-        // comp5: fracción (0..1) de lotes asignados que van a llegar tarde, ponderada por
-        // cuán tarde llegan. Este componente NO EXISTÍA antes — es la pieza que faltaba para
-        // que el ALNS "sepa" que el SLA (1 día mismo continente / 2 días distinto continente)
-        // es parte de lo que tiene que optimizar, y no solo un reporte que se calcula después.
-        double comp5 = p.w5() * (totalLateFraction / assigned);
 
         return comp1 + comp2 + comp3 + comp4 + comp5;
     }

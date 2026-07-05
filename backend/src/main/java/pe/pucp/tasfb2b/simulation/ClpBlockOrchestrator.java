@@ -346,7 +346,7 @@ public class ClpBlockOrchestrator {
 
             // *** COLLAPSE DETECTED ***
             if (result.collapsed()) {
-                handleCollapse(simId, result.simNow(), result.collapsedAirport());
+                handleCollapse(simId, result.simNow(), result.collapsedAirport(), result.collapseReason());
                 return true;
             }
 
@@ -357,7 +357,8 @@ public class ClpBlockOrchestrator {
         return false;
     }
 
-    private void handleCollapse(Long simId, LocalDateTime simNow, ClpAirport collapsedAirport) {
+    private void handleCollapse(Long simId, LocalDateTime simNow,
+                                 ClpAirport collapsedAirport, String collapseReason) {
         String iata = collapsedAirport != null ? collapsedAirport.getIataCode() : null;
 
         simulationRepo.findById(simId).ifPresent(sim -> {
@@ -367,17 +368,17 @@ public class ClpBlockOrchestrator {
             simulationRepo.save(sim);
         });
 
+        String message = collapseReason != null
+                ? "¡COLAPSO! " + collapseReason
+                : "¡COLAPSO! Aeropuerto " + (iata != null ? iata : "?") + " superó el 100% de capacidad.";
+
         webSocketPublisher.publishAlert(simId,
                 new WebSocketEventPublisher.AlertEvent(
                         "COLLAPSE", null, null,
                         iata,
-                        "¡COLAPSO! Aeropuerto " + (iata != null ? iata : "?")
-                                + " superó el 100% de capacidad.",
+                        message,
                         simNow.toString()));
 
-        // Antes: publishFinished(simId) mandaba siempre simulationStatus="FINISHED"
-        // y no incluía el aeropuerto, así que el frontend nunca detectaba el colapso
-        // por WebSocket. Ahora manda "COLLAPSED" + collapsedIata.
         webSocketPublisher.publishFinished(simId, true, iata);
     }
 
