@@ -121,7 +121,7 @@ public class SimulationEngine {
 
             // 4. Check SLA violations
             long t3 = System.currentTimeMillis();
-            checkSlaViolations(simNow);
+            checkSlaViolations(sim, simNow, simulationId);
             log.debug("[SIM-{}] tick#{} slaCheck ({}ms)", simulationId, tickNum, System.currentTimeMillis() - t3);
 
             // 5. Update airport occupancy
@@ -380,8 +380,11 @@ public class SimulationEngine {
         });
     }
 
-    private void checkSlaViolations(LocalDateTime simNow) {
+    private void checkSlaViolations(Simulation sim, LocalDateTime simNow, Long simulationId) {
         List<Shipment> overdue = shipmentRepo.findOverdueShipments(simNow);
+        if (overdue.isEmpty()) return;
+
+        List<BaggageBatch> batchesForReplan = new ArrayList<>();
         for (Shipment shipment : overdue) {
             if (shipment.getStatus() == ShipmentStatus.DELAYED) continue;
             String oldStatus = shipment.getStatus().name();
@@ -394,7 +397,61 @@ public class SimulationEngine {
 
             recordStatusChange(shipment, oldStatus, "DELAYED", null, simNow);
             log.warn("Envío {} marcado como DELAYED (deadline: {})", shipment.getId(), shipment.getDeadline());
+
+            // Only the still-grounded portion of the trip can be redirected — a batch
+            // already on its final in-flight leg has no PENDING legs left to replan.
+            List<RouteLeg> pendingLegs = routeLegRepo.findPendingLegsByShipmentId(shipment.getId());
+            if (pendingLegs.isEmpty()) continue;
+
+            for (RouteLeg leg : pendingLegs) {
+                leg.setStatus(RouteLegStatus.CANCELLED);
+                routeLegRepo.save(leg);
+            }
+            batchesForReplan.add(batch);
         }
+
+        if (batchesForReplan.isEmpty()) return;
+        scheduleDelayReplan(sim, simNow, simulationId, batchesForReplan);
+    }
+
+    private void scheduleDelayReplan(Simulation sim, LocalDateTime simNow, Long simulationId,
+                                      List<BaggageBatch> batchesForReplan) {
+        final List<BaggageBatch> batches = List.copyOf(batchesForReplan);
+        final String algorithm = sim.getAlgorithm();
+        final var alnsParams = plannerService.buildAlnsParams(sim);
+        final LocalDateTime replanNow = simNow;
+
+        eventPublisher.publishAlert(simulationId,
+                new WebSocketEventPublisher.AlertEvent(
+                        "DELAY", null, null, null,
+                        "Detectados " + batches.size() + " lotes retrasados. Replanificando.",
+                        simNow.format(TIME_FMT)
+                ));
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                replanExecutor.submit(() -> {
+                    try {
+                        List<Flight> availableFlights = flightRepo.findByStatus(FlightStatus.SCHEDULED);
+                        List<Airport> airports = airportRepo.findAll();
+                        SimulationContext ctx = SimulationContext.builder()
+                                .airports(airports)
+                                .flights(availableFlights)
+                                .pendingBatches(batches)
+                                .simulatedNow(replanNow)
+                                .alnsParams(alnsParams)
+                                .build();
+                        long replanStart = System.currentTimeMillis();
+                        plannerService.replan(batches, ctx, algorithm);
+                        log.info("[SIM-{}] replan for delayed batches={} in {}ms",
+                                simulationId, batches.size(), System.currentTimeMillis() - replanStart);
+                    } catch (Exception e) {
+                        log.error("Error en replanificación tras retraso: {}", e.getMessage());
+                    }
+                });
+            }
+        });
     }
 
     private void updateAirportOccupancy(LocalDateTime simNow) {
@@ -490,7 +547,6 @@ public class SimulationEngine {
                 .collect(Collectors.toList());
 
         List<SimulationTickEvent.FlightPayload> flightPayloads = activeFlights.stream()
-                .filter(f -> f.getStatus() != FlightStatus.LANDED)
                 .map(f -> SimulationTickEvent.FlightPayload.builder()
                         .flightId(f.getId())
                         .originIata(f.getOriginAirport().getIataCode())

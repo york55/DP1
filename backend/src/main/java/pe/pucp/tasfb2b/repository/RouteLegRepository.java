@@ -28,6 +28,16 @@ public interface RouteLegRepository extends JpaRepository<RouteLeg, Long> {
     List<RouteLeg> findByRouteIdOrderByLegOrder(@Param("routeId") Long routeId);
 
     /**
+     * PENDING legs (not yet departed) of a shipment's route — the portion of an overdue
+     * shipment's journey that can still be redirected. Empty if the batch is already
+     * in flight or its remaining leg has no PENDING hops left.
+     */
+    @Query("SELECT rl FROM RouteLeg rl JOIN FETCH rl.flight " +
+           "WHERE rl.route.shipment.id = :shipmentId AND rl.status = 'PENDING' " +
+           "ORDER BY rl.legOrder")
+    List<RouteLeg> findPendingLegsByShipmentId(@Param("shipmentId") Long shipmentId);
+
+    /**
      * Returns the first PENDING leg for each IN_TRANSIT batch that is NOT currently on a plane.
      * The flight's origin airport is where the batch is physically waiting.
      */
