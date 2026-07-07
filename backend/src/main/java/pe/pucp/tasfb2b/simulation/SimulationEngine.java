@@ -341,7 +341,8 @@ public class SimulationEngine {
         }
 
         final Long fid = flight.getId();
-        final List<BaggageBatch> batchesForReplan = List.copyOf(affectedBatches);
+        final List<Long> batchIdsForReplan = affectedBatches.stream()
+                .map(BaggageBatch::getId).collect(Collectors.toList());
         final String algorithm = sim.getAlgorithm();
         final var alnsParams = plannerService.buildAlnsParams(sim);
         final LocalDateTime replanNow = simNow;
@@ -349,7 +350,7 @@ public class SimulationEngine {
         eventPublisher.publishAlert(simulationId,
                 new WebSocketEventPublisher.AlertEvent(
                         "CANCELLATION", null, fid, null,
-                        "Vuelo cancelado. Replanificando " + batchesForReplan.size() + " lotes.",
+                        "Vuelo cancelado. Replanificando " + batchIdsForReplan.size() + " lotes.",
                         simNow.format(TIME_FMT)
                 ));
 
@@ -358,19 +359,25 @@ public class SimulationEngine {
             public void afterCommit() {
                 replanExecutor.submit(() -> {
                     try {
-                        List<Flight> availableFlights = flightRepo.findByStatus(FlightStatus.SCHEDULED);
+                        long replanStart = System.currentTimeMillis();
+                        // Re-fetch batches/flights by ID (with JOIN FETCH on their airports)
+                        // instead of reusing the entities captured before this transaction
+                        // committed: those became detached lazy proxies once their loading
+                        // session closed, and this callback runs on a different thread/session.
+                        List<BaggageBatch> freshBatches =
+                                batchRepo.findByIdInWithAirports(batchIdsForReplan);
+                        List<Flight> availableFlights = flightRepo.findByStatusWithAirports(FlightStatus.SCHEDULED);
                         List<Airport> airports = airportRepo.findAll();
                         SimulationContext ctx = SimulationContext.builder()
                                 .airports(airports)
                                 .flights(availableFlights)
-                                .pendingBatches(batchesForReplan)
+                                .pendingBatches(freshBatches)
                                 .simulatedNow(replanNow)
                                 .alnsParams(alnsParams)
                                 .build();
-                        long replanStart = System.currentTimeMillis();
-                        plannerService.replan(batchesForReplan, ctx, algorithm);
+                        plannerService.replan(freshBatches, ctx, algorithm);
                         log.info("[SIM-{}] replan for cancelled flight {} batches={} in {}ms",
-                                simulationId, fid, batchesForReplan.size(),
+                                simulationId, fid, freshBatches.size(),
                                 System.currentTimeMillis() - replanStart);
                     } catch (Exception e) {
                         log.error("Error en replanificación tras cancelación de vuelo {}: {}", fid, e.getMessage());
@@ -416,7 +423,8 @@ public class SimulationEngine {
 
     private void scheduleDelayReplan(Simulation sim, LocalDateTime simNow, Long simulationId,
                                       List<BaggageBatch> batchesForReplan) {
-        final List<BaggageBatch> batches = List.copyOf(batchesForReplan);
+        final List<Long> batchIds = batchesForReplan.stream()
+                .map(BaggageBatch::getId).collect(Collectors.toList());
         final String algorithm = sim.getAlgorithm();
         final var alnsParams = plannerService.buildAlnsParams(sim);
         final LocalDateTime replanNow = simNow;
@@ -424,7 +432,7 @@ public class SimulationEngine {
         eventPublisher.publishAlert(simulationId,
                 new WebSocketEventPublisher.AlertEvent(
                         "DELAY", null, null, null,
-                        "Detectados " + batches.size() + " lotes retrasados. Replanificando.",
+                        "Detectados " + batchIds.size() + " lotes retrasados. Replanificando.",
                         simNow.format(TIME_FMT)
                 ));
 
@@ -433,19 +441,24 @@ public class SimulationEngine {
             public void afterCommit() {
                 replanExecutor.submit(() -> {
                     try {
-                        List<Flight> availableFlights = flightRepo.findByStatus(FlightStatus.SCHEDULED);
+                        long replanStart = System.currentTimeMillis();
+                        // Re-fetch batches/flights by ID (with JOIN FETCH on their airports)
+                        // instead of reusing the entities captured before this transaction
+                        // committed: those became detached lazy proxies once their loading
+                        // session closed, and this callback runs on a different thread/session.
+                        List<BaggageBatch> freshBatches = batchRepo.findByIdInWithAirports(batchIds);
+                        List<Flight> availableFlights = flightRepo.findByStatusWithAirports(FlightStatus.SCHEDULED);
                         List<Airport> airports = airportRepo.findAll();
                         SimulationContext ctx = SimulationContext.builder()
                                 .airports(airports)
                                 .flights(availableFlights)
-                                .pendingBatches(batches)
+                                .pendingBatches(freshBatches)
                                 .simulatedNow(replanNow)
                                 .alnsParams(alnsParams)
                                 .build();
-                        long replanStart = System.currentTimeMillis();
-                        plannerService.replan(batches, ctx, algorithm);
+                        plannerService.replan(freshBatches, ctx, algorithm);
                         log.info("[SIM-{}] replan for delayed batches={} in {}ms",
-                                simulationId, batches.size(), System.currentTimeMillis() - replanStart);
+                                simulationId, freshBatches.size(), System.currentTimeMillis() - replanStart);
                     } catch (Exception e) {
                         log.error("Error en replanificación tras retraso: {}", e.getMessage());
                     }
