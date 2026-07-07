@@ -492,6 +492,9 @@ export function useSimulation() {
     setFirstBatchReady(false)
     setBlockHistory([])
     setTotalSimBlocks(0)
+    setSelectedAirportCode(null)
+    setSelectedFlightId(null)
+    setSelectedShipmentId(null)
 
     const startDate = config.startDate instanceof Date
       ? config.startDate
@@ -628,6 +631,9 @@ export function useSimulation() {
   const resetSimulation = useCallback(() => {
     firstBatchReadyRef.current = false
     setFirstBatchReady(false)
+    setSelectedAirportCode(null)
+    setSelectedFlightId(null)
+    setSelectedShipmentId(null)
     setSimulationState({
       status: 'idle',
       simulatedTime: null,
@@ -671,6 +677,9 @@ export function useSimulation() {
   const cancelSimulation = useCallback(async () => {
     firstBatchReadyRef.current = false
     setFirstBatchReady(false)
+    setSelectedAirportCode(null)
+    setSelectedFlightId(null)
+    setSelectedShipmentId(null)
     const id = simIdRef.current
     disconnectSimulationWebSocket()
     if (shipmentPollRef.current) { clearInterval(shipmentPollRef.current); shipmentPollRef.current = null }
