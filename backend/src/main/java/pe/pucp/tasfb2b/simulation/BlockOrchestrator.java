@@ -253,6 +253,9 @@ public class BlockOrchestrator {
             if (pending.size() > maxBatchesPerBlock) {
                 log.info("Simulación {}: limitando bloque {} a {} de {} lotes pendientes",
                         simId, blockIndex, maxBatchesPerBlock, pending.size());
+                // findUnroutedBatches ya viene ordenado por availableFrom ASC (FIFO),
+                // así que el corte deja los lotes más antiguos para este bloque y
+                // difiere los más nuevos a bloques siguientes en lugar de dejarlos varados al azar.
                 pending = pending.subList(0, maxBatchesPerBlock);
             }
 

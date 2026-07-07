@@ -21,7 +21,8 @@ public interface ClpBaggageBatchRepository extends JpaRepository<ClpBaggageBatch
     @Query("SELECT b FROM ClpBaggageBatch b " +
            "JOIN FETCH b.originAirport JOIN FETCH b.destinationAirport JOIN FETCH b.airline " +
            "WHERE b.status = 'IN_ORIGIN' AND b.availableFrom <= :simNow " +
-           "AND NOT EXISTS (SELECT s FROM ClpShipment s WHERE s.baggageBatch = b)")
+           "AND NOT EXISTS (SELECT s FROM ClpShipment s WHERE s.baggageBatch = b) " +
+           "ORDER BY b.availableFrom ASC")
     List<ClpBaggageBatch> findUnroutedBatches(@Param("simNow") LocalDateTime simNow);
 
     @Query("SELECT b FROM ClpBaggageBatch b JOIN FETCH b.destinationAirport " +

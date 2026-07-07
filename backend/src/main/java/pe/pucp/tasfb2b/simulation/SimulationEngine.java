@@ -547,6 +547,7 @@ public class SimulationEngine {
                 .collect(Collectors.toList());
 
         List<SimulationTickEvent.FlightPayload> flightPayloads = activeFlights.stream()
+                .filter(f -> f.getStatus() != FlightStatus.LANDED)
                 .map(f -> SimulationTickEvent.FlightPayload.builder()
                         .flightId(f.getId())
                         .originIata(f.getOriginAirport().getIataCode())

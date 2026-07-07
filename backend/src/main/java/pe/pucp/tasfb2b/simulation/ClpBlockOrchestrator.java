@@ -299,6 +299,7 @@ public class ClpBlockOrchestrator {
                 return new SimulationBlock(blockIndex, blockStart, blockEnd, 0);
             }
             if (pending.size() > maxBatchesPerBlock) {
+                // findUnroutedBatches ya viene ordenado por availableFrom ASC (FIFO).
                 pending = pending.subList(0, maxBatchesPerBlock);
             }
 
