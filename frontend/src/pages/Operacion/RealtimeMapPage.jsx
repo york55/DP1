@@ -130,6 +130,15 @@ export default function RealtimeMapPage() {
   const [selectedAirportCode, setSelectedAirportCode] =
     useState(null)
 
+  // OpsShipment no trae un id de vuelo asignado, solo origen/destino — enfocamos
+  // el almacén de origen si está esperando salida, o el de destino en cualquier
+  // otro caso (en tránsito, entregado, retrasado), que es donde físicamente está
+  // o hacia donde se dirige.
+  const handleShipmentFocus = useCallback((shipment) => {
+    if (!shipment) return
+    const code = shipment.status === 'PLANNED' ? shipment.originIata : shipment.destIata
+    if (code) setSelectedAirportCode(code)
+  }, [])
 
   // ── Fetch del snapshot y pintado ──────────────────────────────────────────
 
@@ -591,6 +600,7 @@ export default function RealtimeMapPage() {
           shipments={shipments}
           onFlightSelected={setSelectedFlightId}
           onAirportSelected={setSelectedAirportCode}
+          onShipmentFocus={handleShipmentFocus}
           selectedAirportCode={selectedAirportCode}
         />
       </Box>

@@ -10,6 +10,9 @@ import Typography from '@mui/material/Typography'
 
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CloseIcon from '@mui/icons-material/Close'
+import List from '@mui/material/List'
+import ListItem from '@mui/material/ListItem'
+import ListItemText from '@mui/material/ListItemText'
 
 import DataTable from '../common/DataTable'
 import SemaphoreChip from '../common/SemaphoreChip'
@@ -79,6 +82,7 @@ function FlightStatusChip({ status }) {
 
 export default function OpsFlightsTab({
     flights = [],
+    shipments = [],
     onFlightSelected,
 }) {
 
@@ -92,6 +96,17 @@ export default function OpsFlightsTab({
 
     const [selectedFlight, setSelectedFlight] =
         useState(null)
+
+    // OpsShipment no trae un id de vuelo asignado — se asocian por ruta
+    // (origen+destino exactos) entre los envíos en tránsito y el vuelo seleccionado.
+    const flightShipments = useMemo(() => {
+        if (!selectedFlight) return []
+        return shipments.filter(s =>
+            (s.status === 'IN_TRANSIT' || s.status === 'IN_FLIGHT') &&
+            s.originIata === selectedFlight.originIata &&
+            s.destIata === selectedFlight.destIata
+        )
+    }, [shipments, selectedFlight])
 
     const [search, setSearch] =
         useState('')
@@ -124,7 +139,7 @@ export default function OpsFlightsTab({
             return normalizedFlights.filter(f => {
 
                 const text =
-                    `${f.originIata} ${f.destIata}`
+                    `${f.flightId} ${f.originIata} ${f.destIata}`
                         .toLowerCase()
 
                 const matchesSearch =
@@ -356,6 +371,30 @@ export default function OpsFlightsTab({
                         {selectedFlight.arrTimeUtc}
                     </Typography>
 
+                </Box>
+
+                <Divider />
+
+                <Box sx={{ px: 2, py: 1.5 }}>
+                    <Typography sx={{ fontWeight: 700, color: '#1F3864', mb: 1 }}>
+                        Envíos en este vuelo ({flightShipments.length})
+                    </Typography>
+                    {flightShipments.length === 0 ? (
+                        <Typography sx={{ fontSize: '0.8rem', color: 'text.secondary' }}>
+                            Sin envíos asociados.
+                        </Typography>
+                    ) : (
+                        <List dense sx={{ overflow: 'auto', maxHeight: 240 }}>
+                            {flightShipments.map(s => (
+                                <ListItem key={s.id} divider>
+                                    <ListItemText
+                                        primary={s.externalId}
+                                        secondary={`${s.bagCount} maletas · ${s.cliente || ''}`}
+                                    />
+                                </ListItem>
+                            ))}
+                        </List>
+                    )}
                 </Box>
 
             </Box>

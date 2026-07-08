@@ -22,8 +22,9 @@ export default function OpsPanel({
   shipments = [],
   onFlightSelected,
   onAirportSelected,
+  onShipmentFocus,
   selectedAirportCode,
-  
+
 }) {
   const [tab, setTab] = useState(0)
 
@@ -66,16 +67,19 @@ export default function OpsPanel({
       <Box sx={{ flex: 1, overflow: 'auto' }}>
         {tab === 0 && <OpsShipmentsTab
           shipments={shipments}
+          onShipmentFocus={onShipmentFocus}
         />}
         {tab === 1 && (
           <OpsFlightsTab
             flights={flights}
+            shipments={shipments}
             onFlightSelected={onFlightSelected}
           />
         )}
         {tab === 2 && <OpsWarehousesTab
           airports={airports}
           flights={flights}
+          shipments={shipments}
           selectedAirportCode={
             selectedAirportCode
           }

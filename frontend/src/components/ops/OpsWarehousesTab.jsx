@@ -16,6 +16,7 @@ import SemaphoreChip from '../common/SemaphoreChip'
 export default function OpsWarehousesTab({
     airports = [],
     flights = [],
+    shipments = [],
     selectedAirportCode,
     onAirportSelected,
 }) {
@@ -139,6 +140,21 @@ export default function OpsWarehousesTab({
         )
 
     }, [selectedAirport, flights])
+
+    // Stock del almacén: envíos esperando salida (en origen) vs. entregados (destino final).
+    const originShipments = useMemo(() => {
+        if (!selectedAirport) return []
+        return shipments.filter(s =>
+            s.originIata === selectedAirport.id && s.status === 'PLANNED'
+        )
+    }, [selectedAirport, shipments])
+
+    const deliveredShipments = useMemo(() => {
+        if (!selectedAirport) return []
+        return shipments.filter(s =>
+            s.destIata === selectedAirport.id && s.status === 'DELIVERED'
+        )
+    }, [selectedAirport, shipments])
 
 
     useEffect(() => {
@@ -315,6 +331,49 @@ export default function OpsWarehousesTab({
                                 }
                             />
 
+                        </Box>
+
+                        <Divider sx={{ my: 2 }} />
+
+                        <Typography
+                            variant="subtitle2"
+                            sx={{
+                                fontWeight: 700,
+                                color: '#1F3864',
+                                mb: 1,
+                            }}
+                        >
+                            Stock
+                        </Typography>
+
+                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                            En tránsito / Por salir ({originShipments.length})
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mb: 1.5 }}>
+                            {originShipments.length === 0 ? (
+                                <Typography sx={{ fontSize: '0.78rem', color: 'text.secondary' }}>
+                                    Sin envíos.
+                                </Typography>
+                            ) : originShipments.map(s => (
+                                <Typography key={s.id} sx={{ fontSize: '0.78rem' }}>
+                                    {s.externalId} — {s.bagCount} maletas → {s.destIata}
+                                </Typography>
+                            ))}
+                        </Box>
+
+                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                            Destino Final / Entregado ({deliveredShipments.length})
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                            {deliveredShipments.length === 0 ? (
+                                <Typography sx={{ fontSize: '0.78rem', color: 'text.secondary' }}>
+                                    Sin envíos.
+                                </Typography>
+                            ) : deliveredShipments.map(s => (
+                                <Typography key={s.id} sx={{ fontSize: '0.78rem' }}>
+                                    {s.externalId} — {s.bagCount} maletas desde {s.originIata}
+                                </Typography>
+                            ))}
                         </Box>
 
                         <Divider sx={{ my: 2 }} />
