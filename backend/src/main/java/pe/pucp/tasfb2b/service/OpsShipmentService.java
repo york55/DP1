@@ -69,7 +69,8 @@ public class OpsShipmentService {
             s.getStatus(),
             s.getRegisteredAt(),
             s.getDeadlineUtc(),
-			s.getLastUpdated()
+			s.getLastUpdated(),
+            java.util.List.of()
         );
     }
 }

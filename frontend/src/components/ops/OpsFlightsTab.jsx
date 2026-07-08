@@ -97,14 +97,13 @@ export default function OpsFlightsTab({
     const [selectedFlight, setSelectedFlight] =
         useState(null)
 
-    // OpsShipment no trae un id de vuelo asignado — se asocian por ruta
-    // (origen+destino exactos) entre los envíos en tránsito y el vuelo seleccionado.
+    // Cada envío trae la lista de vuelos en los que tiene un tramo PENDING
+    // (backend: OpsShipmentRoute) — necesario porque un envío multi-tramo puede
+    // no compartir origen/destino exactos con cualquiera de sus vuelos individuales.
     const flightShipments = useMemo(() => {
         if (!selectedFlight) return []
         return shipments.filter(s =>
-            (s.status === 'IN_TRANSIT' || s.status === 'IN_FLIGHT') &&
-            s.originIata === selectedFlight.originIata &&
-            s.destIata === selectedFlight.destIata
+            s.flightIds?.includes(selectedFlight.flightId)
         )
     }, [shipments, selectedFlight])
 

@@ -118,6 +118,14 @@ public class OpsMapService {
                 })
                 .collect(Collectors.toList());
 
+        // Vuelos con tramo PENDING por envío — un envío puede tener más de uno
+        // (tramo actual + tramos futuros de un multi-hop ya planificados).
+        Map<Long, List<Long>> flightIdsByShipment = routeRepo.findAll().stream()
+                .filter(r -> "PENDING".equals(r.getStatus()) && r.getFlight() != null)
+                .collect(Collectors.groupingBy(
+                        r -> r.getShipment().getId(),
+                        Collectors.mapping(r -> r.getFlight().getId(), Collectors.toList())));
+
         List<OpsShipmentResponse> shipmentDtos =
                 shipmentRepo.findAll()
                         .stream()
@@ -131,7 +139,8 @@ public class OpsMapService {
                                 s.getStatus(),
                                 s.getRegisteredAt(),
                                 s.getDeadlineUtc(),
-                                s.getLastUpdated()
+                                s.getLastUpdated(),
+                                flightIdsByShipment.getOrDefault(s.getId(), List.of())
                         ))
                         .collect(Collectors.toList());
 
