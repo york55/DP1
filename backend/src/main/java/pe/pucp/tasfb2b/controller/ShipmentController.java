@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import pe.pucp.tasfb2b.domain.enums.BatchStatus;
+import pe.pucp.tasfb2b.dto.response.RouteLegDto;
 import pe.pucp.tasfb2b.dto.response.ShipmentDto;
 import pe.pucp.tasfb2b.service.ShipmentService;
 
@@ -43,6 +44,16 @@ public class ShipmentController {
     public ResponseEntity<ShipmentDto> getStatus(@PathVariable Long id) {
         log.debug("ACTION get_shipment_status id={}", id);
         return ResponseEntity.ok(shipmentService.findById(id));
+    }
+
+    @GetMapping("/shipments/{id}/route")
+    public ResponseEntity<?> getRoute(@PathVariable Long id) {
+        log.debug("ACTION get_shipment_route id={}", id);
+        try {
+            return ResponseEntity.ok(shipmentService.getRoute(id));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
+        }
     }
 
     /*@PostMapping("/batches/upload")

@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pe.pucp.tasfb2b.domain.*;
 import pe.pucp.tasfb2b.domain.enums.BatchStatus;
 import pe.pucp.tasfb2b.domain.enums.ShipmentStatus;
+import pe.pucp.tasfb2b.dto.response.RouteLegDto;
 import pe.pucp.tasfb2b.dto.response.ShipmentDto;
 import pe.pucp.tasfb2b.dto.response.UploadProgressDto;
 import pe.pucp.tasfb2b.mapper.ShipmentMapper;
@@ -46,6 +47,29 @@ public class ShipmentService {
     private final ShipmentMapper shipmentMapper;
     private final SimpMessagingTemplate messagingTemplate;
     private final EnvioStore envioStore;
+    private final RouteRepository routeRepo;
+    private final RouteLegRepository routeLegRepo;
+
+    @Transactional(readOnly = true)
+    public List<RouteLegDto> getRoute(Long shipmentId) {
+        Route route = routeRepo.findByShipmentId(shipmentId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "El envío " + shipmentId + " no tiene una ruta planificada todavía"));
+
+        return routeLegRepo.findByRouteIdOrderByLegOrder(route.getId()).stream()
+                .map(leg -> {
+                    Flight f = leg.getFlight();
+                    return new RouteLegDto(
+                            leg.getLegOrder(),
+                            f.getId(),
+                            f.getOriginAirport().getIataCode(),
+                            f.getDestinationAirport().getIataCode(),
+                            f.getDepartureTime(),
+                            f.getArrivalTime(),
+                            leg.getStatus().name());
+                })
+                .collect(Collectors.toList());
+    }
 
     public Page<ShipmentDto> findByStatus(ShipmentStatus status, Pageable pageable) {
         return shipmentRepo.findByStatus(status, pageable)
