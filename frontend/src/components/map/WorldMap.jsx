@@ -1,5 +1,5 @@
 import { useMemo, useEffect, useRef, useState } from 'react'
-import { MapContainer, TileLayer, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, useMap, Polyline } from 'react-leaflet'
 import L from 'leaflet'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -194,6 +194,15 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
   const planningProgress = context?.planningProgress ?? { phase: '', iteration: 0, maxIterations: 1000, assignedBatches: 0, totalBatches: 0, currentObjective: 0 }
   const blockHistory = context?.blockHistory ?? []
   const totalSimBlocks = context?.totalSimBlocks ?? 0
+  const selectedShipmentRoute = context?.selectedShipmentRoute ?? null
+
+  // Lookup built from the unfiltered airport list so the route always draws even if
+  // the user's current map filters would otherwise hide one of its airports.
+  const allAirportsByCode = useMemo(() => {
+    const map = new Map()
+    for (const a of baseAirports) map.set(a.iata || a.iataCode, a)
+    return map
+  }, [baseAirports])
 
   // Unique continent values for region chips — derived from live airport data.
   // 'unknown' from the DB is normalized to 'Sudamérica' (matches useSimulation patch).
@@ -237,6 +246,13 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
   // Plane canvas + routes only render IN_FLIGHT entries
   const visibleFlights = useMemo(() =>
     flights.filter(f => f.status === 'IN_FLIGHT'),
+    [flights]
+  )
+
+  // Cancelled flights get a route drawn (no plane — they never depart) so cancellations
+  // are visible on the map instead of silently vanishing from the flight list.
+  const cancelledFlights = useMemo(() =>
+    flights.filter(f => f.status === 'CANCELLED'),
     [flights]
   )
 
@@ -301,6 +317,30 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
             airportsByCode={airportsByCode}
           />
         ))}
+
+        {/* Cancelled flights — route only, no plane (they never depart) */}
+        {cancelledFlights.map(flight => (
+          <FlightRoute
+            key={flight.id}
+            flight={flight}
+            airportsByCode={airportsByCode}
+            isCancelled
+          />
+        ))}
+
+        {/* Ruta de un envío a demanda (búsqueda) — se dibuja sobre todo lo demás */}
+        {selectedShipmentRoute?.legs?.map(leg => {
+          const orig = allAirportsByCode.get(leg.originIata)
+          const dest = allAirportsByCode.get(leg.destinationIata)
+          if (!orig || !dest) return null
+          return (
+            <Polyline
+              key={`shipment-route-${selectedShipmentRoute.shipmentId}-${leg.legOrder}`}
+              positions={[[orig.lat, orig.lon], [dest.lat, dest.lon]]}
+              pathOptions={{ color: '#8E24AA', weight: 3, opacity: 0.9 }}
+            />
+          )
+        })}
 
         {/* Plane icons — single canvas layer, zero DOM nodes per plane */}
         <PlaneCanvasLayer

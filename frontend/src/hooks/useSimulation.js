@@ -51,6 +51,8 @@ export function useSimulation() {
   const [selectedAirportCode, setSelectedAirportCode] = useState(null)
   const [selectedFlightId, setSelectedFlightId] = useState(null)
   const [selectedShipmentId, setSelectedShipmentId] = useState(null)
+  const [selectedShipmentRoute, setSelectedShipmentRoute] = useState(null)
+  const [shipmentRouteLoading, setShipmentRouteLoading] = useState(false)
   const [activePanelTab, setActivePanelTab] = useState(0)
 
   const [warehouseSearch, setWarehouseSearch] = useState('')
@@ -249,6 +251,25 @@ export function useSimulation() {
         })
       }
     } catch (e) { simLogger.warn('loadShipments error: ' + e.message) }
+  }, [])
+
+  // Búsqueda a demanda: trae los tramos de un envío y los deja listos para
+  // dibujarse en el mapa. clearShipmentRoute() regresa el mapa a su estado anterior.
+  const fetchShipmentRoute = useCallback(async (shipmentId) => {
+    setShipmentRouteLoading(true)
+    try {
+      const legs = await shipmentApi.getRoute(shipmentId)
+      setSelectedShipmentRoute({ shipmentId, legs })
+    } catch (e) {
+      simLogger.warn('fetchShipmentRoute error: ' + e.message)
+      setSelectedShipmentRoute(null)
+    } finally {
+      setShipmentRouteLoading(false)
+    }
+  }, [])
+
+  const clearShipmentRoute = useCallback(() => {
+    setSelectedShipmentRoute(null)
   }, [])
 
   const addNotification = useCallback((message, type = 'info') => {
@@ -961,6 +982,10 @@ export function useSimulation() {
     setSelectedFlightId,
     selectedShipmentId,
     setSelectedShipmentId,
+    selectedShipmentRoute,
+    shipmentRouteLoading,
+    fetchShipmentRoute,
+    clearShipmentRoute,
     activePanelTab,
     setActivePanelTab,
 

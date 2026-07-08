@@ -71,6 +71,14 @@ function flightRouteStyle(status) {
     status === 'En vuelo' ||
     status === 'IN_FLIGHT'
 
+  const isCancelled =
+    status === 'Cancelado' ||
+    status === 'CANCELLED'
+
+  if (isCancelled) {
+    return { color: '#C62828', weight: 0.6, opacity: 0.5, dashArray: '3 5' }
+  }
+
   return {
 
     color: isInFlight
