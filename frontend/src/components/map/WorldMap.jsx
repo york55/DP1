@@ -11,6 +11,7 @@ import FlightRoute from './FlightRoute'
 import PlaneCanvasLayer from './PlaneCanvasLayer'
 import MapLegend from './MapLegend'
 import MapFilterPanel from './MapFilterPanel'
+import GlobalKpiPanel from './GlobalKpiPanel'
 import SimPipelineBox, { SHOW_SIM_PIPELINE } from './SimPipelineBox'
 import AirportMapPopup from './AirportMapPopup'
 import { useSimulationContext } from '../../context/SimulationContext'
@@ -374,13 +375,21 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
       {/* Legend (absolute positioned over map) */}
       <MapLegend />
 
-      {/* Quick-filter panel (absolute positioned over map, top-right) */}
+      {/* Quick-filter panel (absolute positioned over map) */}
       <MapFilterPanel
         filters={mapFilters}
         onChange={setMapFilters}
         activeCount={activeFilterCount}
         regionOptions={regionOptions}
       />
+
+      {/* Global KPI indicators (absolute positioned over map, below filter button) */}
+      {!standalone && (
+        <GlobalKpiPanel
+          avgFlightOccupancy={context?.kpis?.avgFlightOccupancy ?? 0}
+          avgWarehouseOccupancy={context?.kpis?.avgWarehouseOccupancy ?? 0}
+        />
+      )}
 
       {/* ALNS pipeline box — disable by setting SHOW_SIM_PIPELINE=false in SimPipelineBox.jsx */}
       {SHOW_SIM_PIPELINE && (
