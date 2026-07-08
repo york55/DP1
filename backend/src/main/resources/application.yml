@@ -40,7 +40,7 @@ tasf:
     dir: uploads
   simulation:
     tick-interval-ms: 1000
-    tick-duration-minutes: 5     # 1 real second = 5 simulated minutes -> 12 ticks (12s) per 1h block
+    tick-duration-minutes: 4     # 1 real second = 4 simulated minutes -> 15 ticks (15s) per 1h block; KPIs deben recalcularse <=4 min sim
     block-size-hours: 1          # ALNS plans in 1h rolling blocks (was 2h — smaller context, faster per-block planning)
     flight-lookahead-hours: 16   # flights visible to ALNS per block (was 24 — 16h covers same-day flights + multi-hop connections)
     max-batches-per-block: 200   # cap batches per block to keep ALNS fast

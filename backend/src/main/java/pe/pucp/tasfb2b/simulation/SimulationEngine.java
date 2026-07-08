@@ -514,21 +514,28 @@ public class SimulationEngine {
 
         double onTimePct = total > 0 ? (double) onTime / total * 100.0 : 100.0;
 
-        List<Flight> inFlight = flightRepo.findByStatus(FlightStatus.IN_FLIGHT);
-        double avgFlightOcc = inFlight.isEmpty() ? 0.0 :
-                inFlight.stream()
-                        .mapToDouble(f -> f.getBaggageCapacity() > 0
-                                ? (double) f.getCurrentLoad() / f.getBaggageCapacity() * 100.0
-                                : 0.0)
-                        .average()
-                        .orElse(0.0);
+        // Ocupación de flota = (maletas en vuelo + maletas asignadas a vuelos programados)
+        // / (capacidad total de todos los vuelos activos), no un promedio de porcentajes.
+        List<Flight> activeFleet = flightRepo.findByStatusIn(
+                List.of(FlightStatus.SCHEDULED, FlightStatus.IN_FLIGHT));
+        Map<Long, Long> pendingBagsByFlight = routeLegRepo.sumPendingBagsByFlightId().stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
+        long fleetLoad = 0L;
+        long fleetCapacity = 0L;
+        for (Flight f : activeFleet) {
+            fleetCapacity += f.getBaggageCapacity();
+            fleetLoad += f.getStatus() == FlightStatus.IN_FLIGHT
+                    ? f.getCurrentLoad()
+                    : pendingBagsByFlight.getOrDefault(f.getId(), 0L);
+        }
+        double avgFlightOcc = fleetCapacity > 0 ? (double) fleetLoad / fleetCapacity * 100.0 : 0.0;
 
+        // Ocupación de aeropuertos = (maletas en todos los aeropuertos) / (capacidad total
+        // de todos los aeropuertos), no un promedio de porcentajes por aeropuerto.
         List<Airport> airports = airportRepo.findAll();
-        double avgWarehouseOcc = airports.isEmpty() ? 0.0 :
-                airports.stream()
-                        .mapToDouble(Airport::getOccupancyPct)
-                        .average()
-                        .orElse(0.0);
+        long warehouseLoad = airports.stream().mapToLong(Airport::getCurrentOccupancy).sum();
+        long warehouseCapacity = airports.stream().mapToLong(Airport::getWarehouseCapacity).sum();
+        double avgWarehouseOcc = warehouseCapacity > 0 ? (double) warehouseLoad / warehouseCapacity * 100.0 : 0.0;
 
         KpiSnapshot snapshot = new KpiSnapshot();
         snapshot.setSimulation(sim);

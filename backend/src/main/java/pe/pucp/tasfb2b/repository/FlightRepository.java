@@ -14,6 +14,8 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
 
     List<Flight> findByStatus(FlightStatus status);
 
+    List<Flight> findByStatusIn(java.util.Collection<FlightStatus> statuses);
+
     // JOIN FETCH origin/destination so callers on threads without an active Hibernate
     // session (e.g. the replan-bg executor) can read airport fields without hitting
     // LazyInitializationException once the loading session has closed.

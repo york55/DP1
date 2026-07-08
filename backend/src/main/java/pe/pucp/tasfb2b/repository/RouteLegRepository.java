@@ -28,6 +28,14 @@ public interface RouteLegRepository extends JpaRepository<RouteLeg, Long> {
     List<RouteLeg> findByRouteIdOrderByLegOrder(@Param("routeId") Long routeId);
 
     /**
+     * Bags assigned to (but not yet boarded on) each SCHEDULED flight — used to compute
+     * fleet-wide occupancy per the spec: assigned + in-flight bags over total capacity.
+     */
+    @Query("SELECT rl.flight.id, SUM(rl.route.shipment.baggageBatch.quantity) " +
+           "FROM RouteLeg rl WHERE rl.status = 'PENDING' GROUP BY rl.flight.id")
+    List<Object[]> sumPendingBagsByFlightId();
+
+    /**
      * PENDING legs (not yet departed) of a shipment's route — the portion of an overdue
      * shipment's journey that can still be redirected. Empty if the batch is already
      * in flight or its remaining leg has no PENDING hops left.
