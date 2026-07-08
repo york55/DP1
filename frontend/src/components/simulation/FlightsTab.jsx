@@ -142,10 +142,20 @@ export default function FlightsTab() {
       ),
     },
     {
-      field: 'route',
-      headerName: 'Ruta',
-      width: 105,
-      valueGetter: (params) => `${params.row.origin} → ${params.row.destination}`,
+      field: 'origin',
+      headerName: 'Origen',
+      width: 80,
+      renderCell: (params) => (
+        <span style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{params.value}</span>
+      ),
+    },
+    {
+      field: 'destination',
+      headerName: 'Destino',
+      width: 80,
+      renderCell: (params) => (
+        <span style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{params.value}</span>
+      ),
     },
     {
       field: 'bagsAboard',

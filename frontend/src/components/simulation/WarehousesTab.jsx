@@ -43,6 +43,12 @@ export default function WarehousesTab() {
     return Array.from(set).sort()
   }, [airports])
 
+  // Get unique warehouse (airport) codes for the "Código" dropdown
+  const warehouseCodes = useMemo(() => {
+    const set = new Set(airports.map(a => a.iata || a.iataCode).filter(Boolean))
+    return Array.from(set).sort()
+  }, [airports])
+
   const selectedWarehouse = useMemo(() => {
     if (!selectedAirportCode) return null
     return airportsWithTimes.find(a => (a.iata || a.iataCode) === selectedAirportCode) || null
@@ -284,6 +290,19 @@ export default function WarehousesTab() {
           onChange={(e) => setWarehouseSearch(e.target.value)}
           sx={{ flex: 1, minWidth: '150px' }}
         />
+        <TextField
+          select
+          size="small"
+          label="Código"
+          value={warehouseCodes.includes(warehouseSearch) ? warehouseSearch : 'ALL'}
+          onChange={(e) => setWarehouseSearch(e.target.value === 'ALL' ? '' : e.target.value)}
+          sx={{ width: '110px' }}
+        >
+          <MenuItem value="ALL">Todos</MenuItem>
+          {warehouseCodes.map(code => (
+            <MenuItem key={code} value={code}>{code}</MenuItem>
+          ))}
+        </TextField>
         <TextField
           select
           size="small"

@@ -66,17 +66,20 @@ export default function PlaneCanvasLayer({ flights, airportsByCode, onPlaneClick
   const setSelectedFlightId = context?.setSelectedFlightId
   const setActivePanelTab = context?.setActivePanelTab
   const animClockRef = animClockRefOverride ?? context?.animClockRef
+  const selectedFlightId = context?.selectedFlightId ?? null
 
   // Keep stable refs to latest props so the rAF callback never closes over stale values
   const flightsRef = useRef(flights)
   const airportsByCodeRef = useRef(airportsByCode)
   const onPlaneClickRef = useRef(onPlaneClick)
   const planePopupRefRef = useRef(planePopupRef)
+  const selectedFlightIdRef = useRef(selectedFlightId)
   useEffect(() => { flightsRef.current = flights }, [flights])
   useEffect(() => { airportsByCodeRef.current = airportsByCode }, [airportsByCode])
   useEffect(() => { onPlaneClickRef.current = onPlaneClick }, [onPlaneClick])
   useEffect(() => { planePopupRefRef.current = planePopupRef }, [planePopupRef])
   useEffect(() => { activePlaneFlightIdRef.current = activePlaneFlightId }, [activePlaneFlightId])
+  useEffect(() => { selectedFlightIdRef.current = selectedFlightId }, [selectedFlightId])
 
   // drawRef always holds the latest draw function without needing effect re-runs.
   // We use a ref instead of useCallback so map event listeners never go stale.
@@ -91,14 +94,20 @@ export default function PlaneCanvasLayer({ flights, airportsByCode, onPlaneClick
       const half = DRAW_SIZE / 2
       ctx.save()
       ctx.scale(dpr, dpr)  // one scale call for HiDPI; all coords below are CSS pixels
-      for (const { latlng, angleRad, color } of positionsRef.current) {
+      const selFlightId = selectedFlightIdRef.current
+      for (const { latlng, angleRad, color, flight } of positionsRef.current) {
         const img = PLANE_IMAGES[color]
         if (!img?.complete || !img.naturalWidth) continue
+        const isSelected = selFlightId != null && String(selFlightId) === String(flight.id)
+        const isDimmed = selFlightId != null && !isSelected
+        const size = isSelected ? DRAW_SIZE * 1.3 : DRAW_SIZE
+        const halfSize = size / 2
         const pt = map.latLngToContainerPoint(latlng)
         ctx.save()
+        ctx.globalAlpha = isDimmed ? 0.25 : 1
         ctx.translate(pt.x, pt.y)
         ctx.rotate(angleRad)
-        ctx.drawImage(img, -half, -half, DRAW_SIZE, DRAW_SIZE)
+        ctx.drawImage(img, -halfSize, -halfSize, size, size)
         ctx.restore()
       }
       ctx.restore()
