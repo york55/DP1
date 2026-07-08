@@ -1,5 +1,5 @@
 import { useMemo, useEffect, useRef, useState } from 'react'
-import { MapContainer, TileLayer, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, useMap, Polyline } from 'react-leaflet'
 import L from 'leaflet'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -36,7 +36,7 @@ function getAirportSemaphoreKey(pct) {
   return getFlightSemaphoreKey(pct)
 }
 
-function MapFocusController() {
+function MapFocusController({ standalone }) {
   const map = useMap()
   const lastCenteredAirport = useRef(null)
   const lastCenteredFlight = useRef(null)
@@ -46,7 +46,7 @@ function MapFocusController() {
   } catch (e) {
     // context not available
   }
-  if (!context) return null
+  if (!context || standalone) return null
 
   const { selectedAirportCode, selectedFlightId, airportsWithTimes, flights, simulationState } = context
 
@@ -151,7 +151,7 @@ function MapAirportTracker({ airport, popupRef }) {
  * @param {Date|null} simulatedTime - current simulated time for progress calculation
  * @param {*} resizeTrigger - any value whose change signals a container resize
  */
-function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], staticAirports, resizeTrigger }) {
+function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], staticAirports, resizeTrigger, standalone = false, simulatedTime: propsSimulatedTime = null, animClockRef: propsAnimClockRef = null }) {
   // Rasterize icons once on mount. When both resolve, bump iconsVersion so all
   // children re-render once and pick up the PNG L.icon instead of the divIcon fallback.
   const [iconsVersion, setIconsVersion] = useState(0)
@@ -187,12 +187,22 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
     // context not available
   }
 
-  const baseAirports = staticAirports ?? (context ? context.filteredAirports : propsAirports)
-  const baseFlights = context ? context.filteredFlights : propsFlights
-  const simulatedTime = context?.simulationState?.simulatedTime ?? null
+  const baseAirports = staticAirports ?? ((context && !standalone) ? context.filteredAirports : propsAirports)
+  const baseFlights = (context && !standalone) ? context.filteredFlights : propsFlights
+  const simulatedTime = standalone ? propsSimulatedTime : (context?.simulationState?.simulatedTime ?? propsSimulatedTime)
+  const animClockRef = standalone ? propsAnimClockRef : (context?.animClockRef ?? propsAnimClockRef)
   const planningProgress = context?.planningProgress ?? { phase: '', iteration: 0, maxIterations: 1000, assignedBatches: 0, totalBatches: 0, currentObjective: 0 }
   const blockHistory = context?.blockHistory ?? []
   const totalSimBlocks = context?.totalSimBlocks ?? 0
+  const selectedShipmentRoute = context?.selectedShipmentRoute ?? null
+
+  // Lookup built from the unfiltered airport list so the route always draws even if
+  // the user's current map filters would otherwise hide one of its airports.
+  const allAirportsByCode = useMemo(() => {
+    const map = new Map()
+    for (const a of baseAirports) map.set(a.iata || a.iataCode, a)
+    return map
+  }, [baseAirports])
 
   // Unique continent values for region chips — derived from live airport data.
   // 'unknown' from the DB is normalized to 'Sudamérica' (matches useSimulation patch).
@@ -236,6 +246,13 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
   // Plane canvas + routes only render IN_FLIGHT entries
   const visibleFlights = useMemo(() =>
     flights.filter(f => f.status === 'IN_FLIGHT'),
+    [flights]
+  )
+
+  // Cancelled flights get a route drawn (no plane — they never depart) so cancellations
+  // are visible on the map instead of silently vanishing from the flight list.
+  const cancelledFlights = useMemo(() =>
+    flights.filter(f => f.status === 'CANCELLED'),
     [flights]
   )
 
@@ -290,17 +307,40 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
         />
         <MapResizer trigger={resizeTrigger} />
         <AirportPaneSetup />
-        <MapFocusController />
+        <MapFocusController standalone={standalone} />
 
-        {/* Flight route polylines — trimmed to remaining segment for IN_FLIGHT */}
+        {/* Flight route polylines — always show the full origin → destination route */}
         {visibleFlights.map(flight => (
           <FlightRoute
             key={flight.id}
             flight={flight}
             airportsByCode={airportsByCode}
-            simulatedTime={simulatedTime}
           />
         ))}
+
+        {/* Cancelled flights — route only, no plane (they never depart) */}
+        {cancelledFlights.map(flight => (
+          <FlightRoute
+            key={flight.id}
+            flight={flight}
+            airportsByCode={airportsByCode}
+            isCancelled
+          />
+        ))}
+
+        {/* Ruta de un envío a demanda (búsqueda) — se dibuja sobre todo lo demás */}
+        {selectedShipmentRoute?.legs?.map(leg => {
+          const orig = allAirportsByCode.get(leg.originIata)
+          const dest = allAirportsByCode.get(leg.destinationIata)
+          if (!orig || !dest) return null
+          return (
+            <Polyline
+              key={`shipment-route-${selectedShipmentRoute.shipmentId}-${leg.legOrder}`}
+              positions={[[orig.lat, orig.lon], [dest.lat, dest.lon]]}
+              pathOptions={{ color: '#8E24AA', weight: 3, opacity: 0.9 }}
+            />
+          )
+        })}
 
         {/* Plane icons — single canvas layer, zero DOM nodes per plane */}
         <PlaneCanvasLayer
@@ -309,6 +349,7 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
           onPlaneClick={handlePlaneClick}
           planePopupRef={planePopupRef}
           activePlaneFlightId={activePlaneFlightId}
+          animClockRefOverride={animClockRef}
         />
 
         {/* Airport markers */}

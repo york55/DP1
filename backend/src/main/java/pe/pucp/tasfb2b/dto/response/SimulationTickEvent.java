@@ -10,11 +10,17 @@ import java.util.List;
 public class SimulationTickEvent {
 
     private Long simulationId;
-    private String simulationStatus; // BUFFERING | PLAYING | PAUSED | FINISHED
+    private String simulationStatus; // BUFFERING | PLAYING | PAUSED | FINISHED | COLLAPSED
     private int simulatedDay;
     private String simulatedTime;
     private String simulatedIso;   // full UTC ISO-8601: "2026-05-11T14:30:00"
     private long elapsedRealSeconds;
+
+    // IATA del aeropuerto que provocó el colapso (solo presente cuando
+    // simulationStatus == "COLLAPSED"). Antes este campo no existía en el DTO,
+    // así que aunque se intentara setear en el builder, no llegaba nunca al
+    // frontend.
+    private String collapsedIata;
 
     private KpisPayload kpis;
     private List<AirportPayload> airports;

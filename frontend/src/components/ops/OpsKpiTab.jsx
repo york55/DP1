@@ -1,6 +1,7 @@
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import KpiCard from '../simulation/KpiCard'
+import KpiSemaphoreCard from '../common/KpiSemaphoreCard'
 
 export default function OpsKpiTab({
   airports = [],
@@ -122,32 +123,14 @@ export default function OpsKpiTab({
         }}
       >
 
-        <KpiCard
+        <KpiSemaphoreCard
           label="Ocupación Vuelos"
-          value={avgFlightOccupancy.toFixed(2)}
-          unit="%"
-          trend={
-            avgFlightOccupancy > 80
-              ? 'up'
-              : avgFlightOccupancy > 50
-                ? 'neutral'
-                : 'down'
-          }
-          color="#1565C0"
+          occupancyPct={avgFlightOccupancy}
         />
 
-        <KpiCard
+        <KpiSemaphoreCard
           label="Ocupación Almacenes"
-          value={avgWarehouseOccupancy.toFixed(2)}
-          unit="%"
-          trend={
-            avgWarehouseOccupancy > 80
-              ? 'down'
-              : avgWarehouseOccupancy > 50
-                ? 'neutral'
-                : 'up'
-          }
-          color="#E65100"
+          occupancyPct={avgWarehouseOccupancy}
         />
 
       </Box>

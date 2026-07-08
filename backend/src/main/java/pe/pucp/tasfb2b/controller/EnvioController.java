@@ -21,7 +21,7 @@ public class EnvioController {
 
     /**
      * POST /api/envios/registrar
-     * Body: { "almacenOrigen": "SKBO", "almacenDestino": "SEQM", "cantidadMaletas": "025" }
+     * Body: { "almacenOrigen": "SKBO", "almacenDestino": "SEQM", "cantidadMaletas": "025", "cliente": "Juan Perez SAC" }
      */
     @PostMapping("/registrar")
     public ResponseEntity<?> registrarEnvio(@RequestBody EnvioRequest request) {
@@ -34,23 +34,22 @@ public class EnvioController {
             return ResponseEntity.badRequest().body("El almacén origen y destino no pueden ser iguales.");
         if (!request.getCantidadMaletas().matches("\\d{3}") || request.getCantidadMaletas().equals("000"))
             return ResponseEntity.badRequest().body("La cantidad de maletas debe ser entre 001 y 999.");
+        if (request.getCliente() == null || request.getCliente().isBlank())
+            return ResponseEntity.badRequest().body("El cliente es obligatorio.");
+        if (request.getCliente().trim().length() > 100)
+            return ResponseEntity.badRequest().body("El nombre del cliente es demasiado largo.");
 
         try {
-            String lineaRegistrada = envioService.registrarEnvio(
+            String externalId = envioService.registrarEnvio(
                     request.getAlmacenOrigen(),
                     request.getAlmacenDestino(),
-                    request.getCantidadMaletas()
+                    request.getCantidadMaletas(),
+                    request.getCliente().trim()
             );
-
-            // idEnvio: primera parte de la línea (secuencial del archivo)
-            // El externalId de BD (ENV-YYYYMMDD-XXXXXX) está en el log; si lo necesitas
-            // en la respuesta, expón también un método getLastExternalId() en el service.
-            String idEnvio = lineaRegistrada.split("-")[0];
 
             return ResponseEntity.ok(Map.of(
                     "mensaje",  "Envío registrado exitosamente.",
-                    "idEnvio",  idEnvio,
-                    "registro", lineaRegistrada
+                    "idEnvio",  externalId
             ));
 
         } catch (IllegalArgumentException e) {

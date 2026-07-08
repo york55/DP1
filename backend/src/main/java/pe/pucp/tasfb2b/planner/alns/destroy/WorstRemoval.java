@@ -22,12 +22,16 @@ public class WorstRemoval implements DestroyOperator {
         Map<Long, Integer> quantityMap = allBatches.stream()
                 .collect(Collectors.toMap(BaggageBatch::getId, BaggageBatch::getQuantity));
 
+        // Costos precomputados UNA vez: el comparador de sort() llama a la función de costo
+        // O(n log n) veces, y computeCost recorre los tramos de la ruta — a escala de miles
+        // de lotes eso dominaba el tiempo del operador.
+        Map<Long, Double> costOf = new HashMap<>(assignedIds.size() * 2);
+        for (Long id : assignedIds) {
+            costOf.put(id, computeCost(id, solution, quantityMap));
+        }
+
         List<Long> sorted = assignedIds.stream()
-                .sorted((a, b) -> {
-                    double costA = computeCost(a, solution, quantityMap);
-                    double costB = computeCost(b, solution, quantityMap);
-                    return Double.compare(costB, costA);
-                })
+                .sorted((a, b) -> Double.compare(costOf.get(b), costOf.get(a)))
                 .collect(Collectors.toList());
 
         for (Long id : sorted) {
@@ -43,10 +47,12 @@ public class WorstRemoval implements DestroyOperator {
     private static final double LATENESS_WEIGHT = 10.0;
 
     private double computeCost(Long batchId, AlnsSolution solution, Map<Long, Integer> quantities) {
-        long waitMin = solution.getWaitingMinutes(batchId);
+        // Tiempo en tierra total (origen + layovers en hubs): un lote con un layover de 20h
+        // en un hub es tan candidato a reconsiderarse como uno que espera 20h en el origen.
+        long groundMin = solution.getGroundMinutes(batchId);
         long lateMin = solution.getLatenessMinutes(batchId);
         int qty = quantities.getOrDefault(batchId, 1);
-        return (waitMin + lateMin * LATENESS_WEIGHT) * qty;
+        return (groundMin + lateMin * LATENESS_WEIGHT) * qty;
     }
 
     @Override

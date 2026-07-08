@@ -39,6 +39,7 @@ export const shipmentApi = {
     return client.get('/shipments', { params }).then(r => r.data)
   },
   getById: (id) => client.get(`/shipments/${id}/status`).then(r => r.data),
+  getRoute: (id) => client.get(`/shipments/${id}/route`).then(r => r.data),
 }
 
 export const logApi = {

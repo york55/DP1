@@ -51,6 +51,8 @@ export function useSimulation() {
   const [selectedAirportCode, setSelectedAirportCode] = useState(null)
   const [selectedFlightId, setSelectedFlightId] = useState(null)
   const [selectedShipmentId, setSelectedShipmentId] = useState(null)
+  const [selectedShipmentRoute, setSelectedShipmentRoute] = useState(null)
+  const [shipmentRouteLoading, setShipmentRouteLoading] = useState(false)
   const [activePanelTab, setActivePanelTab] = useState(0)
 
   const [warehouseSearch, setWarehouseSearch] = useState('')
@@ -229,7 +231,7 @@ export function useSimulation() {
               totalBags: qty,
               deliveredBags: s.status === 'DELIVERED' ? qty : 0,
               client: s.airline || '—',
-              currentFlight: null,
+              currentFlight: s.currentFlightId ?? null,
               deliveredAt: s.deliveredAt || null,
             }
           })
@@ -249,6 +251,25 @@ export function useSimulation() {
         })
       }
     } catch (e) { simLogger.warn('loadShipments error: ' + e.message) }
+  }, [])
+
+  // Búsqueda a demanda: trae los tramos de un envío y los deja listos para
+  // dibujarse en el mapa. clearShipmentRoute() regresa el mapa a su estado anterior.
+  const fetchShipmentRoute = useCallback(async (shipmentId) => {
+    setShipmentRouteLoading(true)
+    try {
+      const legs = await shipmentApi.getRoute(shipmentId)
+      setSelectedShipmentRoute({ shipmentId, legs })
+    } catch (e) {
+      simLogger.warn('fetchShipmentRoute error: ' + e.message)
+      setSelectedShipmentRoute(null)
+    } finally {
+      setShipmentRouteLoading(false)
+    }
+  }, [])
+
+  const clearShipmentRoute = useCallback(() => {
+    setSelectedShipmentRoute(null)
   }, [])
 
   const addNotification = useCallback((message, type = 'info') => {
@@ -492,6 +513,9 @@ export function useSimulation() {
     setFirstBatchReady(false)
     setBlockHistory([])
     setTotalSimBlocks(0)
+    setSelectedAirportCode(null)
+    setSelectedFlightId(null)
+    setSelectedShipmentId(null)
 
     const startDate = config.startDate instanceof Date
       ? config.startDate
@@ -628,6 +652,9 @@ export function useSimulation() {
   const resetSimulation = useCallback(() => {
     firstBatchReadyRef.current = false
     setFirstBatchReady(false)
+    setSelectedAirportCode(null)
+    setSelectedFlightId(null)
+    setSelectedShipmentId(null)
     setSimulationState({
       status: 'idle',
       simulatedTime: null,
@@ -671,6 +698,9 @@ export function useSimulation() {
   const cancelSimulation = useCallback(async () => {
     firstBatchReadyRef.current = false
     setFirstBatchReady(false)
+    setSelectedAirportCode(null)
+    setSelectedFlightId(null)
+    setSelectedShipmentId(null)
     const id = simIdRef.current
     disconnectSimulationWebSocket()
     if (shipmentPollRef.current) { clearInterval(shipmentPollRef.current); shipmentPollRef.current = null }
@@ -716,9 +746,14 @@ export function useSimulation() {
   const attachToSimulation = useCallback(async (active) => {
     try {
       simIdRef.current = active.id
+      // El backend envía fechas naive en UTC (sin sufijo 'Z'); si no se fuerza
+      // el parseo a UTC, new Date() las interpreta en la zona horaria local del
+      // navegador, desalineando startDate/simulatedTime y rompiendo el cálculo
+      // de "transcurrido" en fmtSimElapsed.
+      const asUtc = (str) => str ? new Date(String(str).endsWith('Z') ? str : str + 'Z') : null
       const simTime = active.simulatedTime
-        ? new Date(active.simulatedTime)
-        : new Date(active.startDate)
+        ? asUtc(active.simulatedTime)
+        : asUtc(active.startDate)
       simTimeRef.current = simTime
       const frontendStatus = active.status === 'PLAYING' ? 'running'
         : active.status === 'BUFFERING' ? 'planning'
@@ -767,9 +802,9 @@ export function useSimulation() {
 
       let currentDay = 1
       if (active.simulatedTime && active.startDate) {
-        const start = new Date(active.startDate)
+        const start = asUtc(active.startDate)
         start.setUTCHours(0, 0, 0, 0)
-        const current = new Date(active.simulatedTime)
+        const current = asUtc(active.simulatedTime)
         const diffDays = Math.floor((current.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
         currentDay = diffDays + 1
       }
@@ -779,7 +814,7 @@ export function useSimulation() {
         simulatedTime: simTime,
         currentDay,
         elapsedSeconds: 0,
-        config: { period: active.periodDays, startDate: new Date(active.startDate) },
+        config: { period: active.periodDays, startDate: asUtc(active.startDate) },
         simulationId: active.id,
       })
 
@@ -947,6 +982,10 @@ export function useSimulation() {
     setSelectedFlightId,
     selectedShipmentId,
     setSelectedShipmentId,
+    selectedShipmentRoute,
+    shipmentRouteLoading,
+    fetchShipmentRoute,
+    clearShipmentRoute,
     activePanelTab,
     setActivePanelTab,
 

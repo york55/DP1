@@ -85,7 +85,7 @@ const kpiTableColumns = [
 
 export default function SimulationSummaryPage() {
   const navigate = useNavigate()
-  const { simulationState, airports, flights, shipments, kpis, resetSimulation } = useSimulationContext()
+  const { simulationState, airports, flights, shipments, kpis, resetSimulation, blockHistory = [] } = useSimulationContext()
 
   const { simulatedTime, elapsedSeconds, config, status } = simulationState
 
@@ -116,6 +116,11 @@ export default function SimulationSummaryPage() {
   const inTransit = shipments.filter(s => s.status === 'IN_TRANSIT').length
   const waiting = shipments.filter(s => s.status === 'IN_ORIGIN').length
   const delayed = shipments.filter(s => s.status === 'DELAYED').length
+
+  // Última planificación estable: el último bloque del ALNS que terminó
+  // (status 'done') antes de que terminara la simulación del periodo.
+  const stableBlocks = blockHistory.filter(b => b.status === 'done')
+  const lastStableBlock = stableBlocks.length > 0 ? stableBlocks[stableBlocks.length - 1] : null
 
   const kpiRows = [
     {
@@ -277,6 +282,41 @@ export default function SimulationSummaryPage() {
             </Paper>
           </Box>
         </Box>
+
+        {/* Reporte: última planificación estable del periodo */}
+        {lastStableBlock && (
+          <Paper elevation={2} sx={{ p: 2.5, borderRadius: 2, mb: 3 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1F3864', mb: 1.5 }}>
+              Última Planificación Estable
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Bloque</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {lastStableBlock.blockIndex + 1} de {lastStableBlock.totalBlocks || '—'}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Ventana planificada</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {lastStableBlock.windowStart ? formatUTCFull(new Date(lastStableBlock.windowStart)) : '—'}
+                  {' → '}
+                  {lastStableBlock.windowEnd ? formatUTCFull(new Date(lastStableBlock.windowEnd)) : '—'}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Lotes asignados</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {lastStableBlock.assignedBatches} / {lastStableBlock.totalBatches}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Estado</Typography>
+                <Chip label="Estable" size="small" sx={{ backgroundColor: '#E8F5E9', color: '#2E7D32', fontWeight: 600, border: '1px solid #2E7D32' }} />
+              </Box>
+            </Box>
+          </Paper>
+        )}
 
         {/* Call to action */}
         <Box sx={{ textAlign: 'center', mt: 2 }}>

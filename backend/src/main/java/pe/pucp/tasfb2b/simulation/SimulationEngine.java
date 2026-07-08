@@ -121,7 +121,7 @@ public class SimulationEngine {
 
             // 4. Check SLA violations
             long t3 = System.currentTimeMillis();
-            checkSlaViolations(simNow);
+            checkSlaViolations(sim, simNow, simulationId);
             log.debug("[SIM-{}] tick#{} slaCheck ({}ms)", simulationId, tickNum, System.currentTimeMillis() - t3);
 
             // 5. Update airport occupancy
@@ -341,7 +341,8 @@ public class SimulationEngine {
         }
 
         final Long fid = flight.getId();
-        final List<BaggageBatch> batchesForReplan = List.copyOf(affectedBatches);
+        final List<Long> batchIdsForReplan = affectedBatches.stream()
+                .map(BaggageBatch::getId).collect(Collectors.toList());
         final String algorithm = sim.getAlgorithm();
         final var alnsParams = plannerService.buildAlnsParams(sim);
         final LocalDateTime replanNow = simNow;
@@ -349,7 +350,7 @@ public class SimulationEngine {
         eventPublisher.publishAlert(simulationId,
                 new WebSocketEventPublisher.AlertEvent(
                         "CANCELLATION", null, fid, null,
-                        "Vuelo cancelado. Replanificando " + batchesForReplan.size() + " lotes.",
+                        "Vuelo cancelado. Replanificando " + batchIdsForReplan.size() + " lotes.",
                         simNow.format(TIME_FMT)
                 ));
 
@@ -358,19 +359,25 @@ public class SimulationEngine {
             public void afterCommit() {
                 replanExecutor.submit(() -> {
                     try {
-                        List<Flight> availableFlights = flightRepo.findByStatus(FlightStatus.SCHEDULED);
+                        long replanStart = System.currentTimeMillis();
+                        // Re-fetch batches/flights by ID (with JOIN FETCH on their airports)
+                        // instead of reusing the entities captured before this transaction
+                        // committed: those became detached lazy proxies once their loading
+                        // session closed, and this callback runs on a different thread/session.
+                        List<BaggageBatch> freshBatches =
+                                batchRepo.findByIdInWithAirports(batchIdsForReplan);
+                        List<Flight> availableFlights = flightRepo.findByStatusWithAirports(FlightStatus.SCHEDULED);
                         List<Airport> airports = airportRepo.findAll();
                         SimulationContext ctx = SimulationContext.builder()
                                 .airports(airports)
                                 .flights(availableFlights)
-                                .pendingBatches(batchesForReplan)
+                                .pendingBatches(freshBatches)
                                 .simulatedNow(replanNow)
                                 .alnsParams(alnsParams)
                                 .build();
-                        long replanStart = System.currentTimeMillis();
-                        plannerService.replan(batchesForReplan, ctx, algorithm);
+                        plannerService.replan(freshBatches, ctx, algorithm);
                         log.info("[SIM-{}] replan for cancelled flight {} batches={} in {}ms",
-                                simulationId, fid, batchesForReplan.size(),
+                                simulationId, fid, freshBatches.size(),
                                 System.currentTimeMillis() - replanStart);
                     } catch (Exception e) {
                         log.error("Error en replanificación tras cancelación de vuelo {}: {}", fid, e.getMessage());
@@ -380,8 +387,11 @@ public class SimulationEngine {
         });
     }
 
-    private void checkSlaViolations(LocalDateTime simNow) {
+    private void checkSlaViolations(Simulation sim, LocalDateTime simNow, Long simulationId) {
         List<Shipment> overdue = shipmentRepo.findOverdueShipments(simNow);
+        if (overdue.isEmpty()) return;
+
+        List<BaggageBatch> batchesForReplan = new ArrayList<>();
         for (Shipment shipment : overdue) {
             if (shipment.getStatus() == ShipmentStatus.DELAYED) continue;
             String oldStatus = shipment.getStatus().name();
@@ -394,7 +404,67 @@ public class SimulationEngine {
 
             recordStatusChange(shipment, oldStatus, "DELAYED", null, simNow);
             log.warn("Envío {} marcado como DELAYED (deadline: {})", shipment.getId(), shipment.getDeadline());
+
+            // Only the still-grounded portion of the trip can be redirected — a batch
+            // already on its final in-flight leg has no PENDING legs left to replan.
+            List<RouteLeg> pendingLegs = routeLegRepo.findPendingLegsByShipmentId(shipment.getId());
+            if (pendingLegs.isEmpty()) continue;
+
+            for (RouteLeg leg : pendingLegs) {
+                leg.setStatus(RouteLegStatus.CANCELLED);
+                routeLegRepo.save(leg);
+            }
+            batchesForReplan.add(batch);
         }
+
+        if (batchesForReplan.isEmpty()) return;
+        scheduleDelayReplan(sim, simNow, simulationId, batchesForReplan);
+    }
+
+    private void scheduleDelayReplan(Simulation sim, LocalDateTime simNow, Long simulationId,
+                                      List<BaggageBatch> batchesForReplan) {
+        final List<Long> batchIds = batchesForReplan.stream()
+                .map(BaggageBatch::getId).collect(Collectors.toList());
+        final String algorithm = sim.getAlgorithm();
+        final var alnsParams = plannerService.buildAlnsParams(sim);
+        final LocalDateTime replanNow = simNow;
+
+        eventPublisher.publishAlert(simulationId,
+                new WebSocketEventPublisher.AlertEvent(
+                        "DELAY", null, null, null,
+                        "Detectados " + batchIds.size() + " lotes retrasados. Replanificando.",
+                        simNow.format(TIME_FMT)
+                ));
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                replanExecutor.submit(() -> {
+                    try {
+                        long replanStart = System.currentTimeMillis();
+                        // Re-fetch batches/flights by ID (with JOIN FETCH on their airports)
+                        // instead of reusing the entities captured before this transaction
+                        // committed: those became detached lazy proxies once their loading
+                        // session closed, and this callback runs on a different thread/session.
+                        List<BaggageBatch> freshBatches = batchRepo.findByIdInWithAirports(batchIds);
+                        List<Flight> availableFlights = flightRepo.findByStatusWithAirports(FlightStatus.SCHEDULED);
+                        List<Airport> airports = airportRepo.findAll();
+                        SimulationContext ctx = SimulationContext.builder()
+                                .airports(airports)
+                                .flights(availableFlights)
+                                .pendingBatches(freshBatches)
+                                .simulatedNow(replanNow)
+                                .alnsParams(alnsParams)
+                                .build();
+                        plannerService.replan(freshBatches, ctx, algorithm);
+                        log.info("[SIM-{}] replan for delayed batches={} in {}ms",
+                                simulationId, freshBatches.size(), System.currentTimeMillis() - replanStart);
+                    } catch (Exception e) {
+                        log.error("Error en replanificación tras retraso: {}", e.getMessage());
+                    }
+                });
+            }
+        });
     }
 
     private void updateAirportOccupancy(LocalDateTime simNow) {
@@ -444,21 +514,28 @@ public class SimulationEngine {
 
         double onTimePct = total > 0 ? (double) onTime / total * 100.0 : 100.0;
 
-        List<Flight> inFlight = flightRepo.findByStatus(FlightStatus.IN_FLIGHT);
-        double avgFlightOcc = inFlight.isEmpty() ? 0.0 :
-                inFlight.stream()
-                        .mapToDouble(f -> f.getBaggageCapacity() > 0
-                                ? (double) f.getCurrentLoad() / f.getBaggageCapacity() * 100.0
-                                : 0.0)
-                        .average()
-                        .orElse(0.0);
+        // Ocupación de flota = (maletas en vuelo + maletas asignadas a vuelos programados)
+        // / (capacidad total de todos los vuelos activos), no un promedio de porcentajes.
+        List<Flight> activeFleet = flightRepo.findByStatusIn(
+                List.of(FlightStatus.SCHEDULED, FlightStatus.IN_FLIGHT));
+        Map<Long, Long> pendingBagsByFlight = routeLegRepo.sumPendingBagsByFlightId().stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
+        long fleetLoad = 0L;
+        long fleetCapacity = 0L;
+        for (Flight f : activeFleet) {
+            fleetCapacity += f.getBaggageCapacity();
+            fleetLoad += f.getStatus() == FlightStatus.IN_FLIGHT
+                    ? f.getCurrentLoad()
+                    : pendingBagsByFlight.getOrDefault(f.getId(), 0L);
+        }
+        double avgFlightOcc = fleetCapacity > 0 ? (double) fleetLoad / fleetCapacity * 100.0 : 0.0;
 
+        // Ocupación de aeropuertos = (maletas en todos los aeropuertos) / (capacidad total
+        // de todos los aeropuertos), no un promedio de porcentajes por aeropuerto.
         List<Airport> airports = airportRepo.findAll();
-        double avgWarehouseOcc = airports.isEmpty() ? 0.0 :
-                airports.stream()
-                        .mapToDouble(Airport::getOccupancyPct)
-                        .average()
-                        .orElse(0.0);
+        long warehouseLoad = airports.stream().mapToLong(Airport::getCurrentOccupancy).sum();
+        long warehouseCapacity = airports.stream().mapToLong(Airport::getWarehouseCapacity).sum();
+        double avgWarehouseOcc = warehouseCapacity > 0 ? (double) warehouseLoad / warehouseCapacity * 100.0 : 0.0;
 
         KpiSnapshot snapshot = new KpiSnapshot();
         snapshot.setSimulation(sim);

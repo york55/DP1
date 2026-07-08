@@ -40,15 +40,17 @@ public class EnvioService {
 
     /**
      * Registra un envío:
-     *  1. Persiste en la BD (tabla ops_shipment).
-     *  2. Escribe la línea en el archivo _envios_<ORIGEN>_.txt.
+     *  1. Persiste en la BD (tabla ops_shipment), incluyendo el cliente ingresado.
+     *  2. Escribe la línea en el archivo _envios_<ORIGEN>_.txt
+     *     Formato: HH-mm-DESTINO-cantidad-cliente
      *
-     * @return La línea completa escrita en el archivo (igual que antes).
+     * @return El externalId generado (ENV-YYYYMMDD-XXXXXX).
      */
     @Transactional
     public String registrarEnvio(String almacenOrigen,
                                   String almacenDestino,
-                                  String cantidadMaletas) throws IOException {
+                                  String cantidadMaletas,
+                                  String cliente) throws IOException {
 
         LocalDateTime now = LocalDateTime.now();
 
@@ -73,27 +75,26 @@ public class EnvioService {
         shipment.setOriginIata(almacenOrigen);
         shipment.setDestIata(almacenDestino);
         shipment.setBagCount(Integer.parseInt(cantidadMaletas));
+        shipment.setClientCode(cliente);
         shipment.setStatus("PENDING");
         shipment.setDeadlineUtc(deadline);
         shipment.setLastUpdated(now);
 
         OpsShipment saved = shipmentRepo.save(shipment);
-        log.info("Envío persistido en BD: {} ({} → {}, {} maletas, deadline: {})",
-            externalId, almacenOrigen, almacenDestino, cantidadMaletas, deadline);
+        log.info("Envío persistido en BD: {} ({} → {}, {} maletas, cliente: {}, deadline: {})",
+            externalId, almacenOrigen, almacenDestino, cantidadMaletas, cliente, deadline);
 
-        // ── 2. Escritura en archivo ───────────────────────────────────────
+        // ── 2. Escritura en archivo ─────────────────────────────────────
+        //   Formato: HH-mm-DESTINO-cantidad-cliente
+        //   Ejemplo: 15-30-SEQM-025-Juan Perez SAC
         Path dir     = Paths.get(directorioEnvios);
         Files.createDirectories(dir);
         Path archivo = dir.resolve("_envios_" + almacenOrigen + "_.txt");
 
-        long proximoId = calcularProximoId(archivo);
-        String fecha   = now.format(FECHA_FMT);
-        String hora    = now.format(HORA_FMT);
-        String idCliente = generarIdCliente(proximoId);
+        String hora = now.format(HORA_FMT);
 
-        // Formato: 000000001-20260102-06-30-SEQM-025-0012500
-        String linea = String.format("%09d-%s-%s-%s-%s-%s",
-                proximoId, fecha, hora, almacenDestino, cantidadMaletas, idCliente);
+        String linea = String.format("%s-%s-%s-%s",
+                hora, almacenDestino, cantidadMaletas, cliente);
 
         try (BufferedWriter writer = Files.newBufferedWriter(
                 archivo,
@@ -105,32 +106,10 @@ public class EnvioService {
         }
 
         log.info("Envío escrito en archivo: {}", linea);
-        return linea;
+        return externalId;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Helpers (sin cambios respecto a la versión original)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    private long calcularProximoId(Path archivo) throws IOException {
-        if (!Files.exists(archivo)) return 1L;
-        List<String> lineas = Files.readAllLines(archivo, StandardCharsets.UTF_8);
-        for (int i = lineas.size() - 1; i >= 0; i--) {
-            String linea = lineas.get(i).trim();
-            if (!linea.isEmpty()) {
-                String[] partes = linea.split("-");
-                if (partes.length > 0) {
-                    try { return Long.parseLong(partes[0]) + 1; }
-                    catch (NumberFormatException ignored) {}
-                }
-            }
-        }
-        return 1L;
-    }
-
-    private String generarIdCliente(long idEnvio) {
-        return String.format("%07d", idEnvio * 500L);
-    }
 	
 	public List<OpsShipment> listarEnvios() {
 		return shipmentRepo.findAll(Sort.by(Sort.Direction.DESC, "registeredAt"));

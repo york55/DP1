@@ -73,6 +73,7 @@ function StatusChip({ status }) {
 
 export default function OpsShipmentsTab({
   shipments = [],
+  onShipmentFocus,
 }) {
 
   const [selectedShipment, setSelectedShipment] =
@@ -468,9 +469,10 @@ export default function OpsShipmentsTab({
           rows={filteredShipments}
           columns={columns}
           getRowId={(row) => row.id}
-          onRowClick={(params) =>
+          onRowClick={(params) => {
             setSelectedShipment(params.row)
-          }
+            onShipmentFocus?.(params.row)
+          }}
         />
 
       </Box>

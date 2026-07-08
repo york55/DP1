@@ -49,11 +49,34 @@ public class AlnsEngine implements RouteOptimizer {
 
         Consumer<PlanProgressSnapshot> callback = context.getProgressCallback();
 
-        AlnsSolution current = buildGreedyInit(batches, flights, p);
+        List<DestroyOperator> destroyOps = List.of(
+                new RouteRemoval(),
+                new RelatedRemoval(),
+                new WorstRemoval(p.pNoise())
+        );
+        RepairOperator repairOp = new RegretKInsertion(p.connectMinGapMinutes(), p.maxHops());
+
+        // Solución inicial: regret-k insertion sobre solución vacía. Reemplaza al antiguo
+        // buildGreedyInit(), que duplicaba (con lógica más débil: elegía el vuelo que salía
+        // primero sin mirar el deadline) la misma búsqueda de rutas que el repair operator
+        // ya hace mejor — y de paso construye la caché de candidatos que usarán todas las
+        // iteraciones siguientes.
+        AlnsSolution current = new AlnsSolution(flights, batches);
+        repairOp.repair(current, batches, flights, p.kRegret(), rng);
         AlnsSolution best = current.deepCopy();
         double bestObj = evaluate(best, p);
         double currentObj = bestObj;
-        double T = p.t0();
+
+        // Temperatura inicial CALIBRADA a la escala real del objetivo. La función objetivo
+        // es normalizada (típicamente 0.02–1.0), así que con el antiguo T0=100 la
+        // probabilidad de aceptar una solución PEOR era exp(-0.01/100) ≈ 0.9999 en todas
+        // las iteraciones: el recocido simulado degeneraba en una caminata aleatoria que
+        // nunca convergía. Si el llamador pasa un t0 legado (>1.0) se auto-calibra al ~10%
+        // del objetivo inicial (acepta deterioros de ese orden con prob. e^-1 al comienzo);
+        // valores de t0 <= 1.0 se respetan tal cual.
+        double T = p.t0() > 1.0
+                ? Math.max(1e-4, 0.10 * Math.max(bestObj, 0.05))
+                : p.t0();
 
         if (callback != null) {
             callback.accept(new PlanProgressSnapshot(
@@ -61,13 +84,6 @@ public class AlnsEngine implements RouteOptimizer {
                     best.getAssignments().size(), batches.size(), bestObj,
                     0, 0, "", ""));
         }
-
-        List<DestroyOperator> destroyOps = List.of(
-                new RouteRemoval(),
-                new RelatedRemoval(),
-                new WorstRemoval(p.pNoise())
-        );
-        RepairOperator repairOp = new RegretKInsertion(p.connectMinGapMinutes(), p.maxHops());
 
         double[] dWeights = {1.0, 1.0, 1.0};
         double[] dScores = {0.0, 0.0, 0.0};
@@ -79,8 +95,14 @@ public class AlnsEngine implements RouteOptimizer {
         int stagnantSegments = 0;
         final int MAX_STAGNANT_SEGMENTS = 3; // stop if bestObj unchanged for 3 consecutive segments
 
+        // Tope absoluto de destrucción: con miles de lotes por bloque, qPct=0.25 destruiría
+        // (y repararía) cientos o miles de lotes POR ITERACIÓN. Movimientos de ~100 lotes
+        // son suficientes para que el ALNS explore bien, y mantienen el costo por iteración
+        // acotado sin importar el tamaño de la instancia.
+        final int qCap = 100;
+
         for (int iter = 0; iter < p.maxIterations(); iter++) {
-            int q = Math.max(1, (int) Math.ceil(p.qPct() * batches.size()));
+            int q = Math.min(qCap, Math.max(1, (int) Math.ceil(p.qPct() * batches.size())));
 
             int dIdx = selectByRoulette(dWeights, rng);
             // Mutate current in-place; restore from snapshot if rejected.
@@ -145,6 +167,18 @@ public class AlnsEngine implements RouteOptimizer {
         }
 
         Duration elapsed = Duration.between(start, Instant.now());
+
+        // Pase final de rescate determinístico: si quedó algún lote tardío o sin asignar,
+        // intenta liberarle una ruta puntual eyectando bloqueadores hacia sus alternativas.
+        // Garantiza los arreglos "a un intercambio de distancia" que la búsqueda estocástica
+        // podría no haber encontrado.
+        int rescued = repairOp.rescue(best);
+        if (rescued > 0) {
+            bestObj = evaluate(best, p);
+            log.info("Rescate por eyección: {} lotes recuperados a rutas puntuales, obj={}",
+                    rescued, String.format("%.4f", bestObj));
+        }
+
         List<Route> routes = buildRoutes(best, batches, flights, context.getSimulatedNow(), "ALNS");
 
         int assigned = best.getAssignments().size();
@@ -169,6 +203,7 @@ public class AlnsEngine implements RouteOptimizer {
         AlnsSolution solution = new AlnsSolution(flights, affected);
         RepairOperator repair = new RegretKInsertion(p.connectMinGapMinutes(), p.maxHops());
         repair.repair(solution, affected, flights, p.kRegret(), rng);
+        repair.rescue(solution);
 
         Instant start = Instant.now();
         List<Route> routes = buildRoutes(solution, affected, flights, context.getSimulatedNow(), "ALNS");
@@ -183,105 +218,24 @@ public class AlnsEngine implements RouteOptimizer {
         return "ALNS";
     }
 
-    private AlnsSolution buildGreedyInit(List<BaggageBatch> batches, List<Flight> flights,
-                                          AlnsParams p) {
-        AlnsSolution solution = new AlnsSolution(flights, batches);
-
-        Map<String, List<Flight>> flightsByOrigin = flights.stream()
-                .collect(Collectors.groupingBy(f -> f.getOriginAirport().getIataCode()));
-
-        List<BaggageBatch> sorted = batches.stream()
-                .sorted(Comparator.comparing(BaggageBatch::getAvailableFrom))
-                .collect(Collectors.toList());
-
-        for (BaggageBatch batch : sorted) {
-            String origin = batch.getOriginAirport().getIataCode();
-            String dest = batch.getDestinationAirport().getIataCode();
-            int qty = batch.getQuantity();
-
-            Optional<Flight> directFlight = flightsByOrigin.getOrDefault(origin, Collections.emptyList())
-                    .stream()
-                    .filter(f -> f.getDestinationAirport().getIataCode().equals(dest))
-                    .filter(f -> !f.getDepartureTime().isBefore(batch.getAvailableFrom()))
-                    .filter(f -> solution.canAssign(f.getId(), qty))
-                    .min(Comparator.comparing(Flight::getDepartureTime));
-
-            if (directFlight.isPresent()) {
-                solution.assign(batch.getId(), List.of(directFlight.get().getId()));
-                continue;
-            }
-
-            // Fallback: find best 2-hop connection (earliest arrival at destination)
-            Flight bestF1 = null;
-            Flight bestF2 = null;
-            for (Flight f1 : flightsByOrigin.getOrDefault(origin, Collections.emptyList())) {
-                if (f1.getDepartureTime().isBefore(batch.getAvailableFrom())) continue;
-                if (!solution.canAssign(f1.getId(), qty)) continue;
-                String hub = f1.getDestinationAirport().getIataCode();
-                if (hub.equals(dest)) continue;
-                for (Flight f2 : flightsByOrigin.getOrDefault(hub, Collections.emptyList())) {
-                    if (!f2.getDestinationAirport().getIataCode().equals(dest)) continue;
-                    if (!solution.canAssign(f2.getId(), qty)) continue;
-                    long gap = Duration.between(f1.getArrivalTime(), f2.getDepartureTime()).toMinutes();
-                    if (gap < p.connectMinGapMinutes()) continue;
-                    if (bestF2 == null || f2.getArrivalTime().isBefore(bestF2.getArrivalTime())) {
-                        bestF1 = f1;
-                        bestF2 = f2;
-                    }
-                }
-            }
-            if (bestF1 != null) {
-                solution.assign(batch.getId(), List.of(bestF1.getId(), bestF2.getId()));
-                continue;
-            }
-
-            // Segundo fallback: mejor conexión de 2 escalas (3 tramos). Solo se intenta si no
-            // hubo directo ni 1 escala — cubre origen-destino que antes quedaban atrapados sin
-            // candidato posible (ver RegretKInsertion, misma lógica). buildGreedyInit solo da
-            // el punto de partida; el repair operator la sigue puliendo en cada iteración.
-            if (p.maxHops() >= 3) {
-                Flight bF1 = null, bF2 = null, bF3 = null;
-                for (Flight f1 : flightsByOrigin.getOrDefault(origin, Collections.emptyList())) {
-                    if (f1.getDepartureTime().isBefore(batch.getAvailableFrom())) continue;
-                    if (!solution.canAssign(f1.getId(), qty)) continue;
-                    String hub1 = f1.getDestinationAirport().getIataCode();
-                    if (hub1.equals(dest) || hub1.equals(origin)) continue;
-
-                    for (Flight f2 : flightsByOrigin.getOrDefault(hub1, Collections.emptyList())) {
-                        String hub2 = f2.getDestinationAirport().getIataCode();
-                        if (hub2.equals(origin) || hub2.equals(hub1)) continue;
-                        if (!solution.canAssign(f2.getId(), qty)) continue;
-                        long gap1 = Duration.between(f1.getArrivalTime(), f2.getDepartureTime()).toMinutes();
-                        if (gap1 < p.connectMinGapMinutes()) continue;
-
-                        for (Flight f3 : flightsByOrigin.getOrDefault(hub2, Collections.emptyList())) {
-                            if (!f3.getDestinationAirport().getIataCode().equals(dest)) continue;
-                            if (!solution.canAssign(f3.getId(), qty)) continue;
-                            long gap2 = Duration.between(f2.getArrivalTime(), f3.getDepartureTime()).toMinutes();
-                            if (gap2 < p.connectMinGapMinutes()) continue;
-                            if (bF3 == null || f3.getArrivalTime().isBefore(bF3.getArrivalTime())) {
-                                bF1 = f1;
-                                bF2 = f2;
-                                bF3 = f3;
-                            }
-                        }
-                    }
-                }
-                if (bF1 != null) {
-                    solution.assign(batch.getId(), List.of(bF1.getId(), bF2.getId(), bF3.getId()));
-                }
-            }
-        }
-
-        return solution;
-    }
+    // ── Escala de penalizaciones NO DILUIDAS (por lote, sin dividir por el total) ──
+    // Con la regla "1 retraso = colapso", un solo lote tardío debe pesar más que CUALQUIER
+    // mejora posible de espera/utilización. Antes comp1 y comp5 se normalizaban por el
+    // total de lotes: con ~3500 envíos en almacén, un lote tardío sumaba
+    // 0.35 × 1/3500 ≈ 0.0001 al objetivo — menos que el ruido del componente de espera —
+    // así que el recocido podía aceptar (y elegir como "best") una solución que sacrificaba
+    // un envío haciéndolo tardío a cambio de reducir un poco la espera global. Ese es
+    // exactamente el mecanismo detrás de "1 retraso al día 3.5 con 3559 envíos en almacén".
+    // Jerarquía estricta: SIN ASIGNAR (nunca sale del almacén) > TARDÍO > tiempo en tierra.
+    private static final double UNASSIGNED_PENALTY_PER_BATCH = 2.0;
+    private static final double LATE_PENALTY_PER_BATCH = 1.0;
 
     private double evaluate(AlnsSolution solution, AlnsParams p) {
         int total = solution.getBatchMap().size();
         if (total == 0) return 0.0;
 
         int unassigned = solution.getBankSize();
-        double comp1 = p.w1() * ((double) unassigned / total);
+        double comp1 = UNASSIGNED_PENALTY_PER_BATCH * unassigned;
 
         double totalCapacity = 0;
         double totalOverload = 0;
@@ -310,24 +264,24 @@ public class AlnsEngine implements RouteOptimizer {
         if (assigned == 0) return comp1 + comp2 + comp4;
 
         double totalWait = 0;
-        double totalLateFraction = 0;
+        double comp5 = 0.0;
         for (Long batchId : solution.getAssignments().keySet()) {
-            totalWait += solution.getWaitingMinutes(batchId);
-            // Minutos de atraso normalizados a "días de atraso" y acotados a 1.0 (1 día tarde
-            // ya pesa lo máximo posible; no queremos que un atraso de 5 días opaque en la suma
-            // a diez lotes con 1 minuto de atraso cada uno).
+            // Tiempo en tierra TOTAL (espera en origen + layovers en hubs). Cada minuto en
+            // tierra son maletas ocupando un almacén — la variable que dispara el colapso
+            // por ocupación >100% — así que el objetivo ahora lo ve completo, no solo la
+            // espera antes del primer embarque.
+            totalWait += solution.getGroundMinutes(batchId);
+            // Cada lote tardío suma una penalización FIJA grande más un término acotado por
+            // cuán tarde llega (1 día tarde ya pesa lo máximo). Sin dividir por assigned:
+            // 1 tardío ≈ 1.0–1.35 en un objetivo que sin tardíos vale ~0.05, así que la
+            // búsqueda siempre prefiere eliminar el retraso antes que cualquier otra mejora,
+            // y 2 tardíos siempre es peor que 1.
             long lateMin = solution.getLatenessMinutes(batchId);
             if (lateMin > 0) {
-                totalLateFraction += Math.min(1.0, lateMin / 1440.0);
+                comp5 += LATE_PENALTY_PER_BATCH + p.w5() * Math.min(1.0, lateMin / 1440.0);
             }
         }
         double comp3 = p.w3() * (totalWait / ((double) assigned * 1440.0));
-
-        // comp5: fracción (0..1) de lotes asignados que van a llegar tarde, ponderada por
-        // cuán tarde llegan. Este componente NO EXISTÍA antes — es la pieza que faltaba para
-        // que el ALNS "sepa" que el SLA (1 día mismo continente / 2 días distinto continente)
-        // es parte de lo que tiene que optimizar, y no solo un reporte que se calcula después.
-        double comp5 = p.w5() * (totalLateFraction / assigned);
 
         return comp1 + comp2 + comp3 + comp4 + comp5;
     }

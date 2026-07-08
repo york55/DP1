@@ -19,6 +19,8 @@ import BaggageRegistrationPage from './BaggageRegistrationPage'
 import FlightCancellationPage from './FlightCancellationPage'
 import RealtimeMapPage from './RealtimeMapPage'
 import ReportesPage from './ReportesPage'
+import OpsLoginPage from './OpsLoginPage'
+import { OpsAuthProvider, useOpsAuth } from '../../context/OpsAuthContext'
 
 const NAV_ITEMS = [
   { key: 'baggage',      label: 'Registro de Maletas',          icon: <LuggageIcon /> },
@@ -27,22 +29,27 @@ const NAV_ITEMS = [
   { key: 'reportes',     label: 'Reportes',                     icon: <AssessmentIcon /> },
 ]
 
-const PAGES = {
-  baggage:      <BaggageRegistrationPage />,
-  cancellation: <FlightCancellationPage />,
-  map:          <RealtimeMapPage />,
-  reportes:     <ReportesPage />,
-}
-
-export default function RealtimeOperationsPage() {
+function RealtimeOperationsContent() {
+  const { user, logout } = useOpsAuth()
   const [active, setActive] = useState('baggage')
   const [collapsed, setCollapsed] = useState(false)
 
+  if (!user) {
+    return <OpsLoginPage />
+  }
+
   const DRAWER_WIDTH = collapsed ? 64 : 240
+
+  const PAGES = {
+    baggage:      <BaggageRegistrationPage user={user} />,
+    cancellation: <FlightCancellationPage />,
+    map:          <RealtimeMapPage />,
+    reportes:     <ReportesPage />,
+  }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#F2F2F2' }}>
-      <AppHeader subtitle="Operaciones en Tiempo Real" backTo="/" />
+      <AppHeader subtitle="Operaciones en Tiempo Real" backTo="/" user={user} onLogout={logout} />
 
       <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <Drawer
@@ -120,5 +127,13 @@ export default function RealtimeOperationsPage() {
         </Box>
       </Box>
     </Box>
+  )
+}
+
+export default function RealtimeOperationsPage() {
+  return (
+    <OpsAuthProvider>
+      <RealtimeOperationsContent />
+    </OpsAuthProvider>
   )
 }

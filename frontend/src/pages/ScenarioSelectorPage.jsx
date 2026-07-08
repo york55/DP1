@@ -1,10 +1,11 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import CardActions from '@mui/material/CardActions'
 import Button from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
 import Container from '@mui/material/Container'
 import Grid from '@mui/material/Grid'
@@ -16,11 +17,12 @@ import LuggageIcon from '@mui/icons-material/Luggage'
 import FlightIcon from '@mui/icons-material/Flight'
 import SettingsIcon from '@mui/icons-material/Settings'
 import InventoryIcon from '@mui/icons-material/Inventory'
+import { useSimulationContext } from '../context/SimulationContext'
 
 const ACCENT_SIM = '#1F3864'
 const ACCENT_CFG = '#92400E'
 
-function ScenarioCard({ icon, title, description, badge, onSelect, disabled, variant = 'simulation' }) {
+function ScenarioCard({ icon, title, description, badge, onSelect, disabled, loading, variant = 'simulation' }) {
   const accent = disabled ? '#BFBFBF' : variant === 'config' ? ACCENT_CFG : ACCENT_SIM
   const accentBg = disabled ? '#F2F2F2' : variant === 'config' ? '#FEF3C7' : '#E8EEF7'
   const hoverColor = variant === 'config' ? '#78350F' : '#162D4F'
@@ -86,7 +88,8 @@ function ScenarioCard({ icon, title, description, badge, onSelect, disabled, var
           variant={disabled ? 'outlined' : 'contained'}
           fullWidth
           onClick={onSelect}
-          disabled={disabled}
+          disabled={disabled || loading}
+          startIcon={loading ? <CircularProgress size={16} sx={{ color: 'inherit' }} /> : null}
           sx={{
             backgroundColor: disabled ? 'transparent' : accent,
             borderColor: disabled ? '#BFBFBF' : accent,
@@ -95,9 +98,14 @@ function ScenarioCard({ icon, title, description, badge, onSelect, disabled, var
             '&:hover': {
               backgroundColor: disabled ? 'transparent' : hoverColor,
             },
+            '&.Mui-disabled': loading ? {
+              backgroundColor: accent,
+              color: '#FFFFFF',
+              opacity: 0.85,
+            } : undefined,
           }}
         >
-          {disabled ? 'No disponible' : 'Seleccionar'}
+          {disabled ? 'No disponible' : loading ? 'Cargando...' : 'Seleccionar'}
         </Button>
       </CardActions>
     </Card>
@@ -106,17 +114,26 @@ function ScenarioCard({ icon, title, description, badge, onSelect, disabled, var
 
 export default function ScenarioSelectorPage() {
   const navigate = useNavigate()
+  const { attachToSimulation } = useSimulationContext()
+  const [loadingPeriodo, setLoadingPeriodo] = useState(false)
 
   const handleSimulacionPeriodo = async () => {
+    setLoadingPeriodo(true)
     try {
       const res = await fetch('/api/simulations/active')
       if (res.ok && res.status !== 204) {
-        // Hay una simulación corriendo — ir directo a verla
+        // Hay una simulación corriendo — enganchar este navegador a esa sesión
+        // (por si nuestro contexto local nunca la vio, ej. otro usuario/PC la
+        // inició después de que cargamos esta página) y luego ir a verla.
+        const active = await res.json()
+        await attachToSimulation(active)
         navigate('/simulation/running')
         return
       }
     } catch {
       // Si falla el fetch igual dejamos pasar a config
+    } finally {
+      setLoadingPeriodo(false)
     }
     navigate('/simulation/config')
   }
@@ -189,6 +206,7 @@ export default function ScenarioSelectorPage() {
               badge="Disponible"
               onSelect={handleSimulacionPeriodo}
               disabled={false}
+              loading={loadingPeriodo}
             />
           </Grid>
           <Grid item xs={12} sm={6} md={4}>
@@ -206,9 +224,9 @@ export default function ScenarioSelectorPage() {
               icon={<WarningIcon />}
               title="Simulación de Colapso"
               description="Evalúa la resiliencia del sistema bajo condiciones extremas: cancelaciones masivas, tormentas, cierres de aeropuertos y acumulación crítica de maletas."
-              badge="Próximamente"
-              onSelect={() => { }}
-              disabled={true}
+              badge="Disponible"
+              onSelect={() => navigate('/clp/config')}
+              disabled={false}
             />
           </Grid>
         </Grid>

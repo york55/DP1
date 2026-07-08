@@ -5,7 +5,8 @@ spring:
   application:
     name: tasfb2b
   datasource:
-    url: ${DB_URL:jdbc:mysql://tasfb2b-mysql:3306/tasfb2b?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
+    #url: ${DB_URL:jdbc:mysql://localhost:3306/tasfb2b}
+    url: ${DB_URL:jdbc:mysql://tasfb2b-mysql:3306/tasfb2b?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true}
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:Abcd.1234#}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -19,6 +20,10 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.MySQL8Dialect
         format_sql: true
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -35,7 +40,7 @@ tasf:
     dir: uploads
   simulation:
     tick-interval-ms: 1000
-    tick-duration-minutes: 5     # 1 real second = 5 simulated minutes -> 12 ticks (12s) per 1h block
+    tick-duration-minutes: 4     # 1 real second = 4 simulated minutes -> 15 ticks (15s) per 1h block; KPIs deben recalcularse <=4 min sim
     block-size-hours: 1          # ALNS plans in 1h rolling blocks (was 2h — smaller context, faster per-block planning)
     flight-lookahead-hours: 16   # flights visible to ALNS per block (was 24 — 16h covers same-day flights + multi-hop connections)
     max-batches-per-block: 200   # cap batches per block to keep ALNS fast

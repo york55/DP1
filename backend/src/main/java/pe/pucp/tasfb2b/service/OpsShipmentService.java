@@ -45,14 +45,15 @@ public class OpsShipmentService {
         shipment.setOriginIata(req.getAlmacenOrigen());
         shipment.setDestIata(req.getAlmacenDestino());
         shipment.setBagCount(Integer.parseInt(req.getCantidadMaletas()));
+        shipment.setClientCode(req.getCliente());
         shipment.setStatus("PENDING");
         shipment.setDeadlineUtc(deadline);
         shipment.setLastUpdated(now);
 
         OpsShipment saved = shipmentRepo.save(shipment);
-        log.info("Envío registrado: {} ({} → {}, {} maletas, deadline: {})",
+        log.info("Envío registrado: {} ({} → {}, {} maletas, cliente: {}, deadline: {})",
             externalId, req.getAlmacenOrigen(), req.getAlmacenDestino(),
-            req.getCantidadMaletas(), deadline);
+            req.getCantidadMaletas(), req.getCliente(), deadline);
 
         return toResponse(saved);
     }
@@ -64,10 +65,12 @@ public class OpsShipmentService {
             s.getOriginIata(),
             s.getDestIata(),
             s.getBagCount(),
+            s.getClientCode(),
             s.getStatus(),
             s.getRegisteredAt(),
             s.getDeadlineUtc(),
-			s.getLastUpdated()
+			s.getLastUpdated(),
+            java.util.List.of()
         );
     }
 }

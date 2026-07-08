@@ -132,7 +132,7 @@ export default function MapFilterPanel({ filters, onChange, activeCount = 0, reg
         <Paper
           elevation={4}
           sx={{
-            mt: 0.5, p: 1.5,
+            mt: -4., p: 1.5, ml: 5,
             backgroundColor: 'rgba(255,255,255,0.97)',
             borderRadius: 1.5, width: 232,
             backdropFilter: 'blur(4px)',

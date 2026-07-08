@@ -8,6 +8,9 @@ import RealtimeOperationsPage from '../pages/Operacion/OperacionDiaria'
 import AirportManagementPage from '../pages/AirportManagementPage'
 import FlightManagementPage from '../pages/FlightManagementPage'
 import EnvioCargaPage from '../pages/EnvioCargaPage'
+import ClpSimulationConfigPage from '../pages/ClpSimulationConfigPage'
+import ClpSimulationRunningPage from '../pages/ClpSimulationRunningPage'
+import ClpSimulationSummaryPage from '../pages/ClpSimulationSummaryPage'
 
 export default function AppRouter() {
   return (
@@ -21,6 +24,10 @@ export default function AppRouter() {
         <Route path="/almacenes" element={<AirportManagementPage />} />
         <Route path="/vuelos" element={<FlightManagementPage />} />
         <Route path="/envios" element={<EnvioCargaPage />} />
+        {/* Collapse simulation */}
+        <Route path="/clp/config" element={<ClpSimulationConfigPage />} />
+        <Route path="/clp/running" element={<ClpSimulationRunningPage />} />
+        <Route path="/clp/summary" element={<ClpSimulationSummaryPage />} />
         {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

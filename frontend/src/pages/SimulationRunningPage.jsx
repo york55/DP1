@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import AppBar from '@mui/material/AppBar'
@@ -76,7 +76,6 @@ export default function SimulationRunningPage() {
     simulationState,
     airports,
     flights,
-    shipments,
     planningProgress,
     firstBatchReady,
     notifications,
@@ -158,11 +157,6 @@ export default function SimulationRunningPage() {
     statusAtMountRef.current = status
   }, [status])
 
-  const delayedCount = React.useMemo(() =>
-    shipments.filter(s => s.status === 'DELAYED').length,
-    [shipments]
-  )
-
   const statusInfo = STATUS_LABELS[status] || STATUS_LABELS.idle
 
   return (
@@ -235,15 +229,6 @@ export default function SimulationRunningPage() {
           </Box>
 
           <Box sx={{ flex: 1 }} />
-
-          {delayedCount > 0 && (
-            <Chip
-              label={`${delayedCount} retrasados`}
-              size="small"
-              sx={{ backgroundColor: '#FFEBEE', color: '#C62828', fontWeight: 700, fontSize: '0.65rem', height: 22 }}
-            />
-          )}
-
 
           <Divider orientation="vertical" flexItem sx={{ borderColor: '#2E75B6', my: 0.5 }} />
 

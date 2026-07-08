@@ -22,11 +22,20 @@ public interface BaggageBatchRepository extends JpaRepository<BaggageBatch, Long
     @Query("SELECT b FROM BaggageBatch b " +
            "JOIN FETCH b.originAirport JOIN FETCH b.destinationAirport JOIN FETCH b.airline " +
            "WHERE b.status = 'IN_ORIGIN' AND b.availableFrom <= :simNow " +
-           "AND NOT EXISTS (SELECT s FROM Shipment s WHERE s.baggageBatch = b)")
+           "AND NOT EXISTS (SELECT s FROM Shipment s WHERE s.baggageBatch = b) " +
+           "ORDER BY b.availableFrom ASC")
     List<BaggageBatch> findUnroutedBatches(@Param("simNow") LocalDateTime simNow);
 
     @Query("SELECT b FROM BaggageBatch b JOIN FETCH b.originAirport JOIN FETCH b.destinationAirport")
     List<BaggageBatch> findAllWithAirports();
+
+    // JOIN FETCH origin/destination so callers on threads without an active Hibernate
+    // session (e.g. the replan-bg executor) can read airport fields without hitting
+    // LazyInitializationException once the loading session has closed.
+    @Query("SELECT b FROM BaggageBatch b " +
+           "JOIN FETCH b.originAirport JOIN FETCH b.destinationAirport " +
+           "WHERE b.id IN :ids")
+    List<BaggageBatch> findByIdInWithAirports(@Param("ids") List<Long> ids);
 
     // Batches DELIVERED within the last 15 simulated minutes — still occupying destination storage.
     @Query("SELECT b FROM BaggageBatch b JOIN FETCH b.destinationAirport " +

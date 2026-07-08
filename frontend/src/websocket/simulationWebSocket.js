@@ -34,7 +34,11 @@ export function connectSimulationWebSocket(simulationId, onTick, onAlert, onPlan
         }
       })
 
-      stompClient.subscribe('/topic/alerts', (msg) => {
+      // Antes: '/topic/alerts' (global) — un cliente conectado a la simulación N
+      // recibía también las alertas de cualquier otra simulación corriendo al
+      // mismo tiempo (5 días o colapso). El backend ahora publica por
+      // /topic/simulation/{id}/alerts, así que nos suscribimos solo a la nuestra.
+      stompClient.subscribe(`/topic/simulation/${simulationId}/alerts`, (msg) => {
         try {
           const alert = JSON.parse(msg.body)
           if (onAlert) onAlert(alert)

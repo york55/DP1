@@ -28,6 +28,32 @@ public interface RouteLegRepository extends JpaRepository<RouteLeg, Long> {
     List<RouteLeg> findByRouteIdOrderByLegOrder(@Param("routeId") Long routeId);
 
     /**
+     * Bags assigned to (but not yet boarded on) each SCHEDULED flight — used to compute
+     * fleet-wide occupancy per the spec: assigned + in-flight bags over total capacity.
+     */
+    @Query("SELECT rl.flight.id, SUM(rl.route.shipment.baggageBatch.quantity) " +
+           "FROM RouteLeg rl WHERE rl.status = 'PENDING' GROUP BY rl.flight.id")
+    List<Object[]> sumPendingBagsByFlightId();
+
+    /**
+     * Flight a batch is currently boarded on — the leg whose status is IN_FLIGHT.
+     * Used to surface "current flight" on the shipments list without a per-shipment query.
+     */
+    @Query("SELECT rl.route.shipment.baggageBatch.id, rl.flight.id " +
+           "FROM RouteLeg rl WHERE rl.status = 'IN_FLIGHT'")
+    List<Object[]> findCurrentFlightIdByBatchId();
+
+    /**
+     * PENDING legs (not yet departed) of a shipment's route — the portion of an overdue
+     * shipment's journey that can still be redirected. Empty if the batch is already
+     * in flight or its remaining leg has no PENDING hops left.
+     */
+    @Query("SELECT rl FROM RouteLeg rl JOIN FETCH rl.flight " +
+           "WHERE rl.route.shipment.id = :shipmentId AND rl.status = 'PENDING' " +
+           "ORDER BY rl.legOrder")
+    List<RouteLeg> findPendingLegsByShipmentId(@Param("shipmentId") Long shipmentId);
+
+    /**
      * Returns the first PENDING leg for each IN_TRANSIT batch that is NOT currently on a plane.
      * The flight's origin airport is where the batch is physically waiting.
      */

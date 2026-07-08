@@ -14,26 +14,53 @@ public class RelatedRemoval implements DestroyOperator {
         List<Long> assignedIds = solution.getAssignedBatchIds();
         if (assignedIds.isEmpty()) return;
 
-        Long pivotId = assignedIds.get(rng.nextInt(assignedIds.size()));
-        BaggageBatch pivot = allBatches.stream()
-                .filter(b -> b.getId().equals(pivotId))
-                .findFirst()
-                .orElse(null);
-        if (pivot == null) return;
+        // Pivote dirigido: si existe algún lote TARDÍO, con probabilidad 50% se usa el más
+        // tardío como pivote en lugar de uno al azar. Así la destrucción se concentra
+        // exactamente alrededor del problema: se remueven el lote tardío Y los lotes que
+        // comparten sus vuelos (los que le bloquean la capacidad puntual), dándole al
+        // regret-k la oportunidad de reordenarlos con el tardío entrando primero.
+        Long pivotId = null;
+        if (rng.nextBoolean()) {
+            long worstLate = 0;
+            for (Long id : assignedIds) {
+                long late = solution.getLatenessMinutes(id);
+                if (late > worstLate) {
+                    worstLate = late;
+                    pivotId = id;
+                }
+            }
+        }
+        if (pivotId == null) {
+            pivotId = assignedIds.get(rng.nextInt(assignedIds.size()));
+        }
+        final Long pivot = pivotId;
+        // Lookup por id UNA vez: antes computeSimilarity hacía un stream().filter() lineal
+        // sobre allBatches por CADA comparación del sort — O(n² log n) a escala.
+        Map<Long, BaggageBatch> batchById = allBatches.stream()
+                .collect(Collectors.toMap(BaggageBatch::getId, b -> b, (a, b) -> a));
+        BaggageBatch pivotBatch = batchById.get(pivot);
+        if (pivotBatch == null) return;
 
-        List<Long> firstFlightOfPivot = solution.getAssignment(pivotId);
-        long pivotDep = firstFlightOfPivot.isEmpty() ? Long.MAX_VALUE :
-                solution.getFlightDeparture(firstFlightOfPivot.get(0));
+        List<Long> pivotFlights = solution.getAssignment(pivot);
+        Set<Long> pivotFlightSet = new HashSet<>(pivotFlights);
+        long pivotDep = pivotFlights.isEmpty() ? Long.MAX_VALUE :
+                solution.getFlightDeparture(pivotFlights.get(0));
 
-        String pivotDest = pivot.getDestinationAirport().getIataCode();
+        String pivotDest = pivotBatch.getDestinationAirport().getIataCode();
+
+        Map<Long, Double> similarityOf = new HashMap<>(assignedIds.size() * 2);
+        for (Long id : assignedIds) {
+            if (id.equals(pivot)) continue;
+            similarityOf.put(id, computeSimilarity(id, pivotDest, pivotDep,
+                    pivotFlightSet, batchById, solution));
+        }
 
         List<Long> sorted = assignedIds.stream()
-                .filter(id -> !id.equals(pivotId))
-                .sorted(Comparator.comparingDouble(id -> computeSimilarity(id, pivotDest, pivotDep,
-                        allBatches, solution)))
+                .filter(id -> !id.equals(pivot))
+                .sorted(Comparator.comparingDouble(similarityOf::get))
                 .collect(Collectors.toList());
 
-        solution.unassign(pivotId);
+        solution.unassign(pivot);
         for (Long id : sorted) {
             if (solution.getBankSize() >= q) break;
             solution.unassign(id);
@@ -41,14 +68,20 @@ public class RelatedRemoval implements DestroyOperator {
     }
 
     private double computeSimilarity(Long batchId, String pivotDest, long pivotDep,
-                                      List<BaggageBatch> allBatches, AlnsSolution solution) {
-        BaggageBatch b = allBatches.stream().filter(x -> x.getId().equals(batchId)).findFirst().orElse(null);
-        if (b == null) return 10000.0;
-        if (!b.getDestinationAirport().getIataCode().equals(pivotDest)) return 10000.0;
+                                      Set<Long> pivotFlights,
+                                      Map<Long, BaggageBatch> batchById, AlnsSolution solution) {
         List<Long> flights = solution.getAssignment(batchId);
         if (flights.isEmpty()) return 10000.0;
+        // Máxima afinidad: comparte al menos un vuelo con el pivote — es un bloqueador
+        // directo de su capacidad.
+        for (Long fid : flights) {
+            if (pivotFlights.contains(fid)) return 0.0;
+        }
+        BaggageBatch b = batchById.get(batchId);
+        if (b == null) return 10000.0;
+        if (!b.getDestinationAirport().getIataCode().equals(pivotDest)) return 10000.0;
         long dep = solution.getFlightDeparture(flights.get(0));
-        return Math.abs(dep - pivotDep) <= 120 * 60 * 1000L ? 0.0 : 10000.0;
+        return Math.abs(dep - pivotDep) <= 120 * 60 * 1000L ? 1.0 : 100.0;
     }
 
     @Override

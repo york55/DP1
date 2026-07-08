@@ -6,6 +6,11 @@ import MenuItem from '@mui/material/MenuItem'
 import Tabs from '@mui/material/Tabs'
 import Tab from '@mui/material/Tab'
 import Typography from '@mui/material/Typography'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
+import CircularProgress from '@mui/material/CircularProgress'
+import RouteIcon from '@mui/icons-material/Route'
+import CloseIcon from '@mui/icons-material/Close'
 import DataTable from '../common/DataTable'
 import { useSimulationContext } from '../../context/SimulationContext'
 
@@ -41,7 +46,11 @@ export default function ShipmentsTab() {
     shipmentCounts = {},
     setSelectedShipmentId,
     setSelectedAirportCode,
-    setSelectedFlightId
+    setSelectedFlightId,
+    selectedShipmentRoute,
+    shipmentRouteLoading,
+    fetchShipmentRoute,
+    clearShipmentRoute,
   } = useSimulationContext()
   const { simulatedTime } = simulationState
 
@@ -115,10 +124,20 @@ export default function ShipmentsTab() {
       ),
     },
     {
-      field: 'route',
-      headerName: 'Ruta',
-      width: 100,
-      valueGetter: (params) => `${params.row.origin} → ${params.row.destination}`,
+      field: 'origin',
+      headerName: 'Origen',
+      width: 80,
+      renderCell: (params) => (
+        <span style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{params.value}</span>
+      ),
+    },
+    {
+      field: 'destination',
+      headerName: 'Destino',
+      width: 80,
+      renderCell: (params) => (
+        <span style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{params.value}</span>
+      ),
     },
     {
       field: 'deliveredBags',
@@ -146,6 +165,30 @@ export default function ShipmentsTab() {
       field: 'client',
       headerName: 'Cliente',
       width: 90,
+    },
+    {
+      field: 'actions',
+      headerName: '',
+      width: 44,
+      sortable: false,
+      renderCell: (params) => (
+        <Tooltip title="Ver ruta en mapa">
+          <span>
+            <IconButton
+              size="small"
+              disabled={shipmentRouteLoading}
+              onClick={(e) => {
+                e.stopPropagation()
+                fetchShipmentRoute(params.row.id)
+              }}
+            >
+              {shipmentRouteLoading
+                ? <CircularProgress size={16} />
+                : <RouteIcon fontSize="small" sx={{ color: '#1F3864' }} />}
+            </IconButton>
+          </span>
+        </Tooltip>
+      ),
     },
   ]
 
@@ -235,6 +278,30 @@ export default function ShipmentsTab() {
         <Tab label="Entregados" />
         <Tab label="Entregados (<4h)" />
       </Tabs>
+
+      {/* Banner de ruta activa (búsqueda a demanda) */}
+      {selectedShipmentRoute && (
+        <Box
+          sx={{
+            mx: 1,
+            px: 1.5,
+            py: 0.75,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: '#E3F2FD',
+            border: '1px solid #1565C0',
+            borderRadius: 1,
+          }}
+        >
+          <Typography sx={{ fontSize: '0.78rem', color: '#1F3864' }}>
+            Mostrando ruta del envío <b>{selectedShipmentRoute.shipmentId}</b> ({selectedShipmentRoute.legs.length} tramo{selectedShipmentRoute.legs.length === 1 ? '' : 's'})
+          </Typography>
+          <IconButton size="small" onClick={clearShipmentRoute}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Box>
+      )}
 
       {/* Shipments Table */}
       <Box sx={{ flexGrow: 1, minHeight: 0 }}>

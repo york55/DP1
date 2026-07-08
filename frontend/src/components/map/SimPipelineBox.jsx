@@ -7,7 +7,7 @@ import Tooltip from '@mui/material/Tooltip'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
 
 // Set to false to hide in production
-export const SHOW_SIM_PIPELINE = true
+export const SHOW_SIM_PIPELINE = false
 
 // Card geometry (px)
 const CARD_W  = 58
