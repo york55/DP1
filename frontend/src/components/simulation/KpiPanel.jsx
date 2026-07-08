@@ -2,6 +2,7 @@ import React from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import KpiCard from './KpiCard'
+import KpiSemaphoreCard from '../common/KpiSemaphoreCard'
 import { useSimulationContext } from '../../context/SimulationContext'
 
 export default function KpiPanel() {
@@ -37,19 +38,13 @@ export default function KpiPanel() {
           trend={onTimeDeliveryPct >= 90 ? 'up' : onTimeDeliveryPct >= 70 ? 'neutral' : 'down'}
           color="#2E7D32"
         />
-        <KpiCard
+        <KpiSemaphoreCard
           label="Ocupación Vuelos (Prom.)"
-          value={avgFlightOccupancy}
-          unit="%"
-          trend={avgFlightOccupancy > 80 ? 'up' : avgFlightOccupancy > 50 ? 'neutral' : 'down'}
-          color="#2E75B6"
+          occupancyPct={avgFlightOccupancy}
         />
-        <KpiCard
+        <KpiSemaphoreCard
           label="Ocupación Almacén (Prom.)"
-          value={avgWarehouseOccupancy}
-          unit="%"
-          trend={avgWarehouseOccupancy > 80 ? 'down' : avgWarehouseOccupancy > 50 ? 'neutral' : 'up'}
-          color="#FB8C00"
+          occupancyPct={avgWarehouseOccupancy}
         />
         <KpiCard
           label="Maletas Retrasadas"
