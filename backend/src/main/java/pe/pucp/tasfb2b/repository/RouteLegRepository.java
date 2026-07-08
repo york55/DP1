@@ -36,6 +36,14 @@ public interface RouteLegRepository extends JpaRepository<RouteLeg, Long> {
     List<Object[]> sumPendingBagsByFlightId();
 
     /**
+     * Flight a batch is currently boarded on — the leg whose status is IN_FLIGHT.
+     * Used to surface "current flight" on the shipments list without a per-shipment query.
+     */
+    @Query("SELECT rl.route.shipment.baggageBatch.id, rl.flight.id " +
+           "FROM RouteLeg rl WHERE rl.status = 'IN_FLIGHT'")
+    List<Object[]> findCurrentFlightIdByBatchId();
+
+    /**
      * PENDING legs (not yet departed) of a shipment's route — the portion of an overdue
      * shipment's journey that can still be redirected. Empty if the batch is already
      * in flight or its remaining leg has no PENDING hops left.

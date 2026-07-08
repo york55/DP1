@@ -77,8 +77,12 @@ public class ShipmentService {
     }
 
     public List<ShipmentDto> findAll() {
+        Map<Long, Long> currentFlightByBatchId = routeLegRepo.findCurrentFlightIdByBatchId().stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
+
         return batchRepo.findAll().stream()
                 .map(shipmentMapper::batchToDto)
+                .peek(dto -> dto.setCurrentFlightId(currentFlightByBatchId.get(dto.getBatchId())))
                 .collect(Collectors.toList());
     }
 

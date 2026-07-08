@@ -231,7 +231,7 @@ export function useSimulation() {
               totalBags: qty,
               deliveredBags: s.status === 'DELIVERED' ? qty : 0,
               client: s.airline || '—',
-              currentFlight: null,
+              currentFlight: s.currentFlightId ?? null,
               deliveredAt: s.deliveredAt || null,
             }
           })

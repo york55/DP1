@@ -17,4 +17,5 @@ public class ShipmentDto {
     private int quantity;
     private String airline;
     private LocalDateTime createdAt;
+    private Long currentFlightId;
 }
