@@ -21,7 +21,7 @@ public class OpsPlannerScheduler {
      * Corre cada 6 horas: 00:00, 06:00, 12:00, 18:00 UTC.
      * fixedDelay = 6h en ms, initialDelay = 0 para que también corra al arrancar.
      */
-    @Scheduled(fixedDelay = 6 * 60 * 60 * 1000L, initialDelay = 5_000L)
+    @Scheduled(fixedDelay = 12 * 60 * 1000L, initialDelay = 5_000L)
     public void scheduledPlanningRun() {
         log.info("OpsPlannerScheduler: disparando ciclo de planificación");
         try {
