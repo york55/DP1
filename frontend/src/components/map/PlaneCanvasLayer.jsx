@@ -54,7 +54,7 @@ function computePlanePositions(flights, airportsByCode, simulatedTime) {
  * A requestAnimationFrame loop redraws at ~60fps, interpolating plane positions
  * from animClockRef so movement is smooth between WebSocket ticks.
  */
-export default function PlaneCanvasLayer({ flights, airportsByCode, onPlaneClick, planePopupRef, activePlaneFlightId, animClockRefOverride = null }) {
+export default function PlaneCanvasLayer({ flights, airportsByCode, onPlaneClick, planePopupRef, activePlaneFlightId, animClockRefOverride = null, onBackgroundClick = null }) {
   const map = useMap()
   const canvasRef = useRef(null)
   const positionsRef = useRef([])
@@ -74,12 +74,14 @@ export default function PlaneCanvasLayer({ flights, airportsByCode, onPlaneClick
   const onPlaneClickRef = useRef(onPlaneClick)
   const planePopupRefRef = useRef(planePopupRef)
   const selectedFlightIdRef = useRef(selectedFlightId)
+  const onBackgroundClickRef = useRef(onBackgroundClick)
   useEffect(() => { flightsRef.current = flights }, [flights])
   useEffect(() => { airportsByCodeRef.current = airportsByCode }, [airportsByCode])
   useEffect(() => { onPlaneClickRef.current = onPlaneClick }, [onPlaneClick])
   useEffect(() => { planePopupRefRef.current = planePopupRef }, [planePopupRef])
   useEffect(() => { activePlaneFlightIdRef.current = activePlaneFlightId }, [activePlaneFlightId])
   useEffect(() => { selectedFlightIdRef.current = selectedFlightId }, [selectedFlightId])
+  useEffect(() => { onBackgroundClickRef.current = onBackgroundClick }, [onBackgroundClick])
 
   // drawRef always holds the latest draw function without needing effect re-runs.
   // We use a ref instead of useCallback so map event listeners never go stale.
@@ -181,8 +183,13 @@ export default function PlaneCanvasLayer({ flights, airportsByCode, onPlaneClick
           return
         }
       }
-      // Clicked away from any plane — close the popup
+      // Clic en zona vacía del mapa (ni avión, ni marcador — los marcadores
+      // detienen la propagación de su propio click). Se limpia todo el foco:
+      // el popup flotante del avión Y la selección en el contexto (que es lo
+      // que mantiene el resaltado/dimming), además de cualquier aeropuerto activo.
+      setSelectedFlightId?.(null)
       onPlaneClickRef.current?.(null)
+      onBackgroundClickRef.current?.()
     }
 
     resize()

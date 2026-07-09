@@ -22,6 +22,9 @@ public class EnvioController {
     /**
      * POST /api/envios/registrar
      * Body: { "almacenOrigen": "SKBO", "almacenDestino": "SEQM", "cantidadMaletas": "025", "cliente": "Juan Perez SAC" }
+     *
+     * Opcionalmente, para carga masiva desde archivo (hora de presentación local
+     * de la sede origen): { ..., "fecha": "20260708", "hora": "14", "minuto": "30" }
      */
     @PostMapping("/registrar")
     public ResponseEntity<?> registrarEnvio(@RequestBody EnvioRequest request) {
@@ -39,12 +42,27 @@ public class EnvioController {
         if (request.getCliente().trim().length() > 100)
             return ResponseEntity.badRequest().body("El nombre del cliente es demasiado largo.");
 
+        boolean algunaPresentacion = (request.getFecha() != null && !request.getFecha().isBlank())
+                || (request.getHora() != null && !request.getHora().isBlank())
+                || (request.getMinuto() != null && !request.getMinuto().isBlank());
+        if (algunaPresentacion) {
+            if (request.getFecha() == null || !request.getFecha().matches("\\d{8}"))
+                return ResponseEntity.badRequest().body("La fecha de presentación debe tener formato aaaammdd.");
+            if (request.getHora() == null || !request.getHora().matches("\\d{1,2}"))
+                return ResponseEntity.badRequest().body("La hora de presentación es inválida.");
+            if (request.getMinuto() == null || !request.getMinuto().matches("\\d{1,2}"))
+                return ResponseEntity.badRequest().body("El minuto de presentación es inválido.");
+        }
+
         try {
             String externalId = envioService.registrarEnvio(
                     request.getAlmacenOrigen(),
                     request.getAlmacenDestino(),
                     request.getCantidadMaletas(),
-                    request.getCliente().trim()
+                    request.getCliente().trim(),
+                    request.getFecha(),
+                    request.getHora(),
+                    request.getMinuto()
             );
 
             return ResponseEntity.ok(Map.of(
@@ -53,7 +71,7 @@ public class EnvioController {
             ));
 
         } catch (IllegalArgumentException e) {
-            // Aeropuerto no encontrado en BD
+            // Aeropuerto no encontrado en BD, o fecha/hora inválida
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (IOException e) {
             return ResponseEntity.internalServerError()
