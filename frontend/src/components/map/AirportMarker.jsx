@@ -1,5 +1,6 @@
 import React from 'react'
 import { Marker, CircleMarker, useMap } from 'react-leaflet'
+import L from 'leaflet'
 import { getSemaphoreColor } from '../../utils/semaphoreUtils'
 import { WAREHOUSE_ICONS } from './warehouseIcons'
 import { useSimulationContext } from '../../context/SimulationContext'
@@ -42,7 +43,10 @@ function AirportMarker({ airport, incomingCount = 0, outgoingCount = 0, iconsVer
         icon={WAREHOUSE_ICONS[semaphore]}
         pane="airportPane"
         eventHandlers={{
-          click: () => {
+          click: (e) => {
+            // Evita que este click llegue al handler de "click de fondo" del mapa
+            // (el que limpia la selección/foco al tocar zonas vacías).
+            L.DomEvent.stopPropagation(e)
             if (setSelectedAirportCode && setActivePanelTab) {
               setSelectedAirportCode(iata)
               setActivePanelTab(2)

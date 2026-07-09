@@ -86,6 +86,32 @@ export default function BaggageRegistrationPage({ user }) {
 
   const aeropuertoOrigen = aeropuertos.find(a => a.iataCode === origenFijo)
 
+  /**
+   * El backend persiste registeredAt/deadlineUtc en UTC (LocalDateTime "naive",
+   * sin sufijo de zona). El navegador, al hacer new Date(str) sobre un string
+   * sin 'Z', lo interpreta como si ya fuera su hora local — por eso antes se
+   * veía la hora UTC cruda disfrazada de hora local.
+   *
+   * Esta función:
+   *  1. Fuerza la interpretación del string como UTC (agrega 'Z' si falta).
+   *  2. Le suma el gmtOffset del aeropuerto indicado (iata) para obtener
+   *     la hora local de esa sede.
+   *  3. Formatea forzando timeZone: 'UTC' para que el navegador no vuelva
+   *     a aplicarle su propio desfase encima.
+   */
+  const formatSedeLocal = (isoUtc, iata) => {
+    if (!isoUtc) return '—'
+    const utcMs = new Date(isoUtc.endsWith('Z') ? isoUtc : `${isoUtc}Z`).getTime()
+    if (Number.isNaN(utcMs)) return '—'
+    const airport = aeropuertos.find(a => a.iataCode === iata)
+    const offsetHours = airport?.gmtOffset ?? 0
+    const localDate = new Date(utcMs + offsetHours * 3600 * 1000)
+    return localDate.toLocaleString('es-PE', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+      timeZone: 'UTC', // ya aplicamos el offset manualmente arriba
+    })
+  }
+
   // ─── Handlers modo manual ───────────────────────────────────────────────────
   const handleCantidad = (e) => {
     const val = e.target.value.replace(/\D/g, '').slice(0, 3)
@@ -141,22 +167,44 @@ export default function BaggageRegistrationPage({ user }) {
 
   /**
    * Parsea el contenido de un archivo .txt línea a línea.
-   * Formato de línea: HH-mm-DESTINO-cantidad-cliente
-   *   [0] hora  [1] minuto  [2] iata destino  [3] cantidad maletas
-   *   [4..] cliente (puede contener guiones)
-   * El origen es siempre el almacén del usuario autenticado.
+   * Formato de línea (definido por el profesor):
+   *   id_envio-aaaammdd-hh-mm-dest-###-IdClien
+   * El id_envio es OPCIONAL: si viene, la línea tiene 7 partes; si no, 6.
+   *   con id_envio (7):    [0] id  [1] aaaammdd  [2] hh  [3] mm  [4] dest  [5] cantidad  [6] idClien
+   *   sin  id_envio (6):   [0] aaaammdd          [1] hh  [2] mm  [3] dest  [4] cantidad  [5] idClien
+   * El origen es siempre el almacén del usuario autenticado (no se lee del archivo).
+   * La fecha/hora se envían tal cual al backend: representan la hora LOCAL
+   * de la sede origen, y el backend las convierte a UTC usando el gmtOffset
+   * del aeropuerto.
    */
   const parsearArchivoTxt = (nombre, contenido) => {
     const lineas = contenido.split('\n').filter(l => l.trim())
     const registros = lineas.map((linea, idx) => {
       const partes = linea.trim().split('-')
-      if (partes.length < 5) return null
+
+      // Detecta si la línea trae id_envio: el primer token de fecha (8 dígitos)
+      // aparece en partes[0] si NO hay id, o en partes[1] si SÍ hay id.
+      let base
+      if (partes.length >= 7 && /^\d{8}$/.test(partes[1])) {
+        base = partes.slice(1) // se descarta el id_envio del archivo, el backend asigna el suyo
+      } else if (partes.length >= 6 && /^\d{8}$/.test(partes[0])) {
+        base = partes
+      } else {
+        return null
+      }
+
+      const [fecha, hh, mm, dest, cantidad, ...clienteParts] = base
+      if (!/^\d{8}$/.test(fecha) || !/^\d{1,2}$/.test(hh) || !/^\d{1,2}$/.test(mm)) return null
+
       return {
         _key:     `${nombre}-${idx}`,
         origen:   origenFijo,  // siempre el del usuario logueado
-        destino:  partes[2],
-        cantidad: partes[3],
-        cliente:  partes.slice(4).join('-'),
+        fecha,                 // aaaammdd (hora local de la sede)
+        hora:     hh,
+        minuto:   mm,
+        destino:  dest,
+        cantidad: cantidad,
+        cliente:  clienteParts.join('-'), // IdClien (ej. 0007729); no es dato relevante
       }
     }).filter(Boolean)
 
@@ -236,6 +284,9 @@ export default function BaggageRegistrationPage({ user }) {
           almacenDestino:  r.destino,
           cantidadMaletas: r.cantidad,
           cliente:         clienteFinal,
+          fecha:           r.fecha,
+          hora:            r.hora,
+          minuto:          r.minuto,
         })
         exitosos++
       } catch {
@@ -798,14 +849,10 @@ export default function BaggageRegistrationPage({ user }) {
 
                   <Box sx={{ textAlign: 'right', minWidth: 110 }}>
                     <Typography sx={{ fontSize: '0.72rem', color: '#6B7280' }}>
-                      {e.registeredAt
-                        ? new Date(e.registeredAt).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-                        : '—'}
+                      {formatSedeLocal(e.registeredAt, e.originIata)}
                     </Typography>
                     <Typography sx={{ fontSize: '0.68rem', color: '#D97706', fontWeight: 600 }}>
-                      vence {e.deadlineUtc
-                        ? new Date(e.deadlineUtc).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-                        : '—'}
+                      vence {formatSedeLocal(e.deadlineUtc, e.originIata)}
                     </Typography>
                   </Box>
                 </Box>

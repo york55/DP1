@@ -181,6 +181,14 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
     if (data) setActivePlane(null)
   }
 
+  // Clic en zona vacía del mapa (no sobre un avión ni un aeropuerto): quita
+  // el foco del aeropuerto también. El foco del avión ya lo limpia
+  // PlaneCanvasLayer directamente (setSelectedFlightId(null)) antes de llamar esto.
+  function handleMapBackgroundClick() {
+    setActiveAirport(null)
+    if (context?.setSelectedAirportCode) context.setSelectedAirportCode(null)
+  }
+
   let context = null
   try {
     context = useSimulationContext()
@@ -351,6 +359,7 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
           planePopupRef={planePopupRef}
           activePlaneFlightId={activePlaneFlightId}
           animClockRefOverride={animClockRef}
+          onBackgroundClick={handleMapBackgroundClick}
         />
 
         {/* Airport markers */}
