@@ -1,6 +1,6 @@
 import { rasterizeToIcon } from '../../utils/iconRasterizer'
 
-const SEMAPHORE_COLORS = ['#2E7D32', '#66BB6A', '#FB8C00', '#E65100', '#C62828']
+const SEMAPHORE_COLORS = ['#9E9E9E', '#2E7D32', '#66BB6A', '#FB8C00', '#E65100', '#C62828']
 
 // viewBox expanded to -12/-12 so the feDropShadow has room to bleed outside.
 function planeSvg(color) {

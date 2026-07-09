@@ -3,6 +3,7 @@ import Typography from '@mui/material/Typography'
 import Paper from '@mui/material/Paper'
 
 const LEGEND_ITEMS = [
+  { color: '#9E9E9E', label: 'Vacío (0%)' },
   { color: '#2E7D32', label: 'Bajo (0–25%)' },
   { color: '#66BB6A', label: 'Moderado (25–50%)' },
   { color: '#FB8C00', label: 'Alto (50–75%)' },

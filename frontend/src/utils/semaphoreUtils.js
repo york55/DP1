@@ -6,6 +6,9 @@
  * @returns {{ color: string, label: string, iconName: string, severity: number }}
  */
 export function getSemaphoreLevel(pct, thresholdAmber = 75, thresholdRed = 90) {
+  if (pct === 0) {
+    return { color: '#9E9E9E', label: 'Vacío', iconName: 'CheckCircle', severity: -1 }
+  }
   if (pct < 25) {
     return { color: '#2E7D32', label: 'Bajo', iconName: 'CheckCircle', severity: 0 }
   }
