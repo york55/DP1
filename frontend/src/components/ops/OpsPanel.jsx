@@ -28,6 +28,8 @@ export default function OpsPanel({
   onShipmentFocus,
   warehouseFilters,
   onWarehouseFiltersChange,
+  onlyWithShipments,
+  onOnlyWithShipmentsChange,
 
 }) {
   const [tab, setTab] = useState(0)
@@ -80,6 +82,8 @@ export default function OpsPanel({
             shipments={shipments}
             selectedFlightId={selectedFlightId}
             onFlightSelected={onFlightSelected}
+            onlyWithShipments={onlyWithShipments}
+            onOnlyWithShipmentsChange={onOnlyWithShipmentsChange}
           />
         )}
         {tab === 2 && <OpsWarehousesTab

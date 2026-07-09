@@ -7,6 +7,8 @@ import IconButton from '@mui/material/IconButton'
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import Switch from '@mui/material/Switch'
+import FormControlLabel from '@mui/material/FormControlLabel'
 
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CloseIcon from '@mui/icons-material/Close'
@@ -102,6 +104,8 @@ export default function OpsFlightsTab({
     shipments = [],
     selectedFlightId,
     onFlightSelected,
+    onlyWithShipments = false,
+    onOnlyWithShipmentsChange = () => {},
 }) {
 
     // ── Normaliza status al entrar, una sola vez ──
@@ -187,11 +191,17 @@ export default function OpsFlightsTab({
                     semaphore === 'ALL' ||
                     occupancyBucket(loadPct) === semaphore
 
+                // AGREGADO: si el toggle está activo, oculta vuelos sin envíos asignados
+                const matchesShipments =
+                    !onlyWithShipments ||
+                    (f.assignedBags || 0) > 0
+
                 return (
                     matchesSearch &&
                     matchesOrigin &&
                     matchesDestination &&
-                    matchesSemaphore
+                    matchesSemaphore &&
+                    matchesShipments
                 )
             })
 
@@ -201,6 +211,7 @@ export default function OpsFlightsTab({
             origin,
             destination,
             semaphore,
+            onlyWithShipments,
         ])
 
     const columns = [
@@ -549,6 +560,25 @@ export default function OpsFlightsTab({
                     <MenuItem value="HIGH">Alto</MenuItem>
                     <MenuItem value="CRITICAL">Crítico</MenuItem>
                 </TextField>
+
+                {/* AGREGADO: filtro "solo vuelos con envíos" — oculta aviones vacíos */}
+                <FormControlLabel
+                    sx={{ ml: 0.5 }}
+                    control={
+                        <Switch
+                            size="small"
+                            checked={onlyWithShipments}
+                            onChange={e =>
+                                onOnlyWithShipmentsChange(e.target.checked)
+                            }
+                        />
+                    }
+                    label={
+                        <Typography sx={{ fontSize: '0.78rem' }}>
+                            Solo con envíos
+                        </Typography>
+                    }
+                />
 
             </Box>
 

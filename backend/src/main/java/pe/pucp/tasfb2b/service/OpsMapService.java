@@ -47,6 +47,14 @@ public class OpsMapService {
         // ── Vuelos que tienen al menos un envío asignado ───────────────────────
         List<OpsFlight> activeFlights = flightRepo.findFlightsWithPendingShipments();
 
+        // ── AGREGADO: todos los vuelos IN_FLIGHT, tengan o no envíos asignados ──
+        // (para que el mapa muestre también los aviones "vacíos" en tránsito)
+        List<OpsFlight> allInFlight = flightRepo.findAllInFlight();
+        Map<Long, OpsFlight> mergedActiveById = new LinkedHashMap<>();
+        activeFlights.forEach(f -> mergedActiveById.put(f.getId(), f));
+        allInFlight.forEach(f -> mergedActiveById.putIfAbsent(f.getId(), f));
+        activeFlights = new ArrayList<>(mergedActiveById.values());
+
         // ── AGREGADO: cancelados de hoy y mañana (para mostrar en el tab) ─────
         List<OpsFlight> cancelledFlights = flightRepo.findRecentlyCancelled(
                 now.toLocalDate(), now.toLocalDate().plusDays(1));

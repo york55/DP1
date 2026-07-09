@@ -27,6 +27,11 @@ public interface OpsFlightRepository extends JpaRepository<OpsFlight, Long> {
            "AND r.status = 'PENDING'")
     List<OpsFlight> findFlightsWithPendingShipments();
 
+    // ── AGREGADO: todos los vuelos en vuelo, tengan o no envíos asignados ────
+    /** Todos los vuelos actualmente IN_FLIGHT, con o sin envíos asignados. Usado por el mapa. */
+    @Query("SELECT f FROM OpsFlight f WHERE f.status = 'IN_FLIGHT'")
+    List<OpsFlight> findAllInFlight();
+
     // ── AGREGADO: cancelados recientes para mostrar en el mapa/tab ───────────
     /**
      * Vuelos CANCELLED cuya fecha de vuelo es hoy o mañana.

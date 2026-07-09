@@ -228,6 +228,10 @@ export default function RealtimeMapPage() {
     semaphore: 'ALL',
   })
 
+  // AGREGADO: filtro "solo vuelos con envíos" — controla tanto la tabla del
+  // tab Vuelos como los aviones dibujados en el mapa (oculta los vacíos).
+  const [onlyWithShipments, setOnlyWithShipments] = useState(false)
+
   // ── Foco de envío: ruta con saltos (planificado) o el vuelo actual (en tránsito) ──
   const handleShipmentFocus = useCallback((shipment) => {
     if (!shipment) {
@@ -319,10 +323,20 @@ export default function RealtimeMapPage() {
     warehouseFilters.semaphore !== 'ALL'
 
   const filteredFlightsForMap = useMemo(() => {
-    if (!mapFlightFilterActive) return flights
-    const codes = new Set(filteredAirports.map(a => a.iataCode))
-    return flights.filter(f => codes.has(f.originIata) || codes.has(f.destIata))
-  }, [flights, filteredAirports, mapFlightFilterActive])
+    let result = flights
+
+    if (mapFlightFilterActive) {
+      const codes = new Set(filteredAirports.map(a => a.iataCode))
+      result = result.filter(f => codes.has(f.originIata) || codes.has(f.destIata))
+    }
+
+    // AGREGADO: oculta del mapa los vuelos sin envíos asignados cuando el switch está activo
+    if (onlyWithShipments) {
+      result = result.filter(f => (f.assignedBags || 0) > 0)
+    }
+
+    return result
+  }, [flights, filteredAirports, mapFlightFilterActive, onlyWithShipments])
 
   // ── Fetch del snapshot (solo actualiza datos; el dibujado va aparte) ─────────────
 
@@ -473,8 +487,14 @@ export default function RealtimeMapPage() {
           ? (f.assignedBags / f.capacity) * 100
           : 0
 
-      const color =
-        getSemaphoreColor(loadPct)
+      // AGREGADO: vuelo "vacío" = sin envíos asignados (assignedBags 0).
+      // planeIcon.js ya rasteriza un ícono gris ('#9E9E9E') dentro de
+      // PLANE_IMAGES para el semáforo — lo reusamos en vez del color de carga.
+      const isEmptyFlight = (f.assignedBags || 0) === 0
+
+      const color = isEmptyFlight
+        ? '#9E9E9E'
+        : getSemaphoreColor(loadPct)
 
       const planeImage =
         PLANE_IMAGES[color]
@@ -883,6 +903,8 @@ export default function RealtimeMapPage() {
           onShipmentFocus={handleShipmentFocus}
           warehouseFilters={warehouseFilters}
           onWarehouseFiltersChange={setWarehouseFilters}
+          onlyWithShipments={onlyWithShipments}
+          onOnlyWithShipmentsChange={setOnlyWithShipments}
         />
       </Box>
 
