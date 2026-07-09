@@ -689,10 +689,25 @@ export function useSimulation() {
     const simId = simIdRef.current
     if (!simId) throw new Error('No hay simulación activa')
     const result = await simulationApi.cancelFlight(simId, flightId)
+    const cancelledId = result?.cancelledFlightId ?? flightId
     const msg = result?.appliedNextDay
-      ? `Regla <1h aplicada: se canceló el vuelo siguiente (ID ${result.cancelledFlightId}) en la misma ruta. ALNS replanificando.`
-      : `Vuelo ${result?.cancelledFlightId ?? flightId} cancelado. El ALNS está replanificando las rutas afectadas.`
+      ? `Regla <1h aplicada: se canceló el vuelo siguiente (ID ${cancelledId}) en la misma ruta. ALNS replanificando.`
+      : `Vuelo ${cancelledId} cancelado. El ALNS está replanificando las rutas afectadas.`
     addNotification(msg, 'warning')
+
+    // Update the cancelled flight's status in local state immediately,
+    // because the tick query excludes CANCELLED flights — they'd stay as
+    // SCHEDULED forever in the frontend otherwise.
+    setSimulationData(prev => ({
+      ...prev,
+      flights: prev.flights.map(f =>
+        String(f.id) === String(cancelledId) || String(f.backendId) === String(cancelledId)
+          ? { ...f, status: 'CANCELLED', bagsAboard: 0 }
+          : f
+      ),
+    }))
+
+    return result
   }, [addNotification])
 
   const cancelSimulation = useCallback(async () => {

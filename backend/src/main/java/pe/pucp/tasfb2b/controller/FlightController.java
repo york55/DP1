@@ -8,14 +8,18 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import pe.pucp.tasfb2b.domain.enums.FlightStatus;
+import pe.pucp.tasfb2b.domain.enums.RouteLegStatus;
 import pe.pucp.tasfb2b.dto.request.CancelFlightRequest;
 import pe.pucp.tasfb2b.dto.request.FlightRequest;
 import pe.pucp.tasfb2b.dto.response.FlightDto;
+import pe.pucp.tasfb2b.repository.RouteLegRepository;
 import pe.pucp.tasfb2b.service.FlightService;
 
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -24,6 +28,7 @@ import java.util.Map;
 public class FlightController {
 
     private final FlightService flightService;
+    private final RouteLegRepository routeLegRepo;
 
     @GetMapping
     public ResponseEntity<List<FlightDto>> findAll(
@@ -86,5 +91,35 @@ public class FlightController {
         Map<String, Object> result = flightService.uploadFlights(file);
         log.info("ACTION upload_flights OK result={}", result);
         return ResponseEntity.status(201).body(result);
+    }
+
+    /**
+     * Returns batches (shipments) assigned to a specific flight via its route legs.
+     * Looks for PENDING or IN_FLIGHT legs that reference this flight.
+     */
+    @GetMapping("/{id}/batches")
+    public ResponseEntity<List<Map<String, Object>>> getBatchesByFlight(@PathVariable Long id) {
+        log.debug("ACTION get_flight_batches flightId={}", id);
+        var pendingLegs = routeLegRepo.findByFlightIdAndStatusWithBatch(id, RouteLegStatus.PENDING);
+        var inFlightLegs = routeLegRepo.findByFlightIdAndStatusWithBatch(id, RouteLegStatus.IN_FLIGHT);
+
+        var allLegs = new java.util.ArrayList<>(pendingLegs);
+        allLegs.addAll(inFlightLegs);
+
+        List<Map<String, Object>> result = allLegs.stream().map(leg -> {
+            var batch = leg.getRoute().getShipment().getBaggageBatch();
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("batchId", batch.getId());
+            entry.put("quantity", batch.getQuantity());
+            entry.put("origin", batch.getOriginAirport() != null ? batch.getOriginAirport().getIataCode() : null);
+            entry.put("destination", batch.getDestinationAirport() != null ? batch.getDestinationAirport().getIataCode() : null);
+            entry.put("status", batch.getStatus().name());
+            entry.put("airline", batch.getAirline() != null ? batch.getAirline().getIataCode() : null);
+            entry.put("legStatus", leg.getStatus().name());
+            entry.put("legOrder", leg.getLegOrder());
+            return entry;
+        }).collect(Collectors.toList());
+
+        return ResponseEntity.ok(result);
     }
 }

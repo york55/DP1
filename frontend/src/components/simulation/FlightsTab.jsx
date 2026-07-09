@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import TextField from '@mui/material/TextField'
@@ -25,6 +25,7 @@ import DataTable from '../common/DataTable'
 import SemaphoreChip from '../common/SemaphoreChip'
 import { useSimulationContext } from '../../context/SimulationContext'
 import { formatFlightTime } from '../../utils/timeUtils'
+import { flightApi } from '../../api/simulationApi'
 
 const STATUS_STYLES = {
   SCHEDULED: { label: 'Programado', color: '#6B7280', bg: '#F2F2F2' },
@@ -54,7 +55,6 @@ export default function FlightsTab() {
   const {
     simulationState,
     flights,
-    shipments,
     selectedFlightId,
     setSelectedFlightId,
     flightSearch,
@@ -72,6 +72,28 @@ export default function FlightsTab() {
   const [detailTab, setDetailTab] = useState(0)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  const [flightBatches, setFlightBatches] = useState([])
+  const [batchesLoading, setBatchesLoading] = useState(false)
+
+  // Fetch real batches from API when a flight is selected
+  useEffect(() => {
+    if (!selectedFlightId) {
+      setFlightBatches([])
+      return
+    }
+    let cancelled = false
+    setBatchesLoading(true)
+    flightApi.getBatches(selectedFlightId)
+      .then(data => {
+        if (!cancelled) setFlightBatches(Array.isArray(data) ? data : [])
+      })
+      .catch(e => {
+        console.warn('Error fetching flight batches:', e.message)
+        if (!cancelled) setFlightBatches([])
+      })
+      .finally(() => { if (!cancelled) setBatchesLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedFlightId])
 
   const handleCancelFlight = async () => {
     if (!selectedFlight) return
@@ -102,35 +124,6 @@ export default function FlightsTab() {
     if (!selectedFlightId) return null
     return flights.find(f => String(f.id) === String(selectedFlightId)) || null
   }, [selectedFlightId, flights])
-
-  // Shipments aboard the selected flight
-  const flightShipments = useMemo(() => {
-    if (!selectedFlight) return []
-    return shipments.filter(s => String(s.currentFlight) === String(selectedFlight.id))
-  }, [selectedFlight, shipments])
-
-  // Bags lots aboard the selected flight
-  const flightBags = useMemo(() => {
-    if (!selectedFlight) return []
-    const lots = []
-    flightShipments.forEach((shipment, shipIdx) => {
-      const lotCount = shipment.totalBags > 40 ? 3 : shipment.totalBags > 20 ? 2 : 1
-      const bagsPerLot = Math.floor(shipment.totalBags / lotCount)
-      const remainder = shipment.totalBags % lotCount
-
-      for (let i = 0; i < lotCount; i++) {
-        const isLast = i === lotCount - 1
-        const bagCount = isLast ? bagsPerLot + remainder : bagsPerLot
-        lots.push({
-          id: `LOT-${String(shipIdx + 1).padStart(3, '0')}-${String(i + 1).padStart(2, '0')}`,
-          shipmentId: shipment.id,
-          bagCount,
-          client: shipment.client,
-        })
-      }
-    })
-    return lots
-  }, [flightShipments, selectedFlight])
 
   const columns = [
     {
@@ -322,48 +315,77 @@ export default function FlightsTab() {
 
         {/* Tab content */}
         <Box sx={{ flex: 1, overflowY: 'auto', px: 1 }}>
-          {detailTab === 0 ? (
+          {batchesLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+              <CircularProgress size={24} />
+            </Box>
+          ) : detailTab === 0 ? (
             <List dense>
-              {flightShipments.length === 0 ? (
+              {flightBatches.length === 0 ? (
                 <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', my: 2, color: 'text.secondary' }}>
                   Sin envíos asignados a este vuelo
                 </Typography>
               ) : (
-                flightShipments.map(s => (
-                  <ListItem key={s.id} sx={{ px: 0, py: 0.5 }}>
+                flightBatches.map(b => (
+                  <ListItem key={`batch-${b.batchId}-${b.legOrder}`} sx={{ px: 0, py: 0.5 }}>
                     <ListItemText
                       primary={
                         <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
-                          {s.id}
+                          Envío #{b.batchId}
                         </Typography>
                       }
-                      secondary={`Cliente: ${s.client} | Destino: ${s.destination}`}
+                      secondary={`${b.origin} → ${b.destination} | ${b.airline || '—'} | Tramo ${b.legOrder}`}
                     />
-                    <Chip label={`${s.totalBags} maletas`} size="small" variant="outlined" />
+                    <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                      <Chip label={`${b.quantity} maletas`} size="small" variant="outlined" />
+                      <Chip
+                        label={b.legStatus === 'IN_FLIGHT' ? 'En vuelo' : 'Pendiente'}
+                        size="small"
+                        sx={{
+                          height: 20, fontSize: '0.6rem', fontWeight: 600,
+                          backgroundColor: b.legStatus === 'IN_FLIGHT' ? '#FFF3E0' : '#F2F2F2',
+                          color: b.legStatus === 'IN_FLIGHT' ? '#E65100' : '#6B7280',
+                          border: `1px solid ${b.legStatus === 'IN_FLIGHT' ? '#E65100' : '#BDBDBD'}`,
+                        }}
+                      />
+                    </Box>
                   </ListItem>
                 ))
               )}
             </List>
           ) : (
             <List dense>
-              {flightBags.length === 0 ? (
+              {flightBatches.length === 0 ? (
                 <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', my: 2, color: 'text.secondary' }}>
                   Sin maletas asignadas
                 </Typography>
               ) : (
-                flightBags.map(b => (
-                  <ListItem key={b.id} sx={{ px: 0, py: 0.5 }}>
-                    <ListItemText
-                      primary={
-                        <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                          {b.id}
-                        </Typography>
-                      }
-                      secondary={`Envío: ${b.shipmentId} (${b.client})`}
-                    />
-                    <Chip label={`${b.bagCount} maletas`} size="small" color="primary" variant="outlined" />
-                  </ListItem>
-                ))
+                flightBatches.map((b, idx) => {
+                  const lotCount = b.quantity > 40 ? 3 : b.quantity > 20 ? 2 : 1
+                  const bagsPerLot = Math.floor(b.quantity / lotCount)
+                  const remainder = b.quantity % lotCount
+                  const lots = []
+                  for (let i = 0; i < lotCount; i++) {
+                    const isLast = i === lotCount - 1
+                    lots.push({
+                      id: `LOT-${String(b.batchId).padStart(3, '0')}-${String(i + 1).padStart(2, '0')}`,
+                      bagCount: isLast ? bagsPerLot + remainder : bagsPerLot,
+                    })
+                  }
+                  return lots.map(lot => (
+                    <ListItem key={lot.id} sx={{ px: 0, py: 0.5 }}>
+                      <ListItemText
+                        primary={
+                          <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                            {lot.id}
+                          </Typography>
+                        }
+                        secondary={`Envío #${b.batchId} (${b.airline || '—'})`}
+                      />
+                      <Chip label={`${lot.bagCount} maletas`} size="small" color="primary" variant="outlined" />
+                    </ListItem>
+                  ))
+                })
               )}
             </List>
           )}
