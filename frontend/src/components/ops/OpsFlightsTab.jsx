@@ -56,6 +56,23 @@ function normalizeStatus(status) {
     return STATUS_NORMALIZE[status] ?? status
 }
 
+// Mismos umbrales que usa OpsWarehousesTab, aplicados a la ocupación del vuelo
+function occupancyBucket(pct) {
+    const p = pct ?? 0
+    if (p < 25) return 'LOW'
+    if (p < 50) return 'MEDIUM'
+    if (p < 80) return 'HIGH'
+    return 'CRITICAL'
+}
+
+// "2026-07-09T14:30:00Z" -> "14:30"; si no viene en formato ISO, se deja tal cual.
+function formatUtc(value) {
+    if (typeof value === 'string' && value.includes('T')) {
+        return value.slice(11, 16)
+    }
+    return value ?? '—'
+}
+
 function FlightStatusChip({ status }) {
     const style =
         STATUS_STYLES[status] ||
@@ -83,6 +100,7 @@ function FlightStatusChip({ status }) {
 export default function OpsFlightsTab({
     flights = [],
     shipments = [],
+    selectedFlightId,
     onFlightSelected,
 }) {
 
@@ -94,8 +112,12 @@ export default function OpsFlightsTab({
         }))
     , [flights])
 
-    const [selectedFlight, setSelectedFlight] =
-        useState(null)
+    // La selección vive en RealtimeMapPage — así un click en el mapa (o el vuelo
+    // activo de un envío) abre este mismo detalle si el usuario está en esta pestaña.
+    const selectedFlight = useMemo(() => {
+        if (!selectedFlightId) return null
+        return normalizedFlights.find(f => f.flightId === selectedFlightId) || null
+    }, [selectedFlightId, normalizedFlights])
 
     // Cada envío trae la lista de vuelos en los que tiene un tramo PENDING
     // (backend: OpsShipmentRoute) — necesario porque un envío multi-tramo puede
@@ -114,6 +136,9 @@ export default function OpsFlightsTab({
         useState('ALL')
 
     const [destination, setDestination] =
+        useState('ALL')
+
+    const [semaphore, setSemaphore] =
         useState('ALL')
 
     const origins = useMemo(() => {
@@ -153,10 +178,20 @@ export default function OpsFlightsTab({
                     destination === 'ALL' ||
                     f.destIata === destination
 
+                const loadPct =
+                    f.capacity > 0
+                        ? (f.assignedBags / f.capacity) * 100
+                        : 0
+
+                const matchesSemaphore =
+                    semaphore === 'ALL' ||
+                    occupancyBucket(loadPct) === semaphore
+
                 return (
                     matchesSearch &&
                     matchesOrigin &&
-                    matchesDestination
+                    matchesDestination &&
+                    matchesSemaphore
                 )
             })
 
@@ -165,23 +200,27 @@ export default function OpsFlightsTab({
             search,
             origin,
             destination,
+            semaphore,
         ])
 
     const columns = [
 
         {
-            field: 'route',
-            headerName: 'Ruta',
-            width: 120,
+            field: 'originIata',
+            headerName: 'Origen',
+            width: 90,
+        },
 
-            valueGetter: params =>
-                `${params.row.originIata} → ${params.row.destIata}`,
+        {
+            field: 'destIata',
+            headerName: 'Destino',
+            width: 90,
         },
 
         {
             field: 'assignedBags',
             headerName: 'Ocupación',
-            width: 180,
+            width: 170,
 
             renderCell: params => {
                 if (params.row.status === 'CANCELLED') {
@@ -221,12 +260,30 @@ export default function OpsFlightsTab({
         {
             field: 'status',
             headerName: 'Estado',
-            width: 120,
+            width: 110,
 
             renderCell: params =>
                 <FlightStatusChip
                     status={params.value}
                 />
+        },
+
+        {
+            field: 'depTimeUtc',
+            headerName: 'Salida UTC',
+            width: 100,
+
+            renderCell: params =>
+                formatUtc(params.value)
+        },
+
+        {
+            field: 'arrTimeUtc',
+            headerName: 'Llegada UTC',
+            width: 100,
+
+            renderCell: params =>
+                formatUtc(params.value)
         }
 
     ]
@@ -274,7 +331,7 @@ export default function OpsFlightsTab({
                         <IconButton
                             size="small"
                             onClick={() =>
-                                setSelectedFlight(null)
+                                onFlightSelected?.(null)
                             }
                         >
                             <ArrowBackIcon />
@@ -296,7 +353,7 @@ export default function OpsFlightsTab({
                     <IconButton
                         size="small"
                         onClick={() =>
-                            setSelectedFlight(null)
+                            onFlightSelected?.(null)
                         }
                     >
                         <CloseIcon />
@@ -425,7 +482,7 @@ export default function OpsFlightsTab({
                     onChange={e =>
                         setSearch(e.target.value)
                     }
-                    sx={{ flex: 1 }}
+                    sx={{ flex: 1, minWidth: 120 }}
                 />
 
                 <TextField
@@ -476,6 +533,23 @@ export default function OpsFlightsTab({
                     ))}
                 </TextField>
 
+                <TextField
+                    select
+                    size="small"
+                    label="Semáforo"
+                    value={semaphore}
+                    onChange={e =>
+                        setSemaphore(e.target.value)
+                    }
+                    sx={{ width: 120 }}
+                >
+                    <MenuItem value="ALL">Todos</MenuItem>
+                    <MenuItem value="LOW">Bajo</MenuItem>
+                    <MenuItem value="MEDIUM">Medio</MenuItem>
+                    <MenuItem value="HIGH">Alto</MenuItem>
+                    <MenuItem value="CRITICAL">Crítico</MenuItem>
+                </TextField>
+
             </Box>
 
             <Box
@@ -502,13 +576,7 @@ export default function OpsFlightsTab({
                         },
                     }}
                     onRowClick={(params) => {
-
-                        setSelectedFlight(params.row)
-
-                        onFlightSelected?.(
-                            params.row.flightId
-                        )
-
+                        onFlightSelected?.(params.row.flightId)
                     }}
                 />
 

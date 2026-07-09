@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSimulationContext } from '../../context/SimulationContext'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
@@ -16,6 +16,9 @@ import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
+import TextField from '@mui/material/TextField'
+import MenuItem from '@mui/material/MenuItem'
+import Button from '@mui/material/Button'
 import CancelIcon from '@mui/icons-material/Cancel'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import client from '../../api/client'
@@ -34,6 +37,10 @@ export default function FlightPlanPage() {
   const [page, setPage]               = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(20)
   const [snack, setSnack]             = useState({ open: false, msg: '', severity: 'success' })
+
+  // ── AGREGADO: estado para el filtro de origen y destino
+  const [originFilter, setOriginFilter] = useState('')
+  const [destFilter, setDestFilter]     = useState('')
 
   const fetchFlights = useCallback((date) => {
     const dateParam = date ? `?date=${date}` : ''
@@ -67,7 +74,40 @@ export default function FlightPlanPage() {
     }
   }
 
-  const paginated = flights.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+  // ── AGREGADO: listas únicas de orígenes y destinos disponibles, para poblar los selects
+  const originOptions = useMemo(
+    () => Array.from(new Set(flights.map(f => f.origin).filter(Boolean))).sort(),
+    [flights]
+  )
+  const destOptions = useMemo(
+    () => Array.from(new Set(flights.map(f => f.destination).filter(Boolean))).sort(),
+    [flights]
+  )
+
+  // ── AGREGADO: vuelos filtrados por origen/destino antes de paginar
+  const filteredFlights = useMemo(() => {
+    return flights.filter(f =>
+      (!originFilter || f.origin === originFilter) &&
+      (!destFilter || f.destination === destFilter)
+    )
+  }, [flights, originFilter, destFilter])
+
+  // ── AGREGADO: al cambiar cualquier filtro, volvemos a la primera página
+  const handleOriginFilterChange = (value) => {
+    setOriginFilter(value)
+    setPage(0)
+  }
+  const handleDestFilterChange = (value) => {
+    setDestFilter(value)
+    setPage(0)
+  }
+  const handleClearFilters = () => {
+    setOriginFilter('')
+    setDestFilter('')
+    setPage(0)
+  }
+
+  const paginated = filteredFlights.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
 
   if (loading) return (
     <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -80,13 +120,51 @@ export default function FlightPlanPage() {
       <Box>
         <Typography variant="h6" sx={{ fontWeight: 700, color: '#1F3864' }}>Plan de Vuelos</Typography>
         <Typography variant="body2" sx={{ color: '#6B7280' }}>
-          {flights.length} vuelos
+          {filteredFlights.length} vuelos
+          {filteredFlights.length !== flights.length ? ` (de ${flights.length})` : ''}
           {simulationState?.config?.startDate
             ? ` — ${(simulationState.config.startDate instanceof Date
                 ? simulationState.config.startDate.toISOString()
                 : String(simulationState.config.startDate)).slice(0, 10)}`
             : ''}
         </Typography>
+      </Box>
+
+      {/* ── AGREGADO: barra de filtros de origen y destino ── */}
+      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+        <TextField
+          select
+          size="small"
+          label="Origen"
+          value={originFilter}
+          onChange={(e) => handleOriginFilterChange(e.target.value)}
+          sx={{ minWidth: 160 }}
+        >
+          <MenuItem value="">Todos</MenuItem>
+          {originOptions.map(o => (
+            <MenuItem key={o} value={o}>{o}</MenuItem>
+          ))}
+        </TextField>
+
+        <TextField
+          select
+          size="small"
+          label="Destino"
+          value={destFilter}
+          onChange={(e) => handleDestFilterChange(e.target.value)}
+          sx={{ minWidth: 160 }}
+        >
+          <MenuItem value="">Todos</MenuItem>
+          {destOptions.map(d => (
+            <MenuItem key={d} value={d}>{d}</MenuItem>
+          ))}
+        </TextField>
+
+        {(originFilter || destFilter) && (
+          <Button size="small" onClick={handleClearFilters} sx={{ color: '#1F3864', textTransform: 'none' }}>
+            Limpiar filtros
+          </Button>
+        )}
       </Box>
 
       <Paper elevation={0} sx={{ border: '1px solid #E0E0E0', borderRadius: 2, overflow: 'hidden', flex: 1 }}>
@@ -176,7 +254,7 @@ export default function FlightPlanPage() {
         </TableContainer>
         <TablePagination
           component="div"
-          count={flights.length}
+          count={filteredFlights.length}
           page={page}
           onPageChange={(_, p) => setPage(p)}
           rowsPerPage={rowsPerPage}

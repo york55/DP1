@@ -73,11 +73,16 @@ function StatusChip({ status }) {
 
 export default function OpsShipmentsTab({
   shipments = [],
+  selectedShipmentId,
   onShipmentFocus,
 }) {
 
-  const [selectedShipment, setSelectedShipment] =
-    useState(null)
+  // La selección vive en RealtimeMapPage — así seleccionar un envío desde otro
+  // lugar (o volver a esta pestaña) mantiene el mismo detalle abierto.
+  const selectedShipment = useMemo(() => {
+    if (!selectedShipmentId) return null
+    return shipments.find(s => s.id === selectedShipmentId) || null
+  }, [selectedShipmentId, shipments])
 
   const [search, setSearch] =
     useState('')
@@ -137,6 +142,9 @@ export default function OpsShipmentsTab({
           !search ||
           s.externalId
             ?.toLowerCase()
+            .includes(search.toLowerCase()) ||
+          s.cliente
+            ?.toLowerCase()
             .includes(search.toLowerCase())
 
         const matchesOrigin =
@@ -184,22 +192,31 @@ export default function OpsShipmentsTab({
     {
       field: 'externalId',
       headerName: 'ID Envío',
-      width: 120,
+      width: 110,
     },
 
     {
-      field: 'route',
-      headerName: 'Ruta',
-      width: 110,
+      field: 'originIata',
+      headerName: 'Origen',
+      width: 85,
+    },
 
-      valueGetter: params =>
-        `${params.row.originIata} → ${params.row.destIata}`,
+    {
+      field: 'destIata',
+      headerName: 'Destino',
+      width: 85,
+    },
+
+    {
+      field: 'cliente',
+      headerName: 'Cliente',
+      width: 130,
     },
 
     {
       field: 'bagCount',
       headerName: 'Maletas',
-      width: 100,
+      width: 90,
     },
 
     {
@@ -245,7 +262,7 @@ export default function OpsShipmentsTab({
             <IconButton
               size="small"
               onClick={() =>
-                setSelectedShipment(null)
+                onShipmentFocus?.(null)
               }
             >
               <ArrowBackIcon />
@@ -265,7 +282,7 @@ export default function OpsShipmentsTab({
           <IconButton
             size="small"
             onClick={() =>
-              setSelectedShipment(null)
+              onShipmentFocus?.(null)
             }
           >
             <CloseIcon />
@@ -292,6 +309,12 @@ export default function OpsShipmentsTab({
               {' → '}
               {selectedShipment.destIata}
             </b>
+          </Typography>
+
+          <Typography>
+            Cliente:
+            {' '}
+            {selectedShipment.cliente || '—'}
           </Typography>
 
           <Typography>
@@ -383,12 +406,12 @@ export default function OpsShipmentsTab({
 
         <TextField
           size="small"
-          label="Buscar"
+          label="Buscar ID/Cliente"
           value={search}
           onChange={e =>
             setSearch(e.target.value)
           }
-          sx={{ flex: 1 }}
+          sx={{ flex: 1, minWidth: 130 }}
         />
 
         <TextField
@@ -470,7 +493,6 @@ export default function OpsShipmentsTab({
           columns={columns}
           getRowId={(row) => row.id}
           onRowClick={(params) => {
-            setSelectedShipment(params.row)
             onShipmentFocus?.(params.row)
           }}
         />

@@ -20,10 +20,14 @@ export default function OpsPanel({
   airports = [],
   flights = [],
   shipments = [],
+  selectedFlightId,
+  selectedAirportCode,
+  selectedShipmentId,
   onFlightSelected,
   onAirportSelected,
   onShipmentFocus,
-  selectedAirportCode,
+  warehouseFilters,
+  onWarehouseFiltersChange,
 
 }) {
   const [tab, setTab] = useState(0)
@@ -67,12 +71,14 @@ export default function OpsPanel({
       <Box sx={{ flex: 1, overflow: 'auto' }}>
         {tab === 0 && <OpsShipmentsTab
           shipments={shipments}
+          selectedShipmentId={selectedShipmentId}
           onShipmentFocus={onShipmentFocus}
         />}
         {tab === 1 && (
           <OpsFlightsTab
             flights={flights}
             shipments={shipments}
+            selectedFlightId={selectedFlightId}
             onFlightSelected={onFlightSelected}
           />
         )}
@@ -84,6 +90,8 @@ export default function OpsPanel({
             selectedAirportCode
           }
           onAirportSelected={onAirportSelected}
+          filters={warehouseFilters}
+          onFiltersChange={onWarehouseFiltersChange}
         />}
         {tab === 3 && (
           <OpsKpiTab

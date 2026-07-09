@@ -1,17 +1,33 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
 import Box from '@mui/material/Box'
-import Drawer from '@mui/material/Drawer'
-import Typography from '@mui/material/Typography'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
-import TextField from '@mui/material/TextField'
 import MenuItem from '@mui/material/MenuItem'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CloseIcon from '@mui/icons-material/Close'
 
 import DataTable from '../common/DataTable'
 import SemaphoreChip from '../common/SemaphoreChip'
+
+const DEFAULT_FILTERS = { search: '', continent: 'ALL', semaphore: 'ALL' }
+
+// 'unknown' del backend se normaliza igual que en el mapa
+function normalizeContinent(c) {
+    return (!c || String(c).toLowerCase() === 'unknown') ? 'Sudamérica' : c
+}
+
+// Mismos umbrales que ya usaba este tab antes del refactor
+function occupancyBucket(pct) {
+    const p = pct ?? 0
+    if (p < 25) return 'LOW'
+    if (p < 50) return 'MEDIUM'
+    if (p < 80) return 'HIGH'
+    return 'CRITICAL'
+}
 
 export default function OpsWarehousesTab({
     airports = [],
@@ -19,62 +35,46 @@ export default function OpsWarehousesTab({
     shipments = [],
     selectedAirportCode,
     onAirportSelected,
+    filters = DEFAULT_FILTERS,
+    onFiltersChange = () => {},
 }) {
 
-    const [selectedAirport, setSelectedAirport] = useState(null)
-
-    const [search, setSearch] = useState('')
-    const [semaphore, setSemaphore] = useState('ALL')
-
+    const { search, continent, semaphore } = filters
 
     const rows = useMemo(() => {
-
         return airports.map(a => ({
-
             id: a.iataCode,
-
             city: a.name,
             country: a.country,
-
+            continent: normalizeContinent(a.continent),
             currentOccupancy: a.assignedShipments,
-
             warehouseCapacity: a.capacity,
-
             occupancy: a.occupancyPct,
-
-            raw: a,
-
         }))
-
     }, [airports])
 
+    const codes = useMemo(() =>
+        [...new Set(rows.map(r => r.id))].sort()
+    , [rows])
+
+    const continents = useMemo(() =>
+        [...new Set(rows.map(r => r.continent))].sort()
+    , [rows])
+
     const filteredRows = useMemo(() => {
-
         return rows.filter(r => {
-
-            const matchesSearch =
-                !search ||
-                r.id.toLowerCase().includes(search.toLowerCase()) ||
-                r.city.toLowerCase().includes(search.toLowerCase())
-
-            if (!matchesSearch) return false
-
-            if (semaphore === 'LOW')
-                return r.occupancy < 25
-
-            if (semaphore === 'MEDIUM')
-                return r.occupancy >= 25 && r.occupancy < 50
-
-            if (semaphore === 'HIGH')
-                return r.occupancy >= 50 && r.occupancy < 80
-
-            if (semaphore === 'CRITICAL')
-                return r.occupancy >= 80
-
+            if (search) {
+                const s = search.toLowerCase()
+                const matchesSearch =
+                    r.id.toLowerCase().includes(s) ||
+                    r.city?.toLowerCase().includes(s)
+                if (!matchesSearch) return false
+            }
+            if (continent !== 'ALL' && r.continent !== continent) return false
+            if (semaphore !== 'ALL' && occupancyBucket(r.occupancy) !== semaphore) return false
             return true
         })
-
-    }, [rows, search, semaphore])
+    }, [rows, search, continent, semaphore])
 
     const columns = [
 
@@ -87,42 +87,29 @@ export default function OpsWarehousesTab({
         {
             field: 'city',
             headerName: 'Aeropuerto',
-            width: 180,
-            valueGetter: params =>
-                `${params.row.city}`
+            width: 170,
+        },
+
+        {
+            field: 'continent',
+            headerName: 'Continente',
+            width: 130,
         },
 
         {
             field: 'currentOccupancy',
             headerName: 'Ocupación',
-            width: 180,
+            width: 170,
 
             renderCell: params => {
-
-                const current =
-                    params.row.currentOccupancy || 0
-
-                const capacity =
-                    params.row.warehouseCapacity || 0
-
-                const pct =
-                    params.row.occupancy || 0
+                const current = params.row.currentOccupancy || 0
+                const capacity = params.row.warehouseCapacity || 0
+                const pct = params.row.occupancy || 0
 
                 return (
-                    <Box
-                        sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1,
-                        }}
-                    >
-                        <span>
-                            {current}/{capacity}
-                        </span>
-
-                        <SemaphoreChip
-                            occupancyPct={pct}
-                        />
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <span>{current}/{capacity}</span>
+                        <SemaphoreChip occupancyPct={pct} />
                     </Box>
                 )
             }
@@ -130,18 +117,21 @@ export default function OpsWarehousesTab({
 
     ]
 
+    // La selección vive en RealtimeMapPage — un click en el mapa abre este mismo
+    // detalle si el usuario está en esta pestaña.
+    const selectedAirport = useMemo(() => {
+        if (!selectedAirportCode) return null
+        return rows.find(r => r.id === selectedAirportCode) || null
+    }, [selectedAirportCode, rows])
+
     const selectedFlights = useMemo(() => {
-
         if (!selectedAirport) return []
-
         return flights.filter(f =>
             f.originIata === selectedAirport.id ||
             f.destIata === selectedAirport.id
         )
-
     }, [selectedAirport, flights])
 
-    // Stock del almacén: envíos esperando salida (en origen) vs. entregados (destino final).
     const originShipments = useMemo(() => {
         if (!selectedAirport) return []
         return shipments.filter(s =>
@@ -156,63 +146,156 @@ export default function OpsWarehousesTab({
         )
     }, [selectedAirport, shipments])
 
+    // ── Vista de detalle: reemplaza la tabla dentro del propio panel (sin Drawer) ──
+    if (selectedAirport) {
+        return (
+            <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
-    useEffect(() => {
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1, py: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <IconButton size="small" onClick={() => onAirportSelected?.(null)}>
+                            <ArrowBackIcon />
+                        </IconButton>
+                        <Typography sx={{ fontWeight: 700, color: '#1F3864' }}>
+                            {selectedAirport.id}
+                        </Typography>
+                    </Box>
+                    <IconButton size="small" onClick={() => onAirportSelected?.(null)}>
+                        <CloseIcon />
+                    </IconButton>
+                </Box>
 
-        if (!selectedAirportCode)
-            return
+                <Divider />
 
-        const airport =
-            rows.find(
-                r => r.id === selectedAirportCode
-            )
+                <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
 
-        if (airport)
-            setSelectedAirport(airport)
+                    <Typography>{selectedAirport.city}</Typography>
+                    <Typography color="text.secondary">
+                        {selectedAirport.country} · {selectedAirport.continent}
+                    </Typography>
 
-    }, [
-        selectedAirportCode,
-        rows
-    ])
+                    <Box sx={{ mt: 2 }}>
+                        <Typography variant="body2">Ocupación:</Typography>
+                        <Typography variant="h6">
+                            {selectedAirport.currentOccupancy} / {selectedAirport.warehouseCapacity}
+                        </Typography>
+                        <SemaphoreChip occupancyPct={selectedAirport.occupancy} />
+                    </Box>
 
+                    <Divider sx={{ my: 2 }} />
+
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1F3864', mb: 1 }}>
+                        Stock
+                    </Typography>
+
+                    <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                        En tránsito / Por salir ({originShipments.length})
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mb: 1.5 }}>
+                        {originShipments.length === 0 ? (
+                            <Typography sx={{ fontSize: '0.78rem', color: 'text.secondary' }}>
+                                Sin envíos.
+                            </Typography>
+                        ) : originShipments.map(s => (
+                            <Typography key={s.id} sx={{ fontSize: '0.78rem' }}>
+                                {s.externalId} — {s.bagCount} maletas → {s.destIata}
+                            </Typography>
+                        ))}
+                    </Box>
+
+                    <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                        Destino final / Entregado ({deliveredShipments.length})
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                        {deliveredShipments.length === 0 ? (
+                            <Typography sx={{ fontSize: '0.78rem', color: 'text.secondary' }}>
+                                Sin envíos.
+                            </Typography>
+                        ) : deliveredShipments.map(s => (
+                            <Typography key={s.id} sx={{ fontSize: '0.78rem' }}>
+                                {s.externalId} — {s.bagCount} maletas desde {s.originIata}
+                            </Typography>
+                        ))}
+                    </Box>
+
+                    <Divider sx={{ my: 2 }} />
+
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1F3864' }}>
+                        Vuelos relacionados ({selectedFlights.length})
+                    </Typography>
+
+                    <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        {selectedFlights.map(f => (
+                            <Box key={f.flightId} sx={{ border: '1px solid #E0E0E0', borderRadius: 1, p: 1 }}>
+                                <Typography variant="body2">
+                                    {f.originIata} → {f.destIata}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {f.status}
+                                </Typography>
+                            </Box>
+                        ))}
+                    </Box>
+
+                </Box>
+
+            </Box>
+        )
+    }
+
+    // ── Lista + filtros ──
     return (
-        <Box
-            sx={{
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 1,
-            }}
-        >
+        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
 
-            {/* Filtros */}
-
-            <Box
-                sx={{
-                    display: 'flex',
-                    gap: 1,
-                    p: 1,
-                }}
-            >
+            <Box sx={{ display: 'flex', gap: 1, p: 1, flexWrap: 'wrap' }}>
 
                 <TextField
                     size="small"
                     label="Buscar"
                     value={search}
-                    onChange={e =>
-                        setSearch(e.target.value)
-                    }
-                    sx={{ flex: 1 }}
+                    onChange={e => onFiltersChange({ ...filters, search: e.target.value })}
+                    sx={{ flex: 1, minWidth: 120 }}
                 />
+
+                <TextField
+                    select
+                    size="small"
+                    label="Código"
+                    value={codes.includes(search) ? search : 'ALL'}
+                    onChange={e =>
+                        onFiltersChange({
+                            ...filters,
+                            search: e.target.value === 'ALL' ? '' : e.target.value,
+                        })
+                    }
+                    sx={{ width: 110 }}
+                >
+                    <MenuItem value="ALL">Todos</MenuItem>
+                    {codes.map(c => (
+                        <MenuItem key={c} value={c}>{c}</MenuItem>
+                    ))}
+                </TextField>
+
+                <TextField
+                    select
+                    size="small"
+                    label="Continente"
+                    value={continent}
+                    onChange={e => onFiltersChange({ ...filters, continent: e.target.value })}
+                    sx={{ width: 140 }}
+                >
+                    <MenuItem value="ALL">Todos</MenuItem>
+                    {continents.map(c => (
+                        <MenuItem key={c} value={c}>{c}</MenuItem>
+                    ))}
+                </TextField>
 
                 <TextField
                     select
                     size="small"
                     label="Semáforo"
                     value={semaphore}
-                    onChange={e =>
-                        setSemaphore(e.target.value)
-                    }
+                    onChange={e => onFiltersChange({ ...filters, semaphore: e.target.value })}
                     sx={{ width: 130 }}
                 >
                     <MenuItem value="ALL">Todos</MenuItem>
@@ -224,216 +307,13 @@ export default function OpsWarehousesTab({
 
             </Box>
 
-            {/* Tabla */}
-
-            <Box
-                sx={{
-                    flexGrow: 1,
-                    minHeight: 0,
-                }}
-            >
-
+            <Box sx={{ flexGrow: 1, minHeight: 0 }}>
                 <DataTable
                     rows={filteredRows}
                     columns={columns}
-                    onRowClick={(params) => {
-
-                        setSelectedAirport(params.row)
-
-                        onAirportSelected?.(
-                            params.row.id
-                        )
-
-                    }}
+                    onRowClick={(params) => onAirportSelected?.(params.row.id)}
                 />
-
             </Box>
-
-            {/* Drawer */}
-
-            <Drawer
-                anchor="right"
-                open={Boolean(selectedAirport)}
-                onClose={() =>
-                    setSelectedAirport(null)
-                }
-                PaperProps={{
-                    sx: {
-                        width: 360,
-                        p: 2,
-                    }
-                }}
-            >
-
-                {selectedAirport && (
-
-                    <Box>
-
-                        <Box
-                            sx={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                            }}
-                        >
-
-                            <Typography
-                                variant="h6"
-                                sx={{
-                                    color: '#1F3864',
-                                    fontWeight: 700,
-                                }}
-                            >
-                                {selectedAirport.id}
-                            </Typography>
-
-                            <IconButton
-                                onClick={() =>
-                                    setSelectedAirport(null)
-                                }
-                            >
-                                <CloseIcon />
-                            </IconButton>
-
-                        </Box>
-
-                        <Divider sx={{ my: 2 }} />
-
-                        <Typography>
-                            {selectedAirport.city}
-                        </Typography>
-
-                        <Typography
-                            color="text.secondary"
-                        >
-                            {selectedAirport.country}
-                        </Typography>
-
-                        <Box sx={{ mt: 2 }}>
-
-                            <Typography
-                                variant="body2"
-                            >
-                                Ocupación:
-                            </Typography>
-
-                            <Typography
-                                variant="h6"
-                            >
-                                {selectedAirport.currentOccupancy}
-                                {' / '}
-                                {selectedAirport.warehouseCapacity}
-                            </Typography>
-
-                            <SemaphoreChip
-                                occupancyPct={
-                                    selectedAirport.occupancy
-                                }
-                            />
-
-                        </Box>
-
-                        <Divider sx={{ my: 2 }} />
-
-                        <Typography
-                            variant="subtitle2"
-                            sx={{
-                                fontWeight: 700,
-                                color: '#1F3864',
-                                mb: 1,
-                            }}
-                        >
-                            Stock
-                        </Typography>
-
-                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
-                            En tránsito / Por salir ({originShipments.length})
-                        </Typography>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mb: 1.5 }}>
-                            {originShipments.length === 0 ? (
-                                <Typography sx={{ fontSize: '0.78rem', color: 'text.secondary' }}>
-                                    Sin envíos.
-                                </Typography>
-                            ) : originShipments.map(s => (
-                                <Typography key={s.id} sx={{ fontSize: '0.78rem' }}>
-                                    {s.externalId} — {s.bagCount} maletas → {s.destIata}
-                                </Typography>
-                            ))}
-                        </Box>
-
-                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
-                            Destino Final / Entregado ({deliveredShipments.length})
-                        </Typography>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                            {deliveredShipments.length === 0 ? (
-                                <Typography sx={{ fontSize: '0.78rem', color: 'text.secondary' }}>
-                                    Sin envíos.
-                                </Typography>
-                            ) : deliveredShipments.map(s => (
-                                <Typography key={s.id} sx={{ fontSize: '0.78rem' }}>
-                                    {s.externalId} — {s.bagCount} maletas desde {s.originIata}
-                                </Typography>
-                            ))}
-                        </Box>
-
-                        <Divider sx={{ my: 2 }} />
-
-                        <Typography
-                            variant="subtitle2"
-                            sx={{
-                                fontWeight: 700,
-                                color: '#1F3864',
-                            }}
-                        >
-                            Vuelos relacionados
-                        </Typography>
-
-                        <Box
-                            sx={{
-                                mt: 1,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: 1,
-                            }}
-                        >
-
-                            {selectedFlights.map(f => (
-
-                                <Box
-                                    key={f.id}
-                                    sx={{
-                                        border: '1px solid #E0E0E0',
-                                        borderRadius: 1,
-                                        p: 1,
-                                    }}
-                                >
-
-                                    <Typography
-                                        variant="body2"
-                                    >
-                                        {f.originIata}
-                                        {' → '}
-                                        {f.destIata}
-                                    </Typography>
-
-                                    <Typography
-                                        variant="caption"
-                                        color="text.secondary"
-                                    >
-                                        {f.status}
-                                    </Typography>
-
-                                </Box>
-
-                            ))}
-
-                        </Box>
-
-                    </Box>
-
-                )}
-
-            </Drawer>
 
         </Box>
     )

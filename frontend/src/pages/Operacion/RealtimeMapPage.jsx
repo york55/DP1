@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Box from '@mui/material/Box'
 import client from '../../api/client'
 import OpsPanel from '../../components/ops/OpsPanel'
@@ -27,6 +27,11 @@ import { getSemaphoreColor }
   from '../../utils/semaphoreUtils'
 
 const POLL_INTERVAL_MS = 30_000 // refresca cada 30 s
+
+// Panel lateral: colapsable + ajustable por arrastre (mismo patrón que Simulación)
+const MIN_PANEL_WIDTH = 320
+const MAX_PANEL_WIDTH = 700
+const DEFAULT_PANEL_WIDTH = 460
 
 
 
@@ -65,7 +70,44 @@ function lerp(a, b, t) {
   return a + (b - a) * t
 }
 
-function flightRouteStyle(status) {
+// Camino restante por volar: desde la posición actual del avión hasta el destino,
+// azul discontinuo, con opacidad decreciente hacia el destino (se va desvaneciendo
+// hacia adelante, como si aún no estuviera "confirmado").
+function drawFlightPath(layerGroup, L, p1, p2, tFrom, tTo, { isDimmed = false, isSelected = false } = {}) {
+  const SEGMENTS = 14
+  const maxOpacity = isDimmed ? 0.12 : (isSelected ? 0.75 : 0.55)
+
+  for (let i = 0; i < SEGMENTS; i++) {
+    const segStart = tFrom + ((tTo - tFrom) * i) / SEGMENTS
+    const segEnd = tFrom + ((tTo - tFrom) * (i + 1)) / SEGMENTS
+
+    const start = L.Projection.SphericalMercator.unproject({
+      x: lerp(p1.x, p2.x, segStart),
+      y: lerp(p1.y, p2.y, segStart),
+    })
+    const end = L.Projection.SphericalMercator.unproject({
+      x: lerp(p1.x, p2.x, segEnd),
+      y: lerp(p1.y, p2.y, segEnd),
+    })
+
+    // El segmento más cercano al avión es el más visible; se desvanece hacia el destino
+    const segOpacity = maxOpacity * (1 - i / SEGMENTS)
+
+    L.polyline(
+      [[start.lat, start.lng], [end.lat, end.lng]],
+      {
+        color: '#2E75B6',
+        weight: 2,
+        opacity: segOpacity,
+        dashArray: '6 6',
+      }
+    ).addTo(layerGroup)
+  }
+}
+
+// isSelected/isDimmed permiten resaltar el vuelo enfocado y atenuar el resto,
+// igual que FlightRoute.jsx en Simulación.
+function flightRouteStyle(status, { isSelected = false, isDimmed = false } = {}) {
 
   const isInFlight =
     status === 'En vuelo' ||
@@ -76,7 +118,16 @@ function flightRouteStyle(status) {
     status === 'CANCELLED'
 
   if (isCancelled) {
-    return { color: '#C62828', weight: 0.6, opacity: 0.5, dashArray: '3 5' }
+    return { color: '#C62828', weight: 0.6, opacity: isDimmed ? 0.05 : 0.5, dashArray: '3 5' }
+  }
+
+  if (isSelected) {
+    return {
+      color: isInFlight ? '#FB8C00' : '#2E75B6',
+      weight: 2.6,
+      opacity: 0.95,
+      dashArray: null,
+    }
   }
 
   return {
@@ -89,9 +140,9 @@ function flightRouteStyle(status) {
       ? 0.5
       : 0.4,
 
-    opacity: isInFlight
-      ? 0.45
-      : 0.20,
+    opacity: isDimmed
+      ? 0.06
+      : (isInFlight ? 0.45 : 0.20),
 
     dashArray: isInFlight
       ? '8 6'
@@ -99,6 +150,20 @@ function flightRouteStyle(status) {
 
   }
 
+}
+
+// 'unknown' del backend se normaliza igual que en Simulación
+function normalizeContinent(c) {
+  return (!c || String(c).toLowerCase() === 'unknown') ? 'Sudamérica' : c
+}
+
+// Mismos umbrales que ya usaba OpsWarehousesTab para el filtro de semáforo
+function occupancyBucket(pct) {
+  const p = pct ?? 0
+  if (p < 25) return 'LOW'
+  if (p < 50) return 'MEDIUM'
+  if (p < 80) return 'HIGH'
+  return 'CRITICAL'
 }
 
 // Tooltip compacto al hacer hover sobre un aeropuerto
@@ -118,34 +183,151 @@ export default function RealtimeMapPage() {
   const airportMarkers =
     useRef(new Map())
   const flightLayer = useRef(null)
+  const selectionLayer = useRef(null) // halo de almacén + ruta de envío seleccionado
 
   const [lastUpdate, setLastUpdate] = useState(null)
-  const [panelOpen, setPanelOpen] = useState(false)
+
+  // Panel: colapsado / ancho ajustable por arrastre
+  const [collapsed, setCollapsed] = useState(true)
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
+  const isDragging = useRef(false)
+  const dragStartX = useRef(0)
+  const dragStartWidth = useRef(0)
+
   const [airports, setAirports] = useState([])
   const [flights, setFlights] = useState([])
   const [shipments, setShipments] = useState([])
+
+  // Metadata estática de aeropuertos (continente, etc.) — viene de /ops/airports,
+  // no de /ops/map/snapshot, así que se trae una sola vez y se mezcla por iataCode.
+  const [airportMeta, setAirportMeta] = useState(null)
+
+  useEffect(() => {
+    client.get('/ops/airports')
+      .then(res => {
+        const map = new Map()
+        ;(res.data || []).forEach(a => map.set(a.iataCode, a.continent))
+        setAirportMeta(map)
+      })
+      .catch(e => console.error('Error fetching ops/airports:', e))
+  }, [])
+
   const [selectedFlightId, setSelectedFlightId] =
     useState(null)
 
   const [selectedAirportCode, setSelectedAirportCode] =
     useState(null)
 
-  // OpsShipment no trae un id de vuelo asignado, solo origen/destino — enfocamos
-  // el almacén de origen si está esperando salida, o el de destino en cualquier
-  // otro caso (en tránsito, entregado, retrasado), que es donde físicamente está
-  // o hacia donde se dirige.
+  const [selectedShipmentId, setSelectedShipmentId] =
+    useState(null)
+
+  // Filtros de Almacenes — viven acá porque también acotan lo que se pinta en el mapa
+  const [warehouseFilters, setWarehouseFilters] = useState({
+    search: '',
+    continent: 'ALL',
+    semaphore: 'ALL',
+  })
+
+  // ── Foco de envío: ruta con saltos (planificado) o el vuelo actual (en tránsito) ──
   const handleShipmentFocus = useCallback((shipment) => {
-    if (!shipment) return
+    if (!shipment) {
+      setSelectedShipmentId(null)
+      setSelectedFlightId(null)
+      return
+    }
+
+    setSelectedShipmentId(shipment.id)
+
+    const shipmentFlights = (shipment.flightIds || [])
+      .map(fid => flights.find(f => f.flightId === fid))
+      .filter(Boolean)
+
+    const activeFlight = shipmentFlights.find(
+      f => f.status === 'En vuelo' || f.status === 'IN_FLIGHT'
+    )
+
+    if (activeFlight) {
+      // Está en tránsito: enfocamos el avión, igual que si lo hubieran clickeado en el mapa
+      setSelectedAirportCode(null)
+      setSelectedFlightId(activeFlight.flightId)
+      return
+    }
+
+    // Planificado (o esperando el siguiente tramo): sin vuelo activo que resaltar,
+    // enfocamos el almacén relevante y dejamos que selectedShipmentRoute dibuje los saltos
+    setSelectedFlightId(null)
     const code = shipment.status === 'PLANNED' ? shipment.originIata : shipment.destIata
     if (code) setSelectedAirportCode(code)
+  }, [flights])
+
+  const handleFlightFocus = useCallback((flightId) => {
+    setSelectedShipmentId(null)
+    setSelectedAirportCode(null)
+    setSelectedFlightId(flightId)
   }, [])
 
-  // ── Fetch del snapshot y pintado ──────────────────────────────────────────
+  const handleAirportFocus = useCallback((code) => {
+    setSelectedShipmentId(null)
+    setSelectedFlightId(null)
+    setSelectedAirportCode(code)
+  }, [])
 
-  const fetchAndRender = useCallback(async () => {
-    const map = mapInst.current
-    const L = window.L
-    if (!map || !L) return
+  // ── Tramos de la ruta de un envío seleccionado (derivados de sus flightIds) ──────
+  const selectedShipmentRoute = useMemo(() => {
+    if (!selectedShipmentId) return null
+    const shipment = shipments.find(s => s.id === selectedShipmentId)
+    if (!shipment) return null
+
+    const legFlights = (shipment.flightIds || [])
+      .map(fid => flights.find(f => f.flightId === fid))
+      .filter(Boolean)
+
+    // Si hay un tramo en vuelo, ya se resalta como vuelo seleccionado — no se dibuja línea aparte.
+    if (legFlights.some(f => f.status === 'En vuelo' || f.status === 'IN_FLIGHT')) return null
+
+    if (legFlights.length > 0) {
+      return legFlights.map(f => ({ originIata: f.originIata, destIata: f.destIata }))
+    }
+
+    // Sin tramos resolubles: línea directa origen → destino como respaldo
+    if (shipment.originIata && shipment.destIata) {
+      return [{ originIata: shipment.originIata, destIata: shipment.destIata }]
+    }
+    return null
+  }, [selectedShipmentId, shipments, flights])
+
+  // ── Filtro de almacenes para el mapa (Código/Buscar, Continente, Semáforo) ────────
+  const filteredAirports = useMemo(() => {
+    const { search, continent, semaphore } = warehouseFilters
+    return airports.filter(a => {
+      if (search) {
+        const s = search.toLowerCase()
+        const matchesText =
+          a.iataCode?.toLowerCase().includes(s) ||
+          a.name?.toLowerCase().includes(s)
+        if (!matchesText) return false
+      }
+      if (continent !== 'ALL' && normalizeContinent(a.continent) !== continent) return false
+      if (semaphore !== 'ALL' && occupancyBucket(a.occupancyPct) !== semaphore) return false
+      return true
+    })
+  }, [airports, warehouseFilters])
+
+  // Código/Buscar solo acota almacenes; Continente y Semáforo acotan también los vuelos
+  const mapFlightFilterActive =
+    warehouseFilters.continent !== 'ALL' ||
+    warehouseFilters.semaphore !== 'ALL'
+
+  const filteredFlightsForMap = useMemo(() => {
+    if (!mapFlightFilterActive) return flights
+    const codes = new Set(filteredAirports.map(a => a.iataCode))
+    return flights.filter(f => codes.has(f.originIata) || codes.has(f.destIata))
+  }, [flights, filteredAirports, mapFlightFilterActive])
+
+  // ── Fetch del snapshot (solo actualiza datos; el dibujado va aparte) ─────────────
+
+  const fetchSnapshot = useCallback(async () => {
+    if (!airportMeta) return // espera a tener la metadata (continente) antes de pintar
 
     try {
       const res = await client.get('/ops/map/snapshot')
@@ -164,132 +346,144 @@ export default function RealtimeMapPage() {
         status: STATUS_LABEL[f.status] ?? f.status,
       }))
 
-      setAirports(data.airports || [])
+      // El snapshot no trae continente — se mezcla acá con la metadata de /ops/airports
+      const mergedAirports = (data.airports || []).map(a => ({
+        ...a,
+        continent: airportMeta.get(a.iataCode),
+      }))
+
+      setAirports(mergedAirports)
       setFlights(normalizedFlights)
       setShipments(data.shipments || [])
+      setLastUpdate(new Date().toLocaleTimeString('es-PE'))
+    } catch (e) {
+      console.error('Error fetching ops/map/snapshot:', e)
+    }
+  }, [airportMeta])
 
-      // ── Aeropuertos ────────────────────────────────────────────────────────
-      if (airportLayer.current) airportLayer.current.clearLayers()
-      airportMarkers.current.clear()
-        ; (data.airports || []).forEach(a => {
-          if (a.latitude == null || a.longitude == null) return
-          const icon = airportIcon(a.occupancyPct)
+  // ── Dibujado del mapa: aeropuertos, vuelos y capa de selección ───────────────────
 
-          const incomingCount =
-            normalizedFlights.filter(
-              fl => fl.destination === a.iataCode
-            ).length
+  const renderMap = useCallback(() => {
+    const map = mapInst.current
+    const L = window.L
+    if (!map || !L) return
 
-          const outgoingCount =
-            normalizedFlights.filter(
-              fl => fl.origin === a.iataCode
-            ).length
+    // ── Aeropuertos ────────────────────────────────────────────────────────
+    if (airportLayer.current) airportLayer.current.clearLayers()
+    airportMarkers.current.clear()
 
-          const semaphore =
-            getSemaphoreColor(a.occupancyPct)
+    filteredAirports.forEach(a => {
+      if (a.latitude == null || a.longitude == null) return
+      const icon = airportIcon(a.occupancyPct)
 
+      const incomingCount =
+        filteredFlightsForMap.filter(fl => fl.destIata === a.iataCode).length
 
-          const popupAirport = {
+      const outgoingCount =
+        filteredFlightsForMap.filter(fl => fl.originIata === a.iataCode).length
 
-            ...a,
+      const semaphore =
+        getSemaphoreColor(a.occupancyPct)
 
-            // nombres que espera AirportMapPopup
-            iata: a.iataCode,
+      const popupAirport = {
+        ...a,
+        iata: a.iataCode,
+        occupancy: a.occupancyPct,
+        warehouseCapacity: a.capacity,
+        currentOccupancy: a.assignedShipments,
+      }
 
-            occupancy: a.occupancyPct,
-
-            warehouseCapacity: a.capacity,
-
-            currentOccupancy: a.assignedShipments,
-
-          }
-
-
-          const marker = L.marker(
-            [a.latitude, a.longitude],
-            { icon }
+      const marker = L.marker(
+        [a.latitude, a.longitude],
+        { icon }
+      )
+        .addTo(airportLayer.current)
+        .bindTooltip(airportTooltipHtml(a), { direction: 'top', offset: [0, -10] })
+        .bindPopup(
+          createReactPopup(
+            AirportMapPopup,
+            { airport: popupAirport, incomingCount, outgoingCount, semaphore }
           )
-            .addTo(airportLayer.current)
-            .bindTooltip(airportTooltipHtml(a), { direction: 'top', offset: [0, -10] })
-            .bindPopup(
-              createReactPopup(
-                AirportMapPopup,
-                {
-                  airport: popupAirport,
-                  incomingCount,
-                  outgoingCount,
-                  semaphore,
-                }
-              )
-            )
-            .on('click', () => {
-              setSelectedAirportCode(a.iataCode)
-            })
-            .on('popupclose', () => {
-              setSelectedAirportCode(null)
-            })
-
+        )
+        .on('click', () => handleAirportFocus(a.iataCode))
+        .on('popupclose', () => {
+          setSelectedAirportCode(prev => (prev === a.iataCode ? null : prev))
         })
 
-      // ── Vuelos activos con maletas ──────────────────────────────────────────
-      if (flightLayer.current) flightLayer.current.clearLayers()
-      flightMarkers.current.clear()
+      airportMarkers.current.set(a.iataCode, marker)
+    })
 
-        ; normalizedFlights.forEach(f => {
-          if (!f.originLat || !f.originLng || !f.destLat || !f.destLng) return
+    // ── Vuelos ─────────────────────────────────────────────────────────────
+    if (flightLayer.current) flightLayer.current.clearLayers()
+    flightMarkers.current.clear()
 
-          // Línea de ruta tenue
-          L.polyline(
-            [
-              [f.originLat, f.originLng],
-              [f.destLat, f.destLng]
-            ],
-            flightRouteStyle(f.status)
-          ).addTo(flightLayer.current)
+    filteredFlightsForMap.forEach(f => {
+      if (!f.originLat || !f.originLng || !f.destLat || !f.destLng) return
 
-          // Posición interpolada usando la misma proyección que Leaflet
-          const p1 = L.Projection.SphericalMercator.project({
-            lat: f.originLat,
-            lng: f.originLng,
-          })
+      const isSelected = selectedFlightId != null && String(selectedFlightId) === String(f.flightId)
+      const isDimmed = selectedFlightId != null && !isSelected
+      const isInFlight = f.status === 'En vuelo' || f.status === 'IN_FLIGHT'
 
-          const p2 = L.Projection.SphericalMercator.project({
-            lat: f.destLat,
-            lng: f.destLng,
-          })
+      // Posición interpolada usando la misma proyección que Leaflet
+      const p1 = L.Projection.SphericalMercator.project({
+        lat: f.originLat,
+        lng: f.originLng,
+      })
 
-          const point = L.Projection.SphericalMercator.unproject({
-            x: lerp(p1.x, p2.x, f.progress),
-            y: lerp(p1.y, p2.y, f.progress),
-          })
+      const p2 = L.Projection.SphericalMercator.project({
+        lat: f.destLat,
+        lng: f.destLng,
+      })
 
-          const lat = point.lat
-          const lng = point.lng
+      const point = L.Projection.SphericalMercator.unproject({
+        x: lerp(p1.x, p2.x, f.progress),
+        y: lerp(p1.y, p2.y, f.progress),
+      })
 
+      const lat = point.lat
+      const lng = point.lng
 
-          const angle = getBearing(
-            f.originLat,
-            f.originLng,
-            f.destLat,
-            f.destLng
-          )
-          // Ícono de avión (emoji SVG embebido para no depender de imágenes externas)
-          const loadPct =
-            f.capacity > 0
-              ? (f.assignedBags / f.capacity) * 100
-              : 0
+      if (isInFlight && isSelected) {
+        // Vuelo seleccionado: línea sólida y resaltada (como antes), sin el fade discontinuo
+        L.polyline(
+          [[lat, lng], [f.destLat, f.destLng]],
+          flightRouteStyle(f.status, { isSelected, isDimmed })
+        ).addTo(flightLayer.current)
+      } else if (isInFlight) {
+        // Camino que falta por volar: posición actual → destino, azul discontinuo,
+        // se va desvaneciendo hacia el destino a medida que el avión avanza.
+        drawFlightPath(flightLayer.current, L, p1, p2, f.progress, 1, { isDimmed, isSelected })
+      } else {
+        // Vuelos programados: ruta completa origen → destino con el estilo habitual
+        L.polyline(
+          [[f.originLat, f.originLng], [f.destLat, f.destLng]],
+          flightRouteStyle(f.status, { isSelected, isDimmed })
+        ).addTo(flightLayer.current)
+      }
 
-          const color =
-            getSemaphoreColor(loadPct)
+      const angle = getBearing(
+        f.originLat,
+        f.originLng,
+        f.destLat,
+        f.destLng
+      )
 
-          const planeImage =
-            PLANE_IMAGES[color]
+      const loadPct =
+        f.capacity > 0
+          ? (f.assignedBags / f.capacity) * 100
+          : 0
 
-          const planeIcon = L.divIcon({
+      const color =
+        getSemaphoreColor(loadPct)
 
-            className: '',
+      const planeImage =
+        PLANE_IMAGES[color]
 
-            html: `
+      const planeIcon = L.divIcon({
+
+        className: '',
+
+        html: `
     <div
       style="
         width:24px;
@@ -298,6 +492,7 @@ export default function RealtimeMapPage() {
         align-items:center;
         justify-content:center;
         transform:rotate(${angle}deg);
+        opacity:${isDimmed ? 0.15 : 1};
       "
     >
       <img
@@ -313,95 +508,88 @@ export default function RealtimeMapPage() {
     </div>
   `,
 
-            iconSize: [24, 24],
+        iconSize: [24, 24],
 
-            iconAnchor: [12, 12]
+        iconAnchor: [12, 12]
 
-          })
+      })
 
+      const popupFlight = {
+        ...f,
+        origin: f.originIata,
+        destination: f.destIata,
+        bagsAboard: f.assignedBags,
+      }
 
-          const popupFlight = {
+      const marker =
+        L.marker([lat, lng], { icon: planeIcon })
+          .addTo(flightLayer.current)
 
-            ...f,
-
-            origin: f.originIata,
-
-            destination: f.destIata,
-
-            bagsAboard: f.assignedBags,
-
-          }
-
-          const marker =
-            L.marker([lat, lng], { icon: planeIcon })
-              .addTo(flightLayer.current)
-
-          flightMarkers.current.set(
-            f.flightId,
-            marker
-          )
-
-          marker
-            .bindTooltip(
-              `${f.originIata} → ${f.destIata}`,
-              {
-                direction: 'top',
-                offset: [0, -14]
-              }
-            )
-            .bindPopup(
-              createReactPopup(
-                FlightMapPopup,
-                {
-                  flight: popupFlight
-                }
-              )
-            )
-        })
-
-      setLastUpdate(new Date().toLocaleTimeString('es-PE'))
-    } catch (e) {
-      console.error('Error fetching ops/map/snapshot:', e)
-    }
-  }, [])
-
-  // ── Inicializar mapa ───────────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!mapInst.current) return
-
-    setTimeout(() => {
-      mapInst.current.invalidateSize()
-    }, 300)
-
-  }, [panelOpen])
-
-  useEffect(() => {
-
-    if (!selectedFlightId)
-      return
-
-    const marker =
-      flightMarkers.current.get(
-        selectedFlightId
+      flightMarkers.current.set(
+        f.flightId,
+        marker
       )
 
-    if (!marker || !mapInst.current)
-      return
+      marker
+        .bindTooltip(
+          `${f.originIata} → ${f.destIata}`,
+          { direction: 'top', offset: [0, -14] }
+        )
+        .bindPopup(
+          createReactPopup(
+            FlightMapPopup,
+            { flight: popupFlight }
+          )
+        )
+        .on('click', () => handleFlightFocus(f.flightId))
+    })
 
-    mapInst.current.flyTo(
-      marker.getLatLng(),
-      4,
-      {
-        duration: 1.2
+    // ── Capa de selección: halo de almacén + ruta de envío ────────────────────
+    if (selectionLayer.current) selectionLayer.current.clearLayers()
+
+    if (selectedAirportCode) {
+      const airport = airports.find(a => a.iataCode === selectedAirportCode)
+      if (airport && airport.latitude != null && airport.longitude != null) {
+        L.circleMarker(
+          [airport.latitude, airport.longitude],
+          {
+            radius: 16,
+            color: '#1F3864',
+            weight: 2,
+            opacity: 0.9,
+            fillColor: '#2E75B6',
+            fillOpacity: 0.18,
+            interactive: false,
+          }
+        ).addTo(selectionLayer.current)
       }
-    )
+    }
 
-    setTimeout(() => {
-      marker.openPopup()
-    }, 400)
+    if (selectedShipmentRoute) {
+      const airportsByCode = new Map(airports.map(a => [a.iataCode, a]))
+      selectedShipmentRoute.forEach(leg => {
+        const orig = airportsByCode.get(leg.originIata)
+        const dest = airportsByCode.get(leg.destIata)
+        if (!orig || !dest) return
+        L.polyline(
+          [[orig.latitude, orig.longitude], [dest.latitude, dest.longitude]],
+          { color: '#8E24AA', weight: 3, opacity: 0.9 }
+        ).addTo(selectionLayer.current)
+      })
+    }
 
-  }, [selectedFlightId])
+  }, [
+    filteredAirports,
+    filteredFlightsForMap,
+    airports,
+    selectedFlightId,
+    selectedAirportCode,
+    selectedShipmentRoute,
+    handleAirportFocus,
+    handleFlightFocus,
+  ])
+
+  // ── Inicializar mapa (una sola vez) ───────────────────────────────────────
 
   useEffect(() => {
     if (mapInst.current || !mapRef.current) return
@@ -435,36 +623,105 @@ export default function RealtimeMapPage() {
       preferCanvas: true
     })
 
-
-
     L.tileLayer(
       'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
       {
         attribution: '© OpenStreetMap contributors',
-
         noWrap: true,
-
         maxZoom: 19
       }
     ).addTo(map)
 
     airportLayer.current = L.layerGroup().addTo(map)
     flightLayer.current = L.layerGroup().addTo(map)
+    selectionLayer.current = L.layerGroup().addTo(map)
+
+    // Click en zona vacía del mapa limpia la selección activa
+    map.on('click', () => {
+      setSelectedAirportCode(null)
+      setSelectedFlightId(null)
+      setSelectedShipmentId(null)
+    })
 
     mapInst.current = map
   }, [])
 
+  // ── Redimensionar el mapa cuando cambia el ancho/colapso del panel ────────
+
+  useEffect(() => {
+    if (!mapInst.current) return
+    const id = setTimeout(() => {
+      mapInst.current.invalidateSize()
+    }, 50)
+    return () => clearTimeout(id)
+  }, [collapsed, panelWidth])
+
+  // ── Arrastre del panel (ajustable, no solo contraer/expandir) ─────────────
+
+  const startDrag = useCallback((e) => {
+    isDragging.current = true
+    dragStartX.current = e.clientX
+    dragStartWidth.current = panelWidth
+    e.preventDefault()
+  }, [panelWidth])
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!isDragging.current) return
+      const delta = dragStartX.current - e.clientX
+      setPanelWidth(
+        Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, dragStartWidth.current + delta))
+      )
+    }
+    const onUp = () => { isDragging.current = false }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
+  useEffect(() => {
+
+    if (!selectedFlightId)
+      return
+
+    const marker =
+      flightMarkers.current.get(
+        selectedFlightId
+      )
+
+    if (!marker || !mapInst.current)
+      return
+
+    mapInst.current.flyTo(
+      marker.getLatLng(),
+      4,
+      {
+        duration: 1.2
+      }
+    )
+
+    setTimeout(() => {
+      marker.openPopup()
+    }, 400)
+
+  }, [selectedFlightId])
+
   // ── Polling ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Espera a tener la metadata de aeropuertos (continente) antes de empezar a pollear
+    if (!airportMeta) return
     // Primer fetch inmediato tras montar el mapa
-    const timeout = setTimeout(fetchAndRender, 500)
-    const interval = setInterval(fetchAndRender, POLL_INTERVAL_MS)
+    const timeout = setTimeout(fetchSnapshot, 500)
+    const interval = setInterval(fetchSnapshot, POLL_INTERVAL_MS)
     return () => {
       clearTimeout(timeout)
       clearInterval(interval)
     }
-  }, [fetchAndRender])
+  }, [fetchSnapshot, airportMeta])
 
   useEffect(() => {
 
@@ -505,6 +762,11 @@ export default function RealtimeMapPage() {
     ])
   }, [])
 
+  // ── Redibujado: cada vez que cambian datos, filtros o selección ───────────
+  useEffect(() => {
+    renderMap()
+  }, [renderMap])
+
 
 
 
@@ -535,9 +797,9 @@ export default function RealtimeMapPage() {
 
         <MapLegend />
 
-        {/* Botón panel */}
+        {/* Botón colapsar/expandir panel */}
         <Box
-          onClick={() => setPanelOpen(!panelOpen)}
+          onClick={() => setCollapsed(v => !v)}
           sx={{
             position: 'absolute',
             top: 16,
@@ -556,7 +818,7 @@ export default function RealtimeMapPage() {
             boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
           }}
         >
-          {panelOpen ? '→' : '←'}
+          {collapsed ? '←' : '→'}
         </Box>
 
         {lastUpdate && (
@@ -581,16 +843,31 @@ export default function RealtimeMapPage() {
         )}
       </Box>
 
+      {/* Divisor arrastrable — permite estirar/encoger el panel */}
+      {!collapsed && (
+        <Box
+          onMouseDown={startDrag}
+          sx={{
+            width: 5,
+            flexShrink: 0,
+            cursor: 'col-resize',
+            backgroundColor: '#BFBFBF',
+            transition: 'background-color 0.15s',
+            '&:hover': { backgroundColor: '#2E75B6' },
+          }}
+        />
+      )}
+
       {/* PANEL */}
       <Box
         sx={{
-          width: panelOpen ? 500 : 0,
+          width: collapsed ? 0 : panelWidth,
           flexShrink: 0,
           overflow: 'hidden',
-          transition: 'width 0.3s ease',
-          borderLeft: panelOpen
-            ? '1px solid rgba(0,0,0,0.12)'
-            : 'none',
+          transition: collapsed ? 'width 0.25s ease' : 'none',
+          borderLeft: collapsed
+            ? 'none'
+            : '1px solid rgba(0,0,0,0.12)',
           backgroundColor: '#fff',
         }}
       >
@@ -598,10 +875,14 @@ export default function RealtimeMapPage() {
           airports={airports}
           flights={flights}
           shipments={shipments}
-          onFlightSelected={setSelectedFlightId}
-          onAirportSelected={setSelectedAirportCode}
-          onShipmentFocus={handleShipmentFocus}
+          selectedFlightId={selectedFlightId}
           selectedAirportCode={selectedAirportCode}
+          selectedShipmentId={selectedShipmentId}
+          onFlightSelected={handleFlightFocus}
+          onAirportSelected={handleAirportFocus}
+          onShipmentFocus={handleShipmentFocus}
+          warehouseFilters={warehouseFilters}
+          onWarehouseFiltersChange={setWarehouseFilters}
         />
       </Box>
 
