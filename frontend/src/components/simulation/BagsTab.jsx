@@ -1,5 +1,7 @@
-import React, { useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
+import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
+import TextField from '@mui/material/TextField'
 import DataTable from '../common/DataTable'
 import { useSimulationContext } from '../../context/SimulationContext'
 
@@ -89,6 +91,9 @@ function generateBagLots(shipments) {
         bagCount,
         currentFlight: shipment.currentFlight,
         status: shipment.status,
+        client: shipment.client || '',
+        origin: shipment.origin || '',
+        destination: shipment.destination || '',
       })
     }
   })
@@ -97,13 +102,44 @@ function generateBagLots(shipments) {
 
 export default function BagsTab() {
   const { shipments } = useSimulationContext()
+  const [search, setSearch] = useState('')
 
   const bagLots = useMemo(() => generateBagLots(shipments), [shipments])
 
+  const filteredBagLots = useMemo(() => {
+    if (!search) return bagLots
+    const q = search.toLowerCase()
+    return bagLots.filter(b =>
+      b.id.toLowerCase().includes(q) ||
+      String(b.shipmentId).includes(q) ||
+      (b.client || '').toLowerCase().includes(q) ||
+      (b.origin || '').toLowerCase().includes(q) ||
+      (b.destination || '').toLowerCase().includes(q) ||
+      String(b.currentFlight || '').includes(q)
+    )
+  }, [bagLots, search])
+
   return (
-    <DataTable
-      rows={bagLots}
-      columns={columns}
-    />
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 1 }}>
+      {/* Search */}
+      <Box sx={{ px: 1, pt: 1 }}>
+        <TextField
+          size="small"
+          fullWidth
+          label="Buscar lote, envío, cliente, aeropuerto…"
+          placeholder="Ej. LOT-001, SKBO, Latam"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </Box>
+
+      {/* Table */}
+      <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+        <DataTable
+          rows={filteredBagLots}
+          columns={columns}
+        />
+      </Box>
+    </Box>
   )
 }

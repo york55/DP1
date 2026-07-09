@@ -31,6 +31,8 @@ export const flightApi = {
   update: (id, data) => client.put(`/flights/${id}`, data).then(r => r.data),
   delete: (id) => client.delete(`/flights/${id}`).then(r => r.data),
   cancel: (id, reason) => client.post(`/flights/${id}/cancel`, { reason }).then(r => r.data),
+  getBatches: (id) => client.get(`/flights/${id}/batches`).then(r => r.data),
+  getCancelled: () => client.get('/flights', { params: { status: 'CANCELLED' } }).then(r => r.data),
 }
 
 export const shipmentApi = {

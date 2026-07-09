@@ -12,6 +12,7 @@ import PlaneCanvasLayer from './PlaneCanvasLayer'
 import MapLegend from './MapLegend'
 import MapFilterPanel from './MapFilterPanel'
 import GlobalKpiPanel from './GlobalKpiPanel'
+import FlightCancelPanel from './FlightCancelPanel'
 import SimPipelineBox, { SHOW_SIM_PIPELINE } from './SimPipelineBox'
 import AirportMapPopup from './AirportMapPopup'
 import { useSimulationContext } from '../../context/SimulationContext'
@@ -179,14 +180,6 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
   function handleAirportSelect(data) {
     setActiveAirport(data)
     if (data) setActivePlane(null)
-  }
-
-  // Clic en zona vacía del mapa (no sobre un avión ni un aeropuerto): quita
-  // el foco del aeropuerto también. El foco del avión ya lo limpia
-  // PlaneCanvasLayer directamente (setSelectedFlightId(null)) antes de llamar esto.
-  function handleMapBackgroundClick() {
-    setActiveAirport(null)
-    if (context?.setSelectedAirportCode) context.setSelectedAirportCode(null)
   }
 
   let context = null
@@ -359,7 +352,6 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
           planePopupRef={planePopupRef}
           activePlaneFlightId={activePlaneFlightId}
           animClockRefOverride={animClockRef}
-          onBackgroundClick={handleMapBackgroundClick}
         />
 
         {/* Airport markers */}
@@ -398,6 +390,11 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
           avgFlightOccupancy={context?.kpis?.avgFlightOccupancy ?? 0}
           avgWarehouseOccupancy={context?.kpis?.avgWarehouseOccupancy ?? 0}
         />
+      )}
+
+      {/* Flight cancellation panel (absolute positioned over map, below KPI button) */}
+      {!standalone && (
+        <FlightCancelPanel />
       )}
 
       {/* ALNS pipeline box — disable by setting SHOW_SIM_PIPELINE=false in SimPipelineBox.jsx */}
