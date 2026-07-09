@@ -19,6 +19,7 @@ export const airportApi = {
   create: (data) => client.post('/airports', data).then(r => r.data),
   update: (id, data) => client.put(`/airports/${id}`, data).then(r => r.data),
   delete: (id) => client.delete(`/airports/${id}`).then(r => r.data),
+  getWarehouseDetail: (iata) => client.get(`/airports/iata/${iata}/warehouse-detail`).then(r => r.data),
 }
 
 export const flightApi = {
