@@ -37,6 +37,18 @@ public interface BaggageBatchRepository extends JpaRepository<BaggageBatch, Long
            "WHERE b.id IN :ids")
     List<BaggageBatch> findByIdInWithAirports(@Param("ids") List<Long> ids);
 
+    @Query("SELECT b FROM BaggageBatch b " +
+           "JOIN FETCH b.originAirport o JOIN FETCH b.destinationAirport d " +
+           "LEFT JOIN FETCH b.airline " +
+           "WHERE o.iataCode = :iata AND b.status = 'IN_ORIGIN'")
+    List<BaggageBatch> findInOriginByAirportIata(@Param("iata") String iata);
+
+    @Query("SELECT b FROM BaggageBatch b " +
+           "JOIN FETCH b.originAirport o JOIN FETCH b.destinationAirport d " +
+           "LEFT JOIN FETCH b.airline " +
+           "WHERE d.iataCode = :iata AND b.status = 'DELIVERED'")
+    List<BaggageBatch> findDeliveredByDestinationIata(@Param("iata") String iata);
+
     // Batches DELIVERED within the last 15 simulated minutes — still occupying destination storage.
     @Query("SELECT b FROM BaggageBatch b JOIN FETCH b.destinationAirport " +
            "WHERE b.status = 'DELIVERED' " +

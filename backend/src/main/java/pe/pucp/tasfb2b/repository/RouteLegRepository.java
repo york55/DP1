@@ -68,4 +68,19 @@ public interface RouteLegRepository extends JpaRepository<RouteLeg, Long> {
            "AND NOT EXISTS (SELECT rl2 FROM RouteLeg rl2 WHERE rl2.route = r AND rl2.status = 'IN_FLIGHT') " +
            "AND NOT EXISTS (SELECT rl3 FROM RouteLeg rl3 WHERE rl3.route = r AND rl3.status = 'PENDING' AND rl3.legOrder < rl.legOrder)")
     List<RouteLeg> findFirstPendingLegsOfTransitBagsAtIntermediateStops();
+
+    @Query("SELECT rl FROM RouteLeg rl " +
+           "JOIN FETCH rl.flight f " +
+           "JOIN FETCH f.originAirport oa " +
+           "JOIN FETCH rl.route r " +
+           "JOIN FETCH r.shipment s " +
+           "JOIN FETCH s.baggageBatch b " +
+           "JOIN FETCH b.originAirport JOIN FETCH b.destinationAirport " +
+           "LEFT JOIN FETCH b.airline " +
+           "WHERE oa.iataCode = :iata " +
+           "AND b.status = 'IN_TRANSIT' " +
+           "AND rl.status = 'PENDING' " +
+           "AND NOT EXISTS (SELECT rl2 FROM RouteLeg rl2 WHERE rl2.route = r AND rl2.status = 'IN_FLIGHT') " +
+           "AND NOT EXISTS (SELECT rl3 FROM RouteLeg rl3 WHERE rl3.route = r AND rl3.status = 'PENDING' AND rl3.legOrder < rl.legOrder)")
+    List<RouteLeg> findTransitBagsAtAirport(@Param("iata") String iata);
 }

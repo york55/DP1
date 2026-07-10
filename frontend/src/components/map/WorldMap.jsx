@@ -13,6 +13,7 @@ import MapLegend from './MapLegend'
 import MapFilterPanel from './MapFilterPanel'
 import GlobalKpiPanel from './GlobalKpiPanel'
 import FlightCancelPanel from './FlightCancelPanel'
+import CompletedRoutesPanel from './CompletedRoutesPanel'
 import SimPipelineBox, { SHOW_SIM_PIPELINE } from './SimPipelineBox'
 import AirportMapPopup from './AirportMapPopup'
 import { useSimulationContext } from '../../context/SimulationContext'
@@ -395,6 +396,11 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
       {/* Flight cancellation panel (absolute positioned over map, below KPI button) */}
       {!standalone && (
         <FlightCancelPanel />
+      )}
+
+      {/* Completed routes panel (absolute positioned over map, below cancel button) */}
+      {!standalone && (
+        <CompletedRoutesPanel />
       )}
 
       {/* ALNS pipeline box — disable by setting SHOW_SIM_PIPELINE=false in SimPipelineBox.jsx */}

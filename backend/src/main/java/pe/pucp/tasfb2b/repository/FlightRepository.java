@@ -55,6 +55,14 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
     @Query("SELECT f FROM Flight f JOIN FETCH f.originAirport JOIN FETCH f.destinationAirport")
     List<Flight> findAllWithAirports();
 
+    @Query("SELECT f FROM Flight f JOIN FETCH f.originAirport o JOIN FETCH f.destinationAirport d " +
+           "WHERE d.iataCode = :iata AND f.status IN ('SCHEDULED', 'IN_FLIGHT')")
+    List<Flight> findIncomingByDestinationIata(@Param("iata") String iata);
+
+    @Query("SELECT f FROM Flight f JOIN FETCH f.originAirport o JOIN FETCH f.destinationAirport d " +
+           "WHERE o.iataCode = :iata AND f.status = 'SCHEDULED'")
+    List<Flight> findOutgoingByOriginIata(@Param("iata") String iata);
+
     @Query("SELECT f FROM Flight f WHERE f.status = :status " +
            "AND f.departureTime > :simNow AND f.departureTime <= :simNowPlusTick")
     List<Flight> findScheduledInWindow(@Param("status") FlightStatus status,
