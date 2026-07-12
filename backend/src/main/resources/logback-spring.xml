@@ -39,7 +39,7 @@
     <!-- Frontend logs (received via POST /api/logs) -->
     <logger name="frontend-logger" level="DEBUG" additivity="false">
         <appender-ref ref="FRONTEND_FILE" />
-        <appender-ref ref="CONSOLE" />
+        <!--appender-ref ref="CONSOLE" /-->
     </logger>
 
     <!-- In-memory buffer appender for the DevFooter UI -->
