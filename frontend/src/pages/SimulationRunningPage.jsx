@@ -20,6 +20,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import NotificationsIcon from '@mui/icons-material/Notifications'
 import WorldMap from '../components/map/WorldMap'
+import FlightCancelPanel from '../components/map/FlightCancelPanel'
 import SimulationPanel from '../components/simulation/SimulationPanel'
 import SimulationControls from '../components/simulation/SimulationControls'
 import NotificationStack from '../components/common/NotificationStack'
@@ -102,6 +103,9 @@ export default function SimulationRunningPage() {
   // Sidebar resize / collapse state
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
   const [collapsed, setCollapsed] = useState(true)
+
+  // Flight-cancellation docked side panel (left of the map)
+  const [cancelPanelOpen, setCancelPanelOpen] = useState(false)
   const isDragging = useRef(false)
   const dragStartX = useRef(0)
   const dragStartWidth = useRef(0)
@@ -286,9 +290,32 @@ export default function SimulationRunningPage() {
 
       {/* Main Content */}
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* Left panel — cancelable flights (docked, hidden when closed) */}
+        {cancelPanelOpen && (
+          <Box
+            sx={{
+              width: 420,
+              flexShrink: 0,
+              overflow: 'hidden',
+              borderRight: '1px solid #BFBFBF',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <FlightCancelPanel open={cancelPanelOpen} onClose={() => setCancelPanelOpen(false)} />
+          </Box>
+        )}
+
         {/* Map — fills remaining space */}
         <Box sx={{ flex: 1, position: 'relative', minWidth: 0 }}>
-          <WorldMap airports={airports} flights={flights} simulatedTime={simulatedTime} resizeTrigger={collapsed ? 'collapsed' : panelWidth} />
+          <WorldMap
+            airports={airports}
+            flights={flights}
+            simulatedTime={simulatedTime}
+            resizeTrigger={`${collapsed ? 'collapsed' : panelWidth}_${cancelPanelOpen}`}
+            cancelPanelOpen={cancelPanelOpen}
+            onToggleCancelPanel={() => setCancelPanelOpen(o => !o)}
+          />
 
           {/* Collapse / expand button — always overlaid on map right edge */}
           <Tooltip title={collapsed ? 'Expandir panel' : 'Colapsar panel'} placement="left">
