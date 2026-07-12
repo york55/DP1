@@ -12,7 +12,7 @@ import PlaneCanvasLayer from './PlaneCanvasLayer'
 import MapLegend from './MapLegend'
 import MapFilterPanel from './MapFilterPanel'
 import GlobalKpiPanel from './GlobalKpiPanel'
-import FlightCancelPanel from './FlightCancelPanel'
+import { FlightCancelToggleButton } from './FlightCancelPanel'
 import CompletedRoutesPanel from './CompletedRoutesPanel'
 import SimPipelineBox, { SHOW_SIM_PIPELINE } from './SimPipelineBox'
 import AirportMapPopup from './AirportMapPopup'
@@ -154,7 +154,7 @@ function MapAirportTracker({ airport, popupRef }) {
  * @param {Date|null} simulatedTime - current simulated time for progress calculation
  * @param {*} resizeTrigger - any value whose change signals a container resize
  */
-function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], staticAirports, resizeTrigger, standalone = false, simulatedTime: propsSimulatedTime = null, animClockRef: propsAnimClockRef = null }) {
+function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], staticAirports, resizeTrigger, standalone = false, simulatedTime: propsSimulatedTime = null, animClockRef: propsAnimClockRef = null, cancelPanelOpen = false, onToggleCancelPanel }) {
   // Rasterize icons once on mount. When both resolve, bump iconsVersion so all
   // children re-render once and pick up the PNG L.icon instead of the divIcon fallback.
   const [iconsVersion, setIconsVersion] = useState(0)
@@ -393,9 +393,9 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
         />
       )}
 
-      {/* Flight cancellation panel (absolute positioned over map, below KPI button) */}
+      {/* Flight cancellation toggle button (absolute positioned over map, below KPI button) — opens the docked side panel */}
       {!standalone && (
-        <FlightCancelPanel />
+        <FlightCancelToggleButton open={cancelPanelOpen} onToggle={onToggleCancelPanel} />
       )}
 
       {/* Completed routes panel (absolute positioned over map, below cancel button) */}

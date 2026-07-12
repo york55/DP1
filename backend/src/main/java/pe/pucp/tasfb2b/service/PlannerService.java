@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.pucp.tasfb2b.domain.*;
+import pe.pucp.tasfb2b.domain.enums.RouteLegStatus;
 import pe.pucp.tasfb2b.domain.enums.ShipmentStatus;
 import pe.pucp.tasfb2b.exception.PlanningException;
 import pe.pucp.tasfb2b.planner.OptimizationResult;
@@ -17,7 +18,7 @@ import pe.pucp.tasfb2b.repository.*;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -76,31 +77,73 @@ public class PlannerService {
     public void persistRoutes(OptimizationResult result) {
         if (result.routes().isEmpty()) return;
 
-        // Guardar todos los shipments en un solo batch
-        List<Shipment> shipments = result.routes().stream()
-                .map(Route::getShipment)
-                .peek(s -> s.setStatus(ShipmentStatus.PLANNED))
-                .collect(Collectors.toList());
-        List<Shipment> savedShipments = shipmentRepo.saveAll(shipments);
+        // AlnsEngine always hands us transient Shipment/Route objects (buildRoutes()
+        // does `new Shipment()` / `new Route()` for every batch it routes). That's correct
+        // the first time a batch is planned, but replan() is only ever invoked for batches
+        // that already have a Shipment (see SimulationEngine.cancelFlightAndReplan /
+        // checkSlaViolations) — baggage_batch_id is unique on shipments and shipment_id is
+        // unique on routes, so blindly inserting would collide. Reuse the existing
+        // Shipment/Route when present instead of inserting a duplicate.
+        List<Shipment> shipmentsToSave = new ArrayList<>();
+        List<Route> routesToSave = new ArrayList<>();
+        List<RouteLeg> legsToSave = new ArrayList<>();
+        List<RouteLeg> legsToDelete = new ArrayList<>();
 
-        // Asociar shipments guardados a sus routes
-        List<Route> routes = result.routes();
-        for (int i = 0; i < routes.size(); i++) {
-            routes.get(i).setShipment(savedShipments.get(i));
-        }
+        for (Route plannedRoute : result.routes()) {
+            Shipment plannedShipment = plannedRoute.getShipment();
+            BaggageBatch batch = plannedShipment.getBaggageBatch();
 
-        // Guardar todas las routes en un solo batch
-        List<Route> savedRoutes = routeRepo.saveAll(routes);
+            Optional<Shipment> existingShipment = shipmentRepo.findByBaggageBatchId(batch.getId());
+            Shipment shipment = existingShipment.orElse(plannedShipment);
+            shipment.setBaggageBatch(batch);
+            shipment.setDeadline(plannedShipment.getDeadline());
 
-        // Recopilar y guardar todos los legs en un solo batch
-        List<RouteLeg> allLegs = new ArrayList<>();
-        for (Route savedRoute : savedRoutes) {
-            for (RouteLeg leg : savedRoute.getLegs()) {
-                leg.setRoute(savedRoute);
-                allLegs.add(leg);
+            // Reuse the existing route too, and only supersede the portion of it that
+            // hasn't flown yet — legs already COMPLETED are historical record and must
+            // not be deleted just because a later leg got cancelled/delayed and the batch
+            // is being re-routed from its current position onward.
+            Route route = plannedRoute;
+            int legOrderOffset = 0;
+            if (existingShipment.isPresent()) {
+                Optional<Route> existingRoute = routeRepo.findByShipmentId(existingShipment.get().getId());
+                if (existingRoute.isPresent()) {
+                    route = existingRoute.get();
+                    List<RouteLeg> oldLegs = routeLegRepo.findByRouteIdOrderByLegOrder(route.getId());
+                    for (RouteLeg oldLeg : oldLegs) {
+                        if (oldLeg.getStatus() == RouteLegStatus.COMPLETED) {
+                            legOrderOffset++;
+                        } else {
+                            legsToDelete.add(oldLeg);
+                        }
+                    }
+                }
             }
+
+            if (shipment.getStatus() != ShipmentStatus.DELIVERED) {
+                shipment.setStatus(legOrderOffset > 0 ? ShipmentStatus.IN_TRANSIT : ShipmentStatus.PLANNED);
+            }
+
+            route.setShipment(shipment);
+            route.setAlgorithmUsed(plannedRoute.getAlgorithmUsed());
+            route.setEstimatedArrival(plannedRoute.getEstimatedArrival());
+            route.setTotalLegs(legOrderOffset + plannedRoute.getLegs().size());
+
+            for (RouteLeg leg : plannedRoute.getLegs()) {
+                leg.setLegOrder(leg.getLegOrder() + legOrderOffset);
+                leg.setRoute(route);
+                legsToSave.add(leg);
+            }
+
+            shipmentsToSave.add(shipment);
+            routesToSave.add(route);
         }
-        routeLegRepo.saveAll(allLegs);
+
+        if (!legsToDelete.isEmpty()) {
+            routeLegRepo.deleteAll(legsToDelete);
+        }
+        shipmentRepo.saveAll(shipmentsToSave);
+        routeRepo.saveAll(routesToSave);
+        routeLegRepo.saveAll(legsToSave);
     }
 
     public AlnsParams buildAlnsParams(Simulation sim) {
