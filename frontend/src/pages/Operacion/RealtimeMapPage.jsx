@@ -475,10 +475,19 @@ export default function RealtimeMapPage() {
         ).addTo(flightLayer.current)
       }
 
-      // El ícono del avión solo se dibuja para vuelos realmente "en vuelo".
-      // Vuelos SCHEDULED (aún no despegan) y CANCELLED (no vuelan) conservan
-      // su línea de ruta arriba, pero no deben mostrar un avión volando.
-      if (!isInFlight) return
+      const isScheduled = f.status === 'Programado' || f.status === 'SCHEDULED'
+
+      // El ícono se dibuja para vuelos "en vuelo" (posición interpolada, se
+      // mueve) y para vuelos "programados" que YA tienen envíos asignados
+      // (el backend solo manda SCHEDULED en el snapshot si tienen carga
+      // comprometida — ver OpsFlightRepository.findFlightsWithPendingShipments).
+      // Estos últimos se muestran fijos en el aeropuerto de origen, con menor
+      // opacidad, para distinguirlos de un vuelo que ya está en el aire.
+      // CANCELLED, LANDED y demás estados no muestran ícono, solo la línea.
+      if (!isInFlight && !isScheduled) return
+
+      const markerLat = isInFlight ? lat : f.originLat
+      const markerLng = isInFlight ? lng : f.originLng
 
       const angle = getBearing(
         f.originLat,
@@ -504,6 +513,11 @@ export default function RealtimeMapPage() {
       const planeImage =
         PLANE_IMAGES[color]
 
+      // Los programados aún no despegan: se pintan más tenues (y sin el fade
+      // de "dimmed" por selección, que ya reduce aún más si aplica) para que
+      // a simple vista se note la diferencia con los que sí están volando.
+      const baseOpacity = isDimmed ? 0.15 : (isScheduled ? 0.55 : 1)
+
       const planeIcon = L.divIcon({
 
         className: '',
@@ -517,7 +531,7 @@ export default function RealtimeMapPage() {
         align-items:center;
         justify-content:center;
         transform:rotate(${angle}deg);
-        opacity:${isDimmed ? 0.15 : 1};
+        opacity:${baseOpacity};
       "
     >
       <img
@@ -547,7 +561,7 @@ export default function RealtimeMapPage() {
       }
 
       const marker =
-        L.marker([lat, lng], { icon: planeIcon })
+        L.marker([markerLat, markerLng], { icon: planeIcon })
           .addTo(flightLayer.current)
 
       flightMarkers.current.set(
@@ -557,7 +571,9 @@ export default function RealtimeMapPage() {
 
       marker
         .bindTooltip(
-          `${f.originIata} → ${f.destIata}`,
+          isScheduled
+            ? `${f.originIata} → ${f.destIata} (Programado)`
+            : `${f.originIata} → ${f.destIata}`,
           { direction: 'top', offset: [0, -14] }
         )
         .bindPopup(
@@ -910,6 +926,7 @@ export default function RealtimeMapPage() {
           onWarehouseFiltersChange={setWarehouseFilters}
           onlyWithShipments={onlyWithShipments}
           onOnlyWithShipmentsChange={setOnlyWithShipments}
+          onFlightCancelled={fetchSnapshot}
         />
       </Box>
 

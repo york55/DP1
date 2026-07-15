@@ -30,6 +30,7 @@ export default function OpsPanel({
   onWarehouseFiltersChange,
   onlyWithShipments,
   onOnlyWithShipmentsChange,
+  onFlightCancelled = () => {}, // AGREGADO
 
 }) {
   const [tab, setTab] = useState(0)
@@ -85,6 +86,7 @@ export default function OpsPanel({
             onFlightSelected={onFlightSelected}
             onlyWithShipments={onlyWithShipments}
             onOnlyWithShipmentsChange={onOnlyWithShipmentsChange}
+            onFlightCancelled={onFlightCancelled}
           />
         )}
         {tab === 2 && <OpsWarehousesTab

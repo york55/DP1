@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
@@ -9,15 +9,35 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import Switch from '@mui/material/Switch'
 import FormControlLabel from '@mui/material/FormControlLabel'
+import Button from '@mui/material/Button'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogContentText from '@mui/material/DialogContentText'
+import DialogActions from '@mui/material/DialogActions'
+import CircularProgress from '@mui/material/CircularProgress'
+import Snackbar from '@mui/material/Snackbar'
+import Alert from '@mui/material/Alert'
 
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CloseIcon from '@mui/icons-material/Close'
+import BlockIcon from '@mui/icons-material/Block'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
 
 import DataTable from '../common/DataTable'
 import SemaphoreChip from '../common/SemaphoreChip'
+import client from '../../api/client'
+
+// AGREGADO: el backend manda depTimeUtc sin sufijo 'Z' (ISO_LOCAL_DATE_TIME),
+// así que hay que forzarlo a UTC explícitamente al construir un Date — si no,
+// el navegador lo interpreta como hora local y la regla de "60 min" queda mal.
+function parseUtc(value) {
+    if (!value) return null
+    const iso = value.endsWith('Z') ? value : `${value}Z`
+    return new Date(iso)
+}
 
 const STATUS_STYLES = {
     SCHEDULED: {
@@ -106,6 +126,7 @@ export default function OpsFlightsTab({
     onFlightSelected,
     onlyWithShipments = false,
     onOnlyWithShipmentsChange = () => {},
+    onFlightCancelled = () => {}, // AGREGADO: refresca el snapshot tras cancelar
 }) {
 
     // ── Normaliza status al entrar, una sola vez ──
@@ -144,6 +165,34 @@ export default function OpsFlightsTab({
 
     const [semaphore, setSemaphore] =
         useState('ALL')
+
+    // ── AGREGADO: cancelación de vuelo desde el detalle del panel ──
+    const [confirmCancel, setConfirmCancel] = useState(false)
+    const [cancelling, setCancelling] = useState(false)
+    const [cancelError, setCancelError] = useState(null)
+    const [snack, setSnack] = useState({ open: false, msg: '', severity: 'success' })
+
+    const handleConfirmCancel = useCallback(async (flightId) => {
+        setCancelling(true)
+        setCancelError(null)
+        try {
+            const res = await client.patch(`/ops/map/flights/${flightId}/cancel`)
+            const { status, message } = res.data || {}
+            setConfirmCancel(false)
+            setSnack({
+                open: true,
+                msg: message || 'Vuelo cancelado',
+                severity: status === 'NOT_CANCELLABLE' ? 'warning' : 'success',
+            })
+            onFlightCancelled()
+        } catch (e) {
+            setCancelError(
+                e?.response?.data?.message || 'No se pudo cancelar el vuelo. Intenta de nuevo.'
+            )
+        } finally {
+            setCancelling(false)
+        }
+    }, [onFlightCancelled])
 
     const origins = useMemo(() => {
         return [
@@ -438,6 +487,21 @@ export default function OpsFlightsTab({
                         {selectedFlight.arrTimeUtc}
                     </Typography>
 
+                    {/* AGREGADO: cancelar directamente desde el detalle del vuelo.
+                        Solo se ofrece si está Programado — en vuelo/aterrizado no aplica. */}
+                    {selectedFlight.status === 'SCHEDULED' && (
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            startIcon={<BlockIcon />}
+                            onClick={() => setConfirmCancel(true)}
+                            sx={{ alignSelf: 'flex-start', textTransform: 'none', mt: 0.5 }}
+                        >
+                            Cancelar vuelo
+                        </Button>
+                    )}
+
                 </Box>
 
                 <Divider />
@@ -463,6 +527,80 @@ export default function OpsFlightsTab({
                         </List>
                     )}
                 </Box>
+
+                {/* AGREGADO: diálogo de confirmación — aplica la misma regla de 60 min
+                    que "Cancelación de vuelos": si falta menos de 1h, el backend cancela
+                    la siguiente instancia en vez de la actual. */}
+                <Dialog
+                    open={confirmCancel}
+                    onClose={() => { setConfirmCancel(false); setCancelError(null) }}
+                    maxWidth="xs"
+                    fullWidth
+                >
+                    <DialogTitle sx={{ fontWeight: 700, color: '#1F3864', fontSize: '0.95rem' }}>
+                        ¿Cancelar este vuelo?
+                    </DialogTitle>
+                    <DialogContent>
+                        <DialogContentText sx={{ fontSize: '0.82rem' }}>
+                            Ruta: <strong>{selectedFlight.originIata} → {selectedFlight.destIata}</strong><br />
+                            Salida UTC: <strong>{formatUtc(selectedFlight.depTimeUtc)}</strong><br />
+                            Ocupación actual: <strong>{selectedFlight.assignedBags} / {selectedFlight.capacity}</strong>
+                        </DialogContentText>
+                        <DialogContentText sx={{ fontSize: '0.78rem', mt: 1 }}>
+                            Los envíos asignados quedarán en <strong>Pendiente</strong> para que el próximo
+                            ciclo del planificador (cada 6h) los reasigne automáticamente.
+                        </DialogContentText>
+                        {(() => {
+                            const dep = parseUtc(selectedFlight.depTimeUtc)
+                            const nextDay = dep ? (dep - new Date()) / 60000 < 60 : false
+                            return nextDay ? (
+                                <DialogContentText sx={{ fontSize: '0.78rem', mt: 1, color: '#E65100' }}>
+                                    ⚠ Faltan menos de 60 min para la salida. Se cancelará la <strong>siguiente instancia</strong> de este vuelo en su lugar.
+                                </DialogContentText>
+                            ) : null
+                        })()}
+                        {cancelError && (
+                            <DialogContentText sx={{ fontSize: '0.78rem', mt: 1, color: '#C62828', fontWeight: 600 }}>
+                                ✕ {cancelError}
+                            </DialogContentText>
+                        )}
+                    </DialogContent>
+                    <DialogActions sx={{ px: 2, pb: 2, gap: 1 }}>
+                        <Button
+                            onClick={() => { setConfirmCancel(false); setCancelError(null) }}
+                            size="small"
+                            variant="outlined"
+                            disabled={cancelling}
+                        >
+                            Mantener
+                        </Button>
+                        <Button
+                            onClick={() => handleConfirmCancel(selectedFlight.flightId)}
+                            size="small"
+                            variant="contained"
+                            color="error"
+                            disabled={cancelling}
+                            startIcon={cancelling ? <CircularProgress size={14} color="inherit" /> : <BlockIcon />}
+                        >
+                            {cancelling ? 'Cancelando...' : 'Sí, cancelar'}
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+
+                <Snackbar
+                    open={snack.open}
+                    autoHideDuration={4000}
+                    onClose={() => setSnack(s => ({ ...s, open: false }))}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+                >
+                    <Alert
+                        severity={snack.severity}
+                        onClose={() => setSnack(s => ({ ...s, open: false }))}
+                        sx={{ borderRadius: '10px' }}
+                    >
+                        {snack.msg}
+                    </Alert>
+                </Snackbar>
 
             </Box>
         )

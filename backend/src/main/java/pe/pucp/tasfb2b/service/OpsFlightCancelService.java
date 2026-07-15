@@ -72,6 +72,22 @@ public class OpsFlightCancelService {
         }
     }
 
+    // ── Cancelación desde el panel de Operaciones (mapa) ─────────────────────
+    //
+    // El mapa muestra instancias concretas (OPS_FLIGHT), no planes. Resolvemos
+    // el plan dueño de la instancia y delegamos en cancelByPlanId para no
+    // duplicar la regla de 60 min ni la liberación de envíos.
+
+    @Transactional
+    public CancelResult cancelByFlightInstanceId(Long flightInstanceId) {
+        OpsFlight flight = flightRepo.findById(flightInstanceId)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "Vuelo no encontrado: " + flightInstanceId));
+
+        Long planId = flight.getFlightPlan().getId();
+        return cancelByPlanId(planId);
+    }
+
     // ── Método principal ──────────────────────────────────────────────────────
 
     @Transactional
