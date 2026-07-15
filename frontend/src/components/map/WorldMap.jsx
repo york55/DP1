@@ -14,6 +14,7 @@ import MapFilterPanel from './MapFilterPanel'
 import GlobalKpiPanel from './GlobalKpiPanel'
 import { FlightCancelToggleButton } from './FlightCancelPanel'
 import CompletedRoutesPanel from './CompletedRoutesPanel'
+import WaitingShipmentsPanel from './WaitingShipmentsPanel'
 import SimPipelineBox, { SHOW_SIM_PIPELINE } from './SimPipelineBox'
 import AirportMapPopup from './AirportMapPopup'
 import { useSimulationContext } from '../../context/SimulationContext'
@@ -164,6 +165,10 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
 
   const [mapFilters, setMapFilters] = useState(EMPTY_FILTERS)
 
+  // Only one floating side panel (filters / global KPIs / waiting shipments) open at a time
+  const [openPanel, setOpenPanel] = useState(null)
+  const togglePanel = (name) => setOpenPanel(p => (p === name ? null : name))
+
   // Plane click overlay — rendered outside MapContainer so it sits above the canvas
   const [activePlane, setActivePlane] = useState(null) // { flight, x, y }
   const planePopupRef = useRef(null)
@@ -201,11 +206,12 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
 
   // Lookup built from the unfiltered airport list so the route always draws even if
   // the user's current map filters would otherwise hide one of its airports.
+  const unfilteredAirports = staticAirports ?? ((context && !standalone) ? context.airportsWithTimes : propsAirports)
   const allAirportsByCode = useMemo(() => {
     const map = new Map()
-    for (const a of baseAirports) map.set(a.iata || a.iataCode, a)
+    for (const a of unfilteredAirports) map.set(a.iata || a.iataCode, a)
     return map
-  }, [baseAirports])
+  }, [unfilteredAirports])
 
   // Unique continent values for region chips — derived from live airport data.
   // 'unknown' from the DB is normalized to 'Sudamérica' (matches useSimulation patch).
@@ -383,6 +389,8 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
         onChange={setMapFilters}
         activeCount={activeFilterCount}
         regionOptions={regionOptions}
+        open={openPanel === 'filters'}
+        onToggle={() => togglePanel('filters')}
       />
 
       {/* Global KPI indicators (absolute positioned over map, below filter button) */}
@@ -390,6 +398,8 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
         <GlobalKpiPanel
           avgFlightOccupancy={context?.kpis?.avgFlightOccupancy ?? 0}
           avgWarehouseOccupancy={context?.kpis?.avgWarehouseOccupancy ?? 0}
+          open={openPanel === 'kpi'}
+          onToggle={() => togglePanel('kpi')}
         />
       )}
 
@@ -400,7 +410,19 @@ function WorldMap({ airports: propsAirports = [], flights: propsFlights = [], st
 
       {/* Completed routes panel (absolute positioned over map, below cancel button) */}
       {!standalone && (
-        <CompletedRoutesPanel />
+        <CompletedRoutesPanel
+          open={openPanel === 'routes'}
+          onToggle={() => togglePanel('routes')}
+        />
+      )}
+
+      {/* Waiting-at-stopover shipments panel (below completed routes button) */}
+      {!standalone && (
+        <WaitingShipmentsPanel
+          simulatedTime={simulatedTime}
+          open={openPanel === 'waiting'}
+          onToggle={() => togglePanel('waiting')}
+        />
       )}
 
       {/* ALNS pipeline box — disable by setting SHOW_SIM_PIPELINE=false in SimPipelineBox.jsx */}

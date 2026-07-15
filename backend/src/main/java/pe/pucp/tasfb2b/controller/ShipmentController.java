@@ -11,6 +11,7 @@ import pe.pucp.tasfb2b.domain.RouteLeg;
 import pe.pucp.tasfb2b.domain.enums.BatchStatus;
 import pe.pucp.tasfb2b.dto.response.RouteLegDto;
 import pe.pucp.tasfb2b.dto.response.ShipmentDto;
+import pe.pucp.tasfb2b.repository.RouteLegRepository;
 import pe.pucp.tasfb2b.repository.RouteRepository;
 import pe.pucp.tasfb2b.service.ShipmentService;
 
@@ -26,6 +27,7 @@ public class ShipmentController {
 
     private final ShipmentService shipmentService;
     private final RouteRepository routeRepo;
+    private final RouteLegRepository routeLegRepo;
 
     @GetMapping("/shipments")
     public ResponseEntity<?> findShipments(
@@ -168,6 +170,59 @@ public class ShipmentController {
                         return lm;
                     }).collect(Collectors.toList());
             m.put("legs", legs);
+            return m;
+        }).collect(Collectors.toList());
+
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Shipments waiting on the ground at an intermediate stop: IN_TRANSIT batches whose
+     * next PENDING leg hasn't departed yet. `arrivedAt` is the arrival time of the last
+     * COMPLETED leg — the frontend derives the live waiting time against the sim clock.
+     */
+    @GetMapping("/shipments/waiting")
+    public ResponseEntity<List<Map<String, Object>>> getWaitingShipments() {
+        log.debug("ACTION get_waiting_shipments");
+        List<RouteLeg> pendingLegs = routeLegRepo.findAllTransitBagsAtIntermediateStops();
+
+        List<Long> batchIds = pendingLegs.stream()
+                .map(rl -> rl.getRoute().getShipment().getBaggageBatch().getId())
+                .distinct()
+                .collect(Collectors.toList());
+
+        // Last completed leg per batch → when the batch physically arrived at the stop
+        Map<Long, RouteLeg> lastCompletedByBatch = new HashMap<>();
+        if (!batchIds.isEmpty()) {
+            for (RouteLeg cl : routeLegRepo.findCompletedLegsByBatchIds(batchIds)) {
+                Long bId = cl.getRoute().getShipment().getBaggageBatch().getId();
+                lastCompletedByBatch.merge(bId, cl,
+                        (a, b) -> a.getLegOrder() >= b.getLegOrder() ? a : b);
+            }
+        }
+
+        List<Map<String, Object>> result = pendingLegs.stream().map(rl -> {
+            var route = rl.getRoute();
+            var batch = route.getShipment().getBaggageBatch();
+            RouteLeg lastCompleted = lastCompletedByBatch.get(batch.getId());
+
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("shipmentId", route.getShipment().getId());
+            m.put("batchId", batch.getId());
+            m.put("quantity", batch.getQuantity());
+            m.put("origin", batch.getOriginAirport().getIataCode());
+            m.put("destination", batch.getDestinationAirport().getIataCode());
+            m.put("airline", batch.getAirline() != null ? batch.getAirline().getIataCode() : null);
+            m.put("waitingAt", rl.getFlight().getOriginAirport().getIataCode());
+            m.put("arrivedAt", lastCompleted != null && lastCompleted.getFlight().getArrivalTime() != null
+                    ? lastCompleted.getFlight().getArrivalTime().toString() : null);
+            m.put("nextFlightId", rl.getFlight().getId());
+            m.put("nextDeparture", rl.getFlight().getDepartureTime() != null
+                    ? rl.getFlight().getDepartureTime().toString() : null);
+            m.put("legOrder", rl.getLegOrder());
+            m.put("totalLegs", route.getTotalLegs());
+            m.put("deadline", route.getShipment().getDeadline() != null
+                    ? route.getShipment().getDeadline().toString() : null);
             return m;
         }).collect(Collectors.toList());
 

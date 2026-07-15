@@ -88,8 +88,12 @@ function KpiRow({ icon, label, pct }) {
  *   avgFlightOccupancy:    number (0–100) — global fleet occupancy %
  *   avgWarehouseOccupancy: number (0–100) — global warehouse occupancy %
  */
-export default function GlobalKpiPanel({ avgFlightOccupancy = 0, avgWarehouseOccupancy = 0 }) {
-  const [open, setOpen] = useState(false)
+export default function GlobalKpiPanel({ avgFlightOccupancy = 0, avgWarehouseOccupancy = 0, open: openProp, onToggle }) {
+  // Controlled by the parent (to keep a single panel open at a time) when
+  // open/onToggle are provided; falls back to local state otherwise.
+  const [localOpen, setLocalOpen] = useState(false)
+  const open = onToggle ? openProp : localOpen
+  const toggle = onToggle || (() => setLocalOpen(o => !o))
 
   // Determine the "worst" semaphore between both for the button dot color
   const fleetSem = getSemaphoreLevel(avgFlightOccupancy)
@@ -111,7 +115,7 @@ export default function GlobalKpiPanel({ avgFlightOccupancy = 0, avgWarehouseOcc
           >
             <IconButton
               size="small"
-              onClick={() => setOpen(o => !o)}
+              onClick={toggle}
               sx={{ color: open ? '#fff' : '#333', p: '6px' }}
             >
               <AssessmentIcon fontSize="small" />
@@ -134,7 +138,7 @@ export default function GlobalKpiPanel({ avgFlightOccupancy = 0, avgWarehouseOcc
         <Paper
           elevation={4}
           sx={{
-            mt: 1, p: 1.5,
+            mt: -4, p: 1.5, ml: 5,
             backgroundColor: 'rgba(255,255,255,0.97)',
             borderRadius: 1.5, width: 210,
             backdropFilter: 'blur(4px)',

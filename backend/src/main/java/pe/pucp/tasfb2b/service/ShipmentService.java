@@ -51,10 +51,17 @@ public class ShipmentService {
     private final RouteLegRepository routeLegRepo;
 
     @Transactional(readOnly = true)
-    public List<RouteLegDto> getRoute(Long shipmentId) {
-        Route route = routeRepo.findByShipmentId(shipmentId)
+    public List<RouteLegDto> getRoute(Long batchId) {
+        // El frontend identifica envíos por el id del BaggageBatch (ShipmentMapper#batchToDto
+        // expone dto.id = batch.id). El Shipment tiene su propia secuencia y solo se crea
+        // cuando el ALNS rutea el lote, así que ambos ids divergen — hay que resolver el
+        // shipment vía el batch en lugar de asumir que los ids coinciden.
+        Shipment shipment = shipmentRepo.findByBaggageBatchId(batchId)
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "El envío " + shipmentId + " no tiene una ruta planificada todavía"));
+                        "El envío " + batchId + " no tiene una ruta planificada todavía"));
+        Route route = routeRepo.findByShipmentId(shipment.getId())
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "El envío " + batchId + " no tiene una ruta planificada todavía"));
 
         return routeLegRepo.findByRouteIdOrderByLegOrder(route.getId()).stream()
                 .map(leg -> {

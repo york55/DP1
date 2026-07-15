@@ -76,8 +76,12 @@ function Divider() {
  *   activeCount: number of active filter dimension selections
  *   regionOptions: string[] — unique continent values from the live airports array
  */
-export default function MapFilterPanel({ filters, onChange, activeCount = 0, regionOptions = [] }) {
-  const [open, setOpen] = useState(false)
+export default function MapFilterPanel({ filters, onChange, activeCount = 0, regionOptions = [], open: openProp, onToggle }) {
+  // Controlled by the parent (to keep a single panel open at a time) when
+  // open/onToggle are provided; falls back to local state otherwise.
+  const [localOpen, setLocalOpen] = useState(false)
+  const open = onToggle ? openProp : localOpen
+  const toggle = onToggle || (() => setLocalOpen(o => !o))
 
   function toggleSet(setName, key) {
     const prev = new Set(filters[setName])
@@ -106,7 +110,7 @@ export default function MapFilterPanel({ filters, onChange, activeCount = 0, reg
           >
             <IconButton
               size="small"
-              onClick={() => setOpen(o => !o)}
+              onClick={toggle}
               sx={{ color: open ? '#fff' : '#333', p: '6px' }}
             >
               <FilterListIcon fontSize="small" />

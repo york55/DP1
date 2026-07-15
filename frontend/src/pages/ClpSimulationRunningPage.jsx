@@ -190,7 +190,7 @@ export default function ClpSimulationRunningPage() {
 
           {/* Planning overlay */}
           {(status === 'planning' || (status === 'running' && !firstBatchReady)) && (
-            <Box sx={{ position: 'absolute', inset: 0, zIndex: 10, backgroundColor: 'rgba(120,53,15,0.72)',
+            <Box sx={{ position: 'absolute', inset: 0, zIndex: 3000, backgroundColor: 'rgba(120,53,15,0.72)',
               display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Box sx={{ backgroundColor: '#78350F', borderRadius: 2, p: 4, maxWidth: 420, width: '90%',
                 textAlign: 'center', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
@@ -218,7 +218,7 @@ export default function ClpSimulationRunningPage() {
 
           {/* Collapse detected banner */}
           {status === 'collapsed' && (
-            <Box sx={{ position: 'absolute', inset: 0, zIndex: 10, backgroundColor: 'rgba(198,40,40,0.85)',
+            <Box sx={{ position: 'absolute', inset: 0, zIndex: 3000, backgroundColor: 'rgba(198,40,40,0.85)',
               display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Box sx={{ textAlign: 'center', p: 4 }}>
                 <WarningIcon sx={{ fontSize: 72, color: '#FFFFFF', mb: 2 }} />

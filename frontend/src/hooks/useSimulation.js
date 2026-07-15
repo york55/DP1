@@ -253,6 +253,11 @@ export function useSimulation() {
     } catch (e) { simLogger.warn('loadShipments error: ' + e.message) }
   }, [])
 
+  const addNotification = useCallback((message, type = 'info') => {
+    setNotifications(prev => [...prev, makeNotification(message, type, false)])
+    setBellUnreadCount(prev => prev + 1)
+  }, [])
+
   // Búsqueda a demanda: trae los tramos de un envío y los deja listos para
   // dibujarse en el mapa. clearShipmentRoute() regresa el mapa a su estado anterior.
   const fetchShipmentRoute = useCallback(async (shipmentId) => {
@@ -263,18 +268,18 @@ export function useSimulation() {
     } catch (e) {
       simLogger.warn('fetchShipmentRoute error: ' + e.message)
       setSelectedShipmentRoute(null)
+      const serverMsg = e.response?.data?.error
+      addNotification(
+        serverMsg || `No se pudo obtener la ruta del envío ${shipmentId}`,
+        'warning'
+      )
     } finally {
       setShipmentRouteLoading(false)
     }
-  }, [])
+  }, [addNotification])
 
   const clearShipmentRoute = useCallback(() => {
     setSelectedShipmentRoute(null)
-  }, [])
-
-  const addNotification = useCallback((message, type = 'info') => {
-    setNotifications(prev => [...prev, makeNotification(message, type, false)])
-    setBellUnreadCount(prev => prev + 1)
   }, [])
 
   const dismissNotification = useCallback((id) => {

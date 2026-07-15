@@ -192,7 +192,7 @@ export default function EnvioCargaPage() {
               No hay archivos subidos aún.
             </Typography>
           ) : (
-            <List dense disablePadding>
+            <List dense disablePadding sx={{ maxHeight: 220, overflowY: 'auto' }}>
               {serverFiles.map((nombre) => (
                 <ListItem
                   key={nombre}
@@ -268,7 +268,7 @@ export default function EnvioCargaPage() {
 
           {/* Lista de pendientes */}
           {pendingFiles.length > 0 && (
-            <Box sx={{ mb: 2 }}>
+            <Box sx={{ mb: 2, maxHeight: 260, overflowY: 'auto', pr: 0.5 }}>
               {pendingFiles.map((file, index) => {
                 const s = fileStatus[file.name]
                 return (

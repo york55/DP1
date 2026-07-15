@@ -344,7 +344,7 @@ export default function SimulationRunningPage() {
           {/* Planning overlay — shown while ALNS is computing routes and until first tick is visualized */}
           {(status === 'planning' || (status === 'running' && !firstBatchReady)) && (
             <Box sx={{
-              position: 'absolute', inset: 0, zIndex: 10,
+              position: 'absolute', inset: 0, zIndex: 3000,
               backgroundColor: 'rgba(15, 30, 60, 0.72)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>

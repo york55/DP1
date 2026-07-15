@@ -129,8 +129,12 @@ const RouteAccordion = memo(function RouteAccordion({ route }) {
  * CompletedRoutesPanel — floating button + panel showing completed shipment routes
  * with their legs/stops. Fetches on-demand (not subscribed to context ticks).
  */
-export default function CompletedRoutesPanel() {
-  const [open, setOpen] = useState(false)
+export default function CompletedRoutesPanel({ open: openProp, onToggle }) {
+  // Controlled by the parent (to keep a single panel open at a time) when
+  // open/onToggle are provided; falls back to local state otherwise.
+  const [localOpen, setLocalOpen] = useState(false)
+  const open = onToggle ? openProp : localOpen
+  const toggle = onToggle || (() => setLocalOpen(o => !o))
   const [routes, setRoutes] = useState([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
@@ -192,7 +196,7 @@ export default function CompletedRoutesPanel() {
           >
             <IconButton
               size="small"
-              onClick={() => setOpen(o => !o)}
+              onClick={toggle}
               sx={{ color: open ? '#fff' : '#333', p: '6px' }}
             >
               <RouteIcon fontSize="small" />
@@ -218,7 +222,7 @@ export default function CompletedRoutesPanel() {
         <Paper
           elevation={4}
           sx={{
-            mt: 1, p: 0,
+            mt: -4, p: 0, ml: 5,
             backgroundColor: 'rgba(255,255,255,0.98)',
             borderRadius: 1.5, width: 440,
             backdropFilter: 'blur(4px)',
@@ -239,7 +243,7 @@ export default function CompletedRoutesPanel() {
                   <RefreshIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </Tooltip>
-              <IconButton size="small" onClick={() => setOpen(false)}>
+              <IconButton size="small" onClick={toggle}>
                 <CloseIcon sx={{ fontSize: 14 }} />
               </IconButton>
             </Box>
