@@ -2,6 +2,7 @@ package pe.pucp.tasfb2b.planner.alns.repair;
 
 import pe.pucp.tasfb2b.domain.BaggageBatch;
 import pe.pucp.tasfb2b.domain.Flight;
+import pe.pucp.tasfb2b.planner.SimulationContext;
 import pe.pucp.tasfb2b.planner.alns.AlnsSolution;
 import pe.pucp.tasfb2b.planner.alns.DeadlineUtil;
 
@@ -46,6 +47,11 @@ public class RegretKInsertion implements RepairOperator {
     // Se usa para la recomputación incremental del regret en repair().
     private Map<Long, Set<Long>> footprintCache;
 
+    // batchId → posición/hora real desde la que replanificar (ver SimulationContext.ReplanOrigin).
+    // Vacío en planificación inicial; en replan corrige el origen de lotes que ya volaron
+    // parte de su ruta y evita asignar vuelos que salen antes del "ahora" simulado.
+    private Map<Long, SimulationContext.ReplanOrigin> replanOrigins = Collections.emptyMap();
+
     private record Candidate(List<Long> flightIds, double staticCost) {}
 
     public RegretKInsertion(int connectMinGapMinutes, int maxHops) {
@@ -59,6 +65,10 @@ public class RegretKInsertion implements RepairOperator {
 
     public RegretKInsertion() {
         this(30, 2);
+    }
+
+    public void setReplanOrigins(Map<Long, SimulationContext.ReplanOrigin> replanOrigins) {
+        this.replanOrigins = replanOrigins != null ? replanOrigins : Collections.emptyMap();
     }
 
     @Override
@@ -215,10 +225,18 @@ public class RegretKInsertion implements RepairOperator {
     private List<Candidate> generateCandidates(BaggageBatch batch,
                                                 Map<String, List<Flight>> flightsByOrigin,
                                                 AlnsSolution solution) {
-        String origin = batch.getOriginAirport().getIataCode();
+        // En replan el lote puede estar a mitad de ruta: se parte de su posición FÍSICA
+        // actual y de la hora simulada, no del origen/availableFrom originales. El deadline
+        // sí se calcula siempre con los datos originales (el SLA no se renegocia).
+        SimulationContext.ReplanOrigin override = replanOrigins.get(batch.getId());
+        String origin = override != null
+                ? override.currentIata()
+                : batch.getOriginAirport().getIataCode();
         String dest = batch.getDestinationAirport().getIataCode();
         int qty = batch.getQuantity();
-        LocalDateTime availableFrom = batch.getAvailableFrom();
+        LocalDateTime availableFrom = override != null
+                ? override.notBefore()
+                : batch.getAvailableFrom();
         LocalDateTime deadline = DeadlineUtil.computeDeadline(batch);
 
         List<Candidate> candidates = new ArrayList<>();

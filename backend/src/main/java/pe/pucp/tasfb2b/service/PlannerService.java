@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.pucp.tasfb2b.domain.*;
 import pe.pucp.tasfb2b.domain.enums.BatchStatus;
+import pe.pucp.tasfb2b.domain.enums.FlightStatus;
 import pe.pucp.tasfb2b.domain.enums.RouteLegStatus;
 import pe.pucp.tasfb2b.domain.enums.ShipmentStatus;
 import pe.pucp.tasfb2b.exception.PlanningException;
@@ -18,8 +19,11 @@ import pe.pucp.tasfb2b.planner.alns.AlnsParams;
 import pe.pucp.tasfb2b.repository.*;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -60,6 +64,7 @@ public class PlannerService {
     private final RouteLegRepository routeLegRepo;
     private final ShipmentRepository shipmentRepo;
     private final BaggageBatchRepository batchRepo;
+    private final FlightRepository flightRepo;
 
     @Transactional
     public OptimizationResult plan(SimulationContext context, String algorithm) {
@@ -75,34 +80,41 @@ public class PlannerService {
         }
     }
 
+    /**
+     * Replanifica los lotes afectados y retorna los IDs de los lotes cuya ruta quedó
+     * efectivamente persistida (o que ya no necesitan replan por estar en vuelo). Los
+     * lotes ausentes del retorno quedaron SIN ruta — el llamador debe alertar/reintentar.
+     */
     @Transactional
-    public OptimizationResult replan(List<BaggageBatch> affected, SimulationContext context,
-                                      String algorithm) {
+    public List<Long> replan(List<BaggageBatch> affected, SimulationContext context,
+                              String algorithm) {
         RouteOptimizer optimizer = selectOptimizer(algorithm);
         log.info("Replanificando {} lotes con {}", affected.size(), optimizer.algorithmName());
         try {
             OptimizationResult result = optimizer.replan(affected, context);
-            persistRoutes(result);
-            return result;
+            return persistRoutes(result);
         } catch (Exception e) {
             log.error("Error en replanificación: {}", e.getMessage(), e);
-            return null;
+            return Collections.emptyList();
         }
     }
 
-    public void persistRoutes(OptimizationResult result) {
+    /** @return IDs de los lotes cuya ruta se persistió (o se dejó intacta por estar en vuelo). */
+    public List<Long> persistRoutes(OptimizationResult result) {
         // IMPORTANT: this must run even when result.routes() is empty — a replan() call
         // where every affected batch failed to find a feasible route (all banked) used to
         // return here early and silently leave those batches with whatever stale legs a
         // previous plan had assigned them (e.g. the CANCELLED leg from the flight that
         // triggered this replan, plus later PENDING legs pointing at flights/airports the
         // batch never actually reached). That's what produced shipments showing as
-        // IN_TRANSIT "on" a flight that was never really theirs.
+        // IN_TRANSIT "on" a flight that was never really theirs. Los lotes del banco
+        // quedan además fuera del retorno, así que el reintento periódico de
+        // SimulationEngine volverá a intentar rutearlos.
         if (!result.bankedBatchIds().isEmpty()) {
             cleanUpUnroutedBatches(result.bankedBatchIds());
         }
 
-        if (result.routes().isEmpty()) return;
+        if (result.routes().isEmpty()) return Collections.emptyList();
 
         // AlnsEngine always hands us transient Shipment/Route objects (buildRoutes()
         // does `new Shipment()` / `new Route()` for every batch it routes). That's correct
@@ -115,10 +127,30 @@ public class PlannerService {
         List<Route> routesToSave = new ArrayList<>();
         List<RouteLeg> legsToSave = new ArrayList<>();
         List<RouteLeg> legsToDelete = new ArrayList<>();
+        List<Long> persistedBatchIds = new ArrayList<>();
+
+        // El replan corre en un hilo aparte: entre que el optimizador eligió los vuelos
+        // y este commit, un tick pudo hacerlos despegar. Se re-verifica el estado REAL
+        // de cada vuelo usado por las rutas nuevas y se descarta la ruta si alguno ya
+        // no está SCHEDULED (el lote queda para reintento, nunca con una ruta imposible).
+        Set<Long> plannedFlightIds = result.routes().stream()
+                .flatMap(r -> r.getLegs().stream())
+                .map(leg -> leg.getFlight().getId())
+                .collect(Collectors.toSet());
+        Map<Long, FlightStatus> freshFlightStatus = flightRepo.findAllById(plannedFlightIds).stream()
+                .collect(Collectors.toMap(Flight::getId, Flight::getStatus));
 
         for (Route plannedRoute : result.routes()) {
             Shipment plannedShipment = plannedRoute.getShipment();
             BaggageBatch batch = plannedShipment.getBaggageBatch();
+
+            boolean allFlightsStillScheduled = plannedRoute.getLegs().stream()
+                    .allMatch(leg -> freshFlightStatus.get(leg.getFlight().getId()) == FlightStatus.SCHEDULED);
+            if (!allFlightsStillScheduled) {
+                log.warn("Ruta replanificada para lote {} descartada: un vuelo asignado ya no está SCHEDULED",
+                        batch.getId());
+                continue;
+            }
 
             Optional<Shipment> existingShipment = shipmentRepo.findByBaggageBatchId(batch.getId());
             Shipment shipment = existingShipment.orElse(plannedShipment);
@@ -131,6 +163,8 @@ public class PlannerService {
             // is being re-routed from its current position onward.
             Route route = plannedRoute;
             int legOrderOffset = 0;
+            boolean batchAirborne = false;
+            List<RouteLeg> pendingDeletes = new ArrayList<>();
             if (existingShipment.isPresent()) {
                 Optional<Route> existingRoute = routeRepo.findByShipmentId(existingShipment.get().getId());
                 if (existingRoute.isPresent()) {
@@ -139,12 +173,23 @@ public class PlannerService {
                     for (RouteLeg oldLeg : oldLegs) {
                         if (oldLeg.getStatus() == RouteLegStatus.COMPLETED) {
                             legOrderOffset++;
+                        } else if (oldLeg.getStatus() == RouteLegStatus.IN_FLIGHT) {
+                            // El lote despegó mientras se replanificaba: este resultado es
+                            // obsoleto. Se deja la ruta vigente intacta — el lote avanza solo.
+                            batchAirborne = true;
+                            break;
                         } else {
-                            legsToDelete.add(oldLeg);
+                            pendingDeletes.add(oldLeg);
                         }
                     }
                 }
             }
+            if (batchAirborne) {
+                log.info("Replan de lote {} descartado: despegó durante la replanificación", batch.getId());
+                persistedBatchIds.add(batch.getId()); // en vuelo = ya no necesita replan
+                continue;
+            }
+            legsToDelete.addAll(pendingDeletes);
 
             if (shipment.getStatus() != ShipmentStatus.DELIVERED) {
                 shipment.setStatus(legOrderOffset > 0 ? ShipmentStatus.IN_TRANSIT : ShipmentStatus.PLANNED);
@@ -163,6 +208,7 @@ public class PlannerService {
 
             shipmentsToSave.add(shipment);
             routesToSave.add(route);
+            persistedBatchIds.add(batch.getId());
         }
 
         if (!legsToDelete.isEmpty()) {
@@ -171,6 +217,7 @@ public class PlannerService {
         shipmentRepo.saveAll(shipmentsToSave);
         routeRepo.saveAll(routesToSave);
         routeLegRepo.saveAll(legsToSave);
+        return persistedBatchIds;
     }
 
     /**

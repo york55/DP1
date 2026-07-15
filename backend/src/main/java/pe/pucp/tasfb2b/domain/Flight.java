@@ -53,6 +53,13 @@ public class Flight {
     @Column(name = "status", nullable = false, length = 32)
     private FlightStatus status = FlightStatus.SCHEDULED;
 
+    // Bloqueo optimista: una cancelación manual (hilo HTTP) y un tick (scheduler) pueden
+    // tocar el mismo vuelo a la vez; sin esto el último commit pisa al otro y un vuelo
+    // podía quedar CANCELLED con maletas ya embarcadas que jamás aterrizan.
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

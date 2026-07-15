@@ -61,7 +61,7 @@ public class AlnsEngine implements RouteOptimizer {
         // primero sin mirar el deadline) la misma búsqueda de rutas que el repair operator
         // ya hace mejor — y de paso construye la caché de candidatos que usarán todas las
         // iteraciones siguientes.
-        AlnsSolution current = new AlnsSolution(flights, batches);
+        AlnsSolution current = new AlnsSolution(flights, batches, context.getFlightBaseLoads());
         repairOp.repair(current, batches, flights, p.kRegret(), rng);
         AlnsSolution best = current.deepCopy();
         double bestObj = evaluate(best, p);
@@ -201,8 +201,12 @@ public class AlnsEngine implements RouteOptimizer {
                 .filter(f -> f.getStatus() == FlightStatus.SCHEDULED)
                 .collect(Collectors.toList());
 
-        AlnsSolution solution = new AlnsSolution(flights, affected);
-        RepairOperator repair = new RegretKInsertion(p.connectMinGapMinutes(), p.maxHops());
+        // baseLoad: los vuelos SCHEDULED ya tienen maletas comprometidas por el plan
+        // vigente (tramos PENDING de lotes NO afectados) — sin esto el replan sobrevende.
+        AlnsSolution solution = new AlnsSolution(flights, affected, context.getFlightBaseLoads());
+        RegretKInsertion repair = new RegretKInsertion(p.connectMinGapMinutes(), p.maxHops());
+        // Replanificar desde la posición física actual de cada lote, no desde su origen.
+        repair.setReplanOrigins(context.getReplanOrigins());
         repair.repair(solution, affected, flights, p.kRegret(), rng);
         repair.rescue(solution);
 
@@ -244,8 +248,7 @@ public class AlnsEngine implements RouteOptimizer {
         double usedCapacityWithLoad = 0;
         double actualLoadWithLoad = 0;
         for (Flight f : solution.getFlightMap().values()) {
-            int extra = solution.getExtraLoad().getOrDefault(f.getId(), 0);
-            int used = f.getCurrentLoad() + extra;
+            int used = solution.getUsedLoad(f.getId());
             totalCapacity += f.getBaggageCapacity();
             if (used > f.getBaggageCapacity()) totalOverload += used - f.getBaggageCapacity();
             if (used > 0) {

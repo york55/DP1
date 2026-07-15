@@ -37,6 +37,10 @@ public class SimulationEngine {
 
     private static final long CANCEL_CUTOFF_MINUTES = 60L;
 
+    // Cada cuántos ticks se reintenta rutear los lotes que quedaron sin ruta tras un
+    // replan fallido (2 horas simuladas con ticks de 30 min).
+    private static final int STRANDED_RETRY_TICKS = 4;
+
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
 
     private final SimulationRepository simulationRepo;
@@ -65,6 +69,10 @@ public class SimulationEngine {
     // Runtime state per simulation (not persisted)
     private final ConcurrentHashMap<Long, SimulationRuntimeState> runtimeStates = new ConcurrentHashMap<>();
 
+    // Lotes cuyo replan no encontró ruta (banco del ALNS o error) — se reintentan
+    // periódicamente en tick() en vez de quedar varados en silencio hasta vencer su SLA.
+    private final ConcurrentHashMap<Long, Set<Long>> strandedBatches = new ConcurrentHashMap<>();
+
     // Single-threaded executor for post-cancellation replanning so it never blocks a tick
     private final ExecutorService replanExecutor = Executors.newSingleThreadExecutor(
             r -> new Thread(r, "replan-bg"));
@@ -76,7 +84,11 @@ public class SimulationEngine {
         LocalDateTime resumeFrom = sim.getSimulatedTime() != null ? sim.getSimulatedTime() : simStart;
         SimulationClock clock = new SimulationClock(simStart, resumeFrom, tickDurationMinutes);
         long startNano = System.currentTimeMillis();
-        runtimeStates.put(simulationId, new SimulationRuntimeState(clock, startNano, new Random(sim.getSeed())));
+        // Semilla derivada del punto de reanudación: al pausar/reanudar NO se repite la
+        // misma secuencia de sorteos de cancelación desde cero (sigue siendo determinista
+        // para una misma semilla y mismos puntos de pausa).
+        long rngSeed = sim.getSeed() ^ resumeFrom.toEpochSecond(java.time.ZoneOffset.UTC);
+        runtimeStates.put(simulationId, new SimulationRuntimeState(clock, startNano, new Random(rngSeed)));
         log.info("Motor de simulación inicializado para simulación {} (simStart={} resumeFrom={})",
                 simulationId, simStart, resumeFrom);
     }
@@ -118,6 +130,9 @@ public class SimulationEngine {
             long t2 = System.currentTimeMillis();
             processCancellations(sim, state.rng, simNow, simulationId);
             log.debug("[SIM-{}] tick#{} cancellations ({}ms)", simulationId, tickNum, System.currentTimeMillis() - t2);
+
+            // 3.5 Retry batches left without a route by an earlier failed replan
+            retryStrandedBatches(sim, simNow, simulationId, tickNum);
 
             // 4. Check SLA violations
             long t3 = System.currentTimeMillis();
@@ -287,6 +302,10 @@ public class SimulationEngine {
         }
         Simulation sim = simulationRepo.findById(simulationId)
                 .orElseThrow(() -> new IllegalArgumentException("Simulación no encontrada: " + simulationId));
+        if (sim.getStatus() != SimulationStatus.PLAYING && sim.getStatus() != SimulationStatus.PAUSED) {
+            throw new IllegalStateException(
+                    "Solo se pueden cancelar vuelos con la simulación en curso o pausada");
+        }
         LocalDateTime simNow = sim.getSimulatedTime() != null ? sim.getSimulatedTime() : sim.getStartDate();
 
         long minutesUntilDep = Duration.between(simNow, selected.getDepartureTime()).toMinutes();
@@ -343,70 +362,169 @@ public class SimulationEngine {
         final Long fid = flight.getId();
         final List<Long> batchIdsForReplan = affectedBatches.stream()
                 .map(BaggageBatch::getId).collect(Collectors.toList());
+
+        registerReplanAfterCommit(sim, simNow, simulationId, batchIdsForReplan,
+                new WebSocketEventPublisher.AlertEvent(
+                        "CANCELLATION", null, fid, null,
+                        "Vuelo cancelado. Replanificando " + batchIdsForReplan.size() + " lotes.",
+                        simNow.format(TIME_FMT)),
+                "cancelación de vuelo " + fid);
+    }
+
+    /**
+     * Registra (para después del commit de la transacción actual) la publicación de la
+     * alerta y la replanificación en background de los lotes indicados. Punto único de
+     * entrada al replan: arma el contexto con la posición REAL de cada lote, la carga ya
+     * comprometida de cada vuelo, y registra como "varados" los lotes que queden sin ruta.
+     */
+    private void registerReplanAfterCommit(Simulation sim, LocalDateTime simNow, Long simulationId,
+                                            List<Long> batchIds,
+                                            WebSocketEventPublisher.AlertEvent alertEvent,
+                                            String replanCause) {
         final String algorithm = sim.getAlgorithm();
         final var alnsParams = plannerService.buildAlnsParams(sim);
         final LocalDateTime replanNow = simNow;
 
-        eventPublisher.publishAlert(simulationId,
-                new WebSocketEventPublisher.AlertEvent(
-                        "CANCELLATION", null, fid, null,
-                        "Vuelo cancelado. Replanificando " + batchIdsForReplan.size() + " lotes.",
-                        simNow.format(TIME_FMT)
-                ));
-
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                replanExecutor.submit(() -> {
-                    try {
-                        long replanStart = System.currentTimeMillis();
-                        // Re-fetch batches/flights by ID (with JOIN FETCH on their airports)
-                        // instead of reusing the entities captured before this transaction
-                        // committed: those became detached lazy proxies once their loading
-                        // session closed, and this callback runs on a different thread/session.
-                        List<BaggageBatch> freshBatches =
-                                batchRepo.findByIdInWithAirports(batchIdsForReplan);
-                        List<Flight> availableFlights = flightRepo.findByStatusWithAirports(FlightStatus.SCHEDULED);
-                        List<Airport> airports = airportRepo.findAll();
-                        SimulationContext ctx = SimulationContext.builder()
-                                .airports(airports)
-                                .flights(availableFlights)
-                                .pendingBatches(freshBatches)
-                                .simulatedNow(replanNow)
-                                .alnsParams(alnsParams)
-                                .build();
-                        var replanResult = plannerService.replan(freshBatches, ctx, algorithm);
-                        log.info("[SIM-{}] replan for cancelled flight {} batches={} in {}ms",
-                                simulationId, fid, freshBatches.size(),
-                                System.currentTimeMillis() - replanStart);
-
-                        if (replanResult != null && !replanResult.bankedBatchIds().isEmpty()) {
-                            eventPublisher.publishAlert(simulationId,
-                                    new WebSocketEventPublisher.AlertEvent(
-                                            "UNROUTED", null, fid, null,
-                                            replanResult.bankedBatchIds().size()
-                                                    + " lote(s) no pudieron ser reubicados tras la cancelación y quedaron DELAYED.",
-                                            replanNow.format(TIME_FMT)
-                                    ));
-                        }
-                    } catch (Exception e) {
-                        log.error("Error en replanificación tras cancelación de vuelo {}: {}", fid, e.getMessage());
-                    }
-                });
+                // Publicada recién tras el commit: si la transacción hiciera rollback,
+                // el operador nunca ve una alerta de algo que no ocurrió. Los lotes que
+                // queden sin ruta (banco del ALNS) se alertan como REPLAN_FAILED y se
+                // reintentan periódicamente vía trackStrandedBatches/retryStrandedBatches.
+                if (alertEvent != null) {
+                    eventPublisher.publishAlert(simulationId, alertEvent);
+                }
+                replanExecutor.submit(() -> runReplan(simulationId, batchIds, algorithm,
+                        alnsParams, replanNow, replanCause));
             }
         });
+    }
+
+    private void runReplan(Long simulationId, List<Long> batchIds, String algorithm,
+                            pe.pucp.tasfb2b.planner.alns.AlnsParams alnsParams,
+                            LocalDateTime replanNow, String replanCause) {
+        try {
+            long replanStart = System.currentTimeMillis();
+            // Re-fetch batches/flights by ID (with JOIN FETCH on their airports)
+            // instead of reusing the entities captured before this transaction
+            // committed: those became detached lazy proxies once their loading
+            // session closed, and this callback runs on a different thread/session.
+            List<BaggageBatch> freshBatches = batchRepo.findByIdInWithAirports(batchIds);
+            List<Flight> availableFlights = flightRepo.findByStatusWithAirports(FlightStatus.SCHEDULED);
+            List<Airport> airports = airportRepo.findAll();
+
+            SimulationContext ctx = SimulationContext.builder()
+                    .airports(airports)
+                    .flights(availableFlights)
+                    .pendingBatches(freshBatches)
+                    .simulatedNow(replanNow)
+                    .alnsParams(alnsParams)
+                    .replanOrigins(buildReplanOrigins(freshBatches, replanNow))
+                    .flightBaseLoads(buildFlightBaseLoads())
+                    .build();
+
+            List<Long> routedIds = plannerService.replan(freshBatches, ctx, algorithm);
+            log.info("[SIM-{}] replan ({}) batches={} routed={} in {}ms",
+                    simulationId, replanCause, freshBatches.size(), routedIds.size(),
+                    System.currentTimeMillis() - replanStart);
+
+            trackStrandedBatches(simulationId, batchIds, routedIds, replanNow);
+        } catch (Exception e) {
+            log.error("Error en replanificación ({}): {}", replanCause, e.getMessage(), e);
+            trackStrandedBatches(simulationId, batchIds, List.of(), replanNow);
+        }
+    }
+
+    /**
+     * Posición física y hora mínima de embarque de cada lote: el destino de su último
+     * tramo COMPLETED (u origen si nunca voló). Se exige además un margen de un tick
+     * sobre el "ahora" simulado para no asignar vuelos que despegarían antes de que
+     * esta replanificación asíncrona alcance a persistirse.
+     */
+    private Map<Long, SimulationContext.ReplanOrigin> buildReplanOrigins(
+            List<BaggageBatch> batches, LocalDateTime replanNow) {
+        List<Long> ids = batches.stream().map(BaggageBatch::getId).collect(Collectors.toList());
+        Map<Long, RouteLeg> lastCompletedByBatch = new HashMap<>();
+        for (RouteLeg leg : routeLegRepo.findCompletedLegsByBatchIds(ids)) {
+            Long batchId = leg.getRoute().getShipment().getBaggageBatch().getId();
+            RouteLeg current = lastCompletedByBatch.get(batchId);
+            if (current == null || leg.getLegOrder() > current.getLegOrder()) {
+                lastCompletedByBatch.put(batchId, leg);
+            }
+        }
+
+        LocalDateTime earliestDeparture = replanNow.plusMinutes(tickDurationMinutes);
+        Map<Long, SimulationContext.ReplanOrigin> origins = new HashMap<>();
+        for (BaggageBatch batch : batches) {
+            RouteLeg last = lastCompletedByBatch.get(batch.getId());
+            String currentIata = last != null
+                    ? last.getFlight().getDestinationAirport().getIataCode()
+                    : batch.getOriginAirport().getIataCode();
+            LocalDateTime notBefore = last != null
+                    ? earliestDeparture
+                    : (batch.getAvailableFrom().isAfter(earliestDeparture)
+                            ? batch.getAvailableFrom() : earliestDeparture);
+            origins.put(batch.getId(), new SimulationContext.ReplanOrigin(currentIata, notBefore));
+        }
+        return origins;
+    }
+
+    /**
+     * Maletas ya comprometidas por tramo PENDING en cada vuelo programado. Los tramos de
+     * los lotes en replan ya fueron marcados CANCELLED antes del commit, así que esta
+     * suma refleja solo la carga de los lotes NO afectados — exactamente la base que el
+     * ALNS debe respetar para no sobrevender bodega.
+     */
+    private Map<Long, Integer> buildFlightBaseLoads() {
+        return routeLegRepo.sumPendingBagsByFlightId().stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> ((Long) row[1]).intValue()));
+    }
+
+    /** Registra los lotes que quedaron sin ruta, alertando solo los nuevos (evita spam). */
+    private void trackStrandedBatches(Long simulationId, List<Long> attempted,
+                                       List<Long> routedIds, LocalDateTime simNow) {
+        Set<Long> stranded = strandedBatches.computeIfAbsent(
+                simulationId, k -> ConcurrentHashMap.newKeySet());
+        routedIds.forEach(stranded::remove);
+
+        List<Long> newlyStranded = new ArrayList<>();
+        for (Long id : attempted) {
+            if (!routedIds.contains(id) && stranded.add(id)) {
+                newlyStranded.add(id);
+            }
+        }
+        if (newlyStranded.isEmpty()) return;
+
+        log.warn("[SIM-{}] replan sin ruta para {} lotes {} — se reintentará periódicamente",
+                simulationId, newlyStranded.size(), newlyStranded);
+        eventPublisher.publishAlert(simulationId,
+                new WebSocketEventPublisher.AlertEvent(
+                        "REPLAN_FAILED", null, null, null,
+                        "No se encontró ruta para " + newlyStranded.size()
+                                + " lote(s). Se reintentará automáticamente.",
+                        simNow.format(TIME_FMT)));
+    }
+
+    /** Reintenta rutear los lotes varados cada STRANDED_RETRY_TICKS ticks. */
+    private void retryStrandedBatches(Simulation sim, LocalDateTime simNow,
+                                       Long simulationId, int tickNum) {
+        if (tickNum == 0 || tickNum % STRANDED_RETRY_TICKS != 0) return;
+        Set<Long> stranded = strandedBatches.get(simulationId);
+        if (stranded == null || stranded.isEmpty()) return;
+
+        List<Long> toRetry = new ArrayList<>(stranded);
+        log.info("[SIM-{}] reintentando replan de {} lotes varados", simulationId, toRetry.size());
+        registerReplanAfterCommit(sim, simNow, simulationId, toRetry,
+                null, "reintento de lotes varados");
     }
 
     private void checkSlaViolations(Simulation sim, LocalDateTime simNow, Long simulationId) {
         List<Shipment> overdue = shipmentRepo.findOverdueShipments(simNow);
         if (overdue.isEmpty()) return;
 
-        SimulationRuntimeState state = runtimeStates.get(simulationId);
-        Set<Long> alertedStuckIds = state != null ? state.alertedStuckBatchIds : null;
-
         List<BaggageBatch> batchesForReplan = new ArrayList<>();
         List<BaggageBatch> newlyDelayed = new ArrayList<>();
-        Set<Long> stillStuckIds = new HashSet<>();
 
         for (Shipment shipment : overdue) {
             if (shipment.getStatus() == ShipmentStatus.DELAYED) {
@@ -420,9 +538,7 @@ public class SimulationEngine {
                 // actually still following an active leg (a replan already found it a seat
                 // and it's simply waiting to depart/arrive).
                 if (!routeLegRepo.existsActiveLegByShipmentId(shipment.getId())) {
-                    BaggageBatch batch = shipment.getBaggageBatch();
-                    batchesForReplan.add(batch);
-                    stillStuckIds.add(batch.getId());
+                    batchesForReplan.add(shipment.getBaggageBatch());
                 }
                 continue;
             }
@@ -450,93 +566,31 @@ public class SimulationEngine {
             }
             batchesForReplan.add(batch);
             newlyDelayed.add(batch);
-            stillStuckIds.add(batch.getId());
         }
 
-        // A batch stops showing up here once it's DELIVERED or its DELAYED shipment gets
-        // an active leg again (i.e. a replan finally worked), so anything no longer in
-        // stillStuckIds has recovered — forget it, so a *future* delay on that same batch
-        // raises a fresh alert instead of staying muted forever.
-        if (alertedStuckIds != null) alertedStuckIds.retainAll(stillStuckIds);
-
         if (batchesForReplan.isEmpty()) return;
-        scheduleDelayReplan(sim, simNow, simulationId, batchesForReplan, newlyDelayed, alertedStuckIds);
+        scheduleDelayReplan(sim, simNow, simulationId, batchesForReplan, newlyDelayed);
     }
 
     private void scheduleDelayReplan(Simulation sim, LocalDateTime simNow, Long simulationId,
-                                      List<BaggageBatch> batchesForReplan, List<BaggageBatch> newlyDelayed,
-                                      Set<Long> alertedStuckIds) {
+                                      List<BaggageBatch> batchesForReplan, List<BaggageBatch> newlyDelayed) {
         final List<Long> batchIds = batchesForReplan.stream()
                 .map(BaggageBatch::getId).collect(Collectors.toList());
-        final String algorithm = sim.getAlgorithm();
-        final var alnsParams = plannerService.buildAlnsParams(sim);
-        final LocalDateTime replanNow = simNow;
 
         // Only alert about batches that JUST became delayed this tick — a batch that was
         // already DELAYED and is simply being retried isn't "new" information, and without
         // this guard the same stuck batch re-triggers this alert on every single tick until
-        // the ALNS finally finds it a seat (which for a truly saturated route can take a
-        // while). Retries still happen below regardless of whether we alert about them.
-        if (!newlyDelayed.isEmpty()) {
-            eventPublisher.publishAlert(simulationId,
-                    new WebSocketEventPublisher.AlertEvent(
-                            "DELAY", null, null, null,
-                            "Detectados " + newlyDelayed.size() + " lotes retrasados. Replanificando.",
-                            simNow.format(TIME_FMT)
-                    ));
-        }
+        // the ALNS finally finds it a seat. Retries still happen regardless of the alert.
+        // Los lotes que sigan sin ruta tras el replan se alertan (una sola vez) como
+        // REPLAN_FAILED en trackStrandedBatches — reemplaza a la antigua alerta UNROUTED,
+        // por lo que alertedStuckIds ya no se consulta aquí.
+        WebSocketEventPublisher.AlertEvent alert = newlyDelayed.isEmpty() ? null
+                : new WebSocketEventPublisher.AlertEvent(
+                        "DELAY", null, null, null,
+                        "Detectados " + newlyDelayed.size() + " lotes retrasados. Replanificando.",
+                        simNow.format(TIME_FMT));
 
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                replanExecutor.submit(() -> {
-                    try {
-                        long replanStart = System.currentTimeMillis();
-                        // Re-fetch batches/flights by ID (with JOIN FETCH on their airports)
-                        // instead of reusing the entities captured before this transaction
-                        // committed: those became detached lazy proxies once their loading
-                        // session closed, and this callback runs on a different thread/session.
-                        List<BaggageBatch> freshBatches = batchRepo.findByIdInWithAirports(batchIds);
-                        List<Flight> availableFlights = flightRepo.findByStatusWithAirports(FlightStatus.SCHEDULED);
-                        List<Airport> airports = airportRepo.findAll();
-                        SimulationContext ctx = SimulationContext.builder()
-                                .airports(airports)
-                                .flights(availableFlights)
-                                .pendingBatches(freshBatches)
-                                .simulatedNow(replanNow)
-                                .alnsParams(alnsParams)
-                                .build();
-                        var replanResult = plannerService.replan(freshBatches, ctx, algorithm);
-                        log.info("[SIM-{}] replan for delayed batches={} in {}ms",
-                                simulationId, freshBatches.size(), System.currentTimeMillis() - replanStart);
-
-                        if (replanResult != null && !replanResult.bankedBatchIds().isEmpty()) {
-                            // Same throttle as above, but per-batch: only the ones that
-                            // weren't already flagged as stuck raise a new alert. The rest
-                            // keep retrying silently every tick until they land a route.
-                            List<Long> freshlyStuck = alertedStuckIds == null
-                                    ? replanResult.bankedBatchIds()
-                                    : replanResult.bankedBatchIds().stream()
-                                        .filter(id -> !alertedStuckIds.contains(id))
-                                        .collect(Collectors.toList());
-                            if (alertedStuckIds != null) alertedStuckIds.addAll(replanResult.bankedBatchIds());
-
-                            if (!freshlyStuck.isEmpty()) {
-                                eventPublisher.publishAlert(simulationId,
-                                        new WebSocketEventPublisher.AlertEvent(
-                                                "UNROUTED", null, null, null,
-                                                freshlyStuck.size()
-                                                        + " lote(s) retrasados no pudieron ser reubicados y quedaron DELAYED.",
-                                                replanNow.format(TIME_FMT)
-                                        ));
-                            }
-                        }
-                    } catch (Exception e) {
-                        log.error("Error en replanificación tras retraso: {}", e.getMessage());
-                    }
-                });
-            }
-        });
+        registerReplanAfterCommit(sim, simNow, simulationId, batchIds, alert, "lotes retrasados");
     }
 
     private void updateAirportOccupancy(LocalDateTime simNow) {
@@ -626,6 +680,12 @@ public class SimulationEngine {
         List<Airport> airports = airportRepo.findAll();
         List<Flight> activeFlights = flightRepo.findAssignedFlightsForTick(simNow.plusHours(24), simNow.minusHours(1));
 
+        // currentLoad solo se fija al despegar; para vuelos SCHEDULED la carga real son
+        // las maletas de sus tramos PENDING — sin esto el panel de cancelación muestra
+        // "0 maletas" para todo vuelo aún no despegado.
+        Map<Long, Long> pendingBagsByFlight = routeLegRepo.sumPendingBagsByFlightId().stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
+
         List<SimulationTickEvent.AirportPayload> airportPayloads = airports.stream()
                 .map(a -> {
                     double pct = a.getOccupancyPct();
@@ -647,7 +707,9 @@ public class SimulationEngine {
                         .progress(f.getProgress(simNow))
                         .status(f.getStatus().name())
                         .baggageCapacity(f.getBaggageCapacity())
-                        .currentLoad(f.getCurrentLoad())
+                        .currentLoad(f.getStatus() == FlightStatus.SCHEDULED
+                                ? pendingBagsByFlight.getOrDefault(f.getId(), 0L).intValue()
+                                : f.getCurrentLoad())
                         .departureTime(f.getDepartureTime() != null ? f.getDepartureTime().toString() + "Z" : null)
                         .arrivalTime(f.getArrivalTime() != null ? f.getArrivalTime().toString() + "Z" : null)
                         .airlineName(f.getAirline() != null ? f.getAirline().getName() : null)
@@ -705,16 +767,13 @@ public class SimulationEngine {
 
     public void removeState(Long simulationId) {
         runtimeStates.remove(simulationId);
+        strandedBatches.remove(simulationId);
     }
 
     static class SimulationRuntimeState {
         final SimulationClock clock;
         final long startMillis;
         final Random rng;
-        // Batch ids that already raised a DELAY/UNROUTED alert while stuck without a
-        // route. Cleared per-batch as soon as it recovers (see checkSlaViolations), so a
-        // fresh delay on the same batch later still raises a new alert.
-        final Set<Long> alertedStuckBatchIds = ConcurrentHashMap.newKeySet();
 
 
         SimulationRuntimeState(SimulationClock clock, long startMillis, Random rng) {

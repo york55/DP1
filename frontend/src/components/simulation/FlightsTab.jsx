@@ -72,6 +72,7 @@ export default function FlightsTab() {
   const [detailTab, setDetailTab] = useState(0)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState(null)
   const [flightBatches, setFlightBatches] = useState([])
   const [batchesLoading, setBatchesLoading] = useState(false)
 
@@ -98,12 +99,16 @@ export default function FlightsTab() {
   const handleCancelFlight = async () => {
     if (!selectedFlight) return
     setCancelling(true)
+    setCancelError(null)
     try {
       await cancelFlightDuringSimulation(selectedFlight.id)
       setCancelDialogOpen(false)
       setSelectedFlightId(null)
     } catch (e) {
       console.error('Error cancelando vuelo:', e)
+      // Keep the dialog open and show why the backend refused
+      setCancelError(e?.userMessage || e?.response?.data?.message
+        || 'No se pudo cancelar el vuelo. Intenta de nuevo.')
     } finally {
       setCancelling(false)
     }
@@ -259,7 +264,12 @@ export default function FlightsTab() {
         <Divider />
 
         {/* Confirm cancel dialog */}
-        <Dialog open={cancelDialogOpen} onClose={() => setCancelDialogOpen(false)} maxWidth="xs" fullWidth>
+        <Dialog
+          open={cancelDialogOpen}
+          onClose={() => { setCancelDialogOpen(false); setCancelError(null) }}
+          maxWidth="xs"
+          fullWidth
+        >
           <DialogTitle sx={{ fontWeight: 700, color: '#1F3864', fontSize: '0.95rem' }}>
             ¿Cancelar vuelo {selectedFlight.id}?
           </DialogTitle>
@@ -281,12 +291,17 @@ export default function FlightsTab() {
                       se cancelará la <strong>siguiente instancia</strong> de este vuelo en la ruta.
                     </DialogContentText>
                   )}
+                  {cancelError && (
+                    <DialogContentText sx={{ fontSize: '0.78rem', mt: 1, color: '#C62828', fontWeight: 600 }}>
+                      ✕ {cancelError}
+                    </DialogContentText>
+                  )}
                 </>
               )
             })()}
           </DialogContent>
           <DialogActions sx={{ px: 2, pb: 2, gap: 1 }}>
-            <Button onClick={() => setCancelDialogOpen(false)} size="small" variant="outlined" disabled={cancelling}>
+            <Button onClick={() => { setCancelDialogOpen(false); setCancelError(null) }} size="small" variant="outlined" disabled={cancelling}>
               Mantener vuelo
             </Button>
             <Button
