@@ -85,6 +85,23 @@ public class OpsAlnsSolution {
         return Duration.between(s.getRegisteredAt(), first.getDepTimeUtc()).toMinutes();
     }
 
+    /**
+     * Minutos en que la llegada del último tramo asignado excede el deadline
+     * del envío (SLA). Devuelve 0 si llega a tiempo, no tiene deadline o no
+     * está asignado — se usa para penalizar incumplimientos de SLA en la
+     * función objetivo.
+     */
+    public long lateMinutes(Long shipmentId) {
+        OpsShipment s = shipmentMap.get(shipmentId);
+        if (s == null || s.getDeadlineUtc() == null) return 0;
+        List<Long> fids = assignments.get(shipmentId);
+        if (fids == null || fids.isEmpty()) return 0;
+        OpsFlight last = flightMap.get(fids.get(fids.size() - 1));
+        if (last == null || last.getArrTimeUtc() == null) return 0;
+        long lateness = Duration.between(s.getDeadlineUtc(), last.getArrTimeUtc()).toMinutes();
+        return Math.max(0, lateness);
+    }
+
     // ── Getters necesarios por el engine y los operadores ────────────────────
 
     public Set<Long>                     getBank()         { return Collections.unmodifiableSet(bank); }

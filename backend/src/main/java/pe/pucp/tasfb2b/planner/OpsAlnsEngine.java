@@ -21,7 +21,11 @@ import java.util.stream.Collectors;
 @Slf4j
 public class OpsAlnsEngine {
 
-    private static final int CONNECT_MIN_GAP_MINUTES = 30;
+    /** Minutos mínimos reales de escala en un aeropuerto para habilitar la conexión al siguiente vuelo. */
+    private static final int CONNECT_MIN_GAP_MINUTES = 10;
+
+    /** Penalización fija por cada envío que llega después de su deadline (SLA), igual que AlnsEngine (simulación). */
+    private static final double LATE_PENALTY_PER_SHIPMENT = 1.0;
 
     /**
      * Ejecuta el ALNS completo y devuelve las rutas a persistir.
@@ -162,7 +166,20 @@ public class OpsAlnsEngine {
             comp3 = p.w3() * (totalWait / ((double) assigned * 1440.0));
         }
 
-        return comp1 + comp2 + comp3;
+        // w5: penalización por incumplimiento de SLA (deadline). Cada envío tardío
+        // suma una penalización fija grande más un término acotado por cuán tarde
+        // llega, para que el algoritmo siempre prefiera eliminar el retraso antes
+        // que cualquier otra mejora marginal (mismo criterio que AlnsEngine de
+        // simulación).
+        double comp5 = 0.0;
+        for (Long shipmentId : sol.getAssignedIds()) {
+            long lateMin = sol.lateMinutes(shipmentId);
+            if (lateMin > 0) {
+                comp5 += LATE_PENALTY_PER_SHIPMENT + p.w5() * Math.min(1.0, lateMin / 1440.0);
+            }
+        }
+
+        return comp1 + comp2 + comp3 + comp5;
     }
 
     // ── Operadores de destrucción ─────────────────────────────────────────────
