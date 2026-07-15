@@ -170,6 +170,7 @@ export default function FlightCancelPanel({ open, onClose }) {
   const [sortDir, setSortDir] = useState('asc')
   const [confirmFlight, setConfirmFlight] = useState(null)
   const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState(null)
 
   const flightsRef = useRef(flights)
   flightsRef.current = flights
@@ -281,6 +282,7 @@ export default function FlightCancelPanel({ open, onClose }) {
   const handleConfirmCancel = useCallback(async () => {
     if (!confirmFlight) return
     setCancelling(true)
+    setCancelError(null)
     try {
       const result = await cancelFlightDuringSimulation(confirmFlight.id)
       const cancelledId = String(result?.cancelledFlightId ?? confirmFlight.id)
@@ -294,6 +296,9 @@ export default function FlightCancelPanel({ open, onClose }) {
       setTab(1)
     } catch (e) {
       console.error('Error cancelando vuelo:', e)
+      // Keep the dialog open and tell the user why the backend refused
+      setCancelError(e?.userMessage || e?.response?.data?.message
+        || 'No se pudo cancelar el vuelo. Intenta de nuevo.')
     } finally {
       setCancelling(false)
     }
@@ -425,7 +430,12 @@ export default function FlightCancelPanel({ open, onClose }) {
       )}
 
       {/* Confirmation dialog */}
-      <Dialog open={!!confirmFlight} onClose={() => setConfirmFlight(null)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={!!confirmFlight}
+        onClose={() => { setConfirmFlight(null); setCancelError(null) }}
+        maxWidth="xs"
+        fullWidth
+      >
         {confirmFlight && (() => {
           const nextDay = getNextDayRule(confirmFlight)
           return (
@@ -447,9 +457,14 @@ export default function FlightCancelPanel({ open, onClose }) {
                     ⚠ Faltan menos de 60 min para la salida. Se cancelará la <strong>siguiente instancia</strong> de este vuelo.
                   </DialogContentText>
                 )}
+                {cancelError && (
+                  <DialogContentText sx={{ fontSize: '0.78rem', mt: 1, color: '#C62828', fontWeight: 600 }}>
+                    ✕ {cancelError}
+                  </DialogContentText>
+                )}
               </DialogContent>
               <DialogActions sx={{ px: 2, pb: 2, gap: 1 }}>
-                <Button onClick={() => setConfirmFlight(null)} size="small" variant="outlined" disabled={cancelling}>
+                <Button onClick={() => { setConfirmFlight(null); setCancelError(null) }} size="small" variant="outlined" disabled={cancelling}>
                   Mantener
                 </Button>
                 <Button

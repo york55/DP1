@@ -83,6 +83,37 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    // Reglas de negocio violadas (p. ej. cancelar un vuelo que ya no está SCHEDULED,
+    // o la regla <1h sin instancia siguiente): conflicto con el estado actual, no un 500.
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException ex,
+                                                             HttpServletRequest req) {
+        log.warn("Conflicto de estado: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.builder()
+                        .code("STATE_CONFLICT")
+                        .message(ex.getMessage())
+                        .timestamp(Instant.now())
+                        .path(req.getRequestURI())
+                        .build());
+    }
+
+    // Choque de escritura concurrente (bloqueo optimista): otro hilo — típicamente un
+    // tick de la simulación — modificó la entidad primero. Reintentable por el cliente.
+    @ExceptionHandler(org.springframework.orm.ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLock(
+            org.springframework.orm.ObjectOptimisticLockingFailureException ex,
+            HttpServletRequest req) {
+        log.warn("Conflicto de concurrencia: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.builder()
+                        .code("CONCURRENT_MODIFICATION")
+                        .message("El vuelo fue modificado por la simulación en este instante. Intenta de nuevo.")
+                        .timestamp(Instant.now())
+                        .path(req.getRequestURI())
+                        .build());
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneral(Exception ex, HttpServletRequest req) {
         log.error("Error interno: {}", ex.getMessage(), ex);

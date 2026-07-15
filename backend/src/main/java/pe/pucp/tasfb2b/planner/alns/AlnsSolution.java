@@ -16,14 +16,25 @@ public class AlnsSolution {
     private final Set<Long> bank = new LinkedHashSet<>();
     // flightId -> extra load from this solution (beyond initial currentLoad)
     private final Map<Long, Integer> extraLoad = new HashMap<>();
+    // flightId -> maletas ya comprometidas fuera de esta solución (tramos PENDING de
+    // otros lotes). currentLoad solo refleja maletas EMBARCADAS (se fija al despegar),
+    // así que sin esta base el replan vería los vuelos programados como vacíos y podría
+    // sobrevender bodega que el plan original ya ocupó.
+    private final Map<Long, Integer> baseLoad;
     // flight lookup by id
     private final Map<Long, Flight> flightMap;
     // batch lookup by id
     private final Map<Long, BaggageBatch> batchMap;
 
     public AlnsSolution(List<Flight> flights, List<BaggageBatch> batches) {
+        this(flights, batches, Collections.emptyMap());
+    }
+
+    public AlnsSolution(List<Flight> flights, List<BaggageBatch> batches,
+                        Map<Long, Integer> baseLoad) {
         this.flightMap = flights.stream().collect(Collectors.toMap(Flight::getId, f -> f));
         this.batchMap = batches.stream().collect(Collectors.toMap(BaggageBatch::getId, b -> b));
+        this.baseLoad = baseLoad != null ? baseLoad : Collections.emptyMap();
         for (BaggageBatch b : batches) {
             bank.add(b.getId());
         }
@@ -31,7 +42,7 @@ public class AlnsSolution {
 
     public AlnsSolution deepCopy() {
         AlnsSolution copy = new AlnsSolution(new ArrayList<>(flightMap.values()),
-                new ArrayList<>(batchMap.values()));
+                new ArrayList<>(batchMap.values()), baseLoad);
         copy.bank.clear();
         copy.bank.addAll(this.bank);
         for (Map.Entry<Long, List<Long>> e : this.assignments.entrySet()) {
@@ -88,8 +99,16 @@ public class AlnsSolution {
     public boolean canAssign(Long flightId, int quantity) {
         Flight f = flightMap.get(flightId);
         if (f == null) return false;
-        int used = f.getCurrentLoad() + extraLoad.getOrDefault(flightId, 0);
-        return used + quantity <= f.getBaggageCapacity();
+        return getUsedLoad(flightId) + quantity <= f.getBaggageCapacity();
+    }
+
+    /** Carga total efectiva del vuelo: embarcada + comprometida externa + de esta solución. */
+    public int getUsedLoad(Long flightId) {
+        Flight f = flightMap.get(flightId);
+        if (f == null) return 0;
+        return f.getCurrentLoad()
+                + baseLoad.getOrDefault(flightId, 0)
+                + extraLoad.getOrDefault(flightId, 0);
     }
 
     public List<Long> getAssignment(Long batchId) {

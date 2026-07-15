@@ -69,6 +69,21 @@ public interface RouteLegRepository extends JpaRepository<RouteLeg, Long> {
            "AND NOT EXISTS (SELECT rl3 FROM RouteLeg rl3 WHERE rl3.route = r AND rl3.status = 'PENDING' AND rl3.legOrder < rl.legOrder)")
     List<RouteLeg> findFirstPendingLegsOfTransitBagsAtIntermediateStops();
 
+    /**
+     * Tramos COMPLETED de los lotes indicados, con vuelo/aeropuertos/lote fetcheados —
+     * se usa en el hilo de replanificación (sin sesión Hibernate activa) para derivar la
+     * posición física actual de cada lote: el destino de su último tramo completado.
+     */
+    @Query("SELECT rl FROM RouteLeg rl " +
+           "JOIN FETCH rl.flight f " +
+           "JOIN FETCH f.destinationAirport " +
+           "JOIN FETCH rl.route r " +
+           "JOIN FETCH r.shipment s " +
+           "JOIN FETCH s.baggageBatch b " +
+           "WHERE b.id IN :batchIds AND rl.status = 'COMPLETED' " +
+           "ORDER BY rl.legOrder")
+    List<RouteLeg> findCompletedLegsByBatchIds(@Param("batchIds") List<Long> batchIds);
+
     @Query("SELECT rl FROM RouteLeg rl " +
            "JOIN FETCH rl.flight f " +
            "JOIN FETCH f.originAirport oa " +

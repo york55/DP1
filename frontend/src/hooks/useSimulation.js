@@ -688,7 +688,18 @@ export function useSimulation() {
   const cancelFlightDuringSimulation = useCallback(async (flightId) => {
     const simId = simIdRef.current
     if (!simId) throw new Error('No hay simulación activa')
-    const result = await simulationApi.cancelFlight(simId, flightId)
+    let result
+    try {
+      result = await simulationApi.cancelFlight(simId, flightId)
+    } catch (e) {
+      // Surface backend business errors (e.g. regla <1h sin vuelo siguiente,
+      // vuelo ya no SCHEDULED) to the user instead of failing silently.
+      const backendMsg = e?.response?.data?.message
+      const msg = backendMsg || 'No se pudo cancelar el vuelo. Intenta de nuevo.'
+      addNotification(`Cancelación de vuelo ${flightId} rechazada: ${msg}`, 'error')
+      e.userMessage = msg
+      throw e
+    }
     const cancelledId = result?.cancelledFlightId ?? flightId
     const msg = result?.appliedNextDay
       ? `Regla <1h aplicada: se canceló el vuelo siguiente (ID ${cancelledId}) en la misma ruta. ALNS replanificando.`

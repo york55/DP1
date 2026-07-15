@@ -14,13 +14,16 @@ import pe.pucp.tasfb2b.planner.SimulationContext;
 import pe.pucp.tasfb2b.repository.AirportRepository;
 import pe.pucp.tasfb2b.repository.BaggageBatchRepository;
 import pe.pucp.tasfb2b.repository.FlightRepository;
+import pe.pucp.tasfb2b.repository.RouteLegRepository;
 import pe.pucp.tasfb2b.repository.SimulationRepository;
 import pe.pucp.tasfb2b.service.PlannerService;
 import pe.pucp.tasfb2b.websocket.WebSocketEventPublisher;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -42,6 +45,7 @@ public class BlockOrchestrator {
     private final BaggageBatchRepository batchRepo;
     private final FlightRepository flightRepo;
     private final AirportRepository airportRepo;
+    private final RouteLegRepository routeLegRepo;
     private final PlannerService plannerService;
     private final SimulationEngine simulationEngine;
     private final WebSocketEventPublisher webSocketPublisher;
@@ -272,11 +276,17 @@ public class BlockOrchestrator {
                 log.warn("Simulación {}: bloque {} sin vuelos disponibles — ALNS no puede asignar rutas", simId, blockIndex);
             }
 
+            // Carga ya comprometida por bloques anteriores (tramos PENDING): sin esto cada
+            // bloque ve los vuelos como vacíos y puede sobrevender bodega ya ocupada.
+            Map<Long, Integer> baseLoads = routeLegRepo.sumPendingBagsByFlightId().stream()
+                    .collect(Collectors.toMap(row -> (Long) row[0], row -> ((Long) row[1]).intValue()));
+
             SimulationContext context = SimulationContext.builder()
                     .airports(airports)
                     .flights(flights)
                     .pendingBatches(pending)
                     .simulatedNow(blockStart)
+                    .flightBaseLoads(baseLoads)
                     .alnsParams(plannerService.buildAlnsParams(sim))
                     .progressCallback(snap -> webSocketPublisher.publishPlanProgress(simId,
                             new pe.pucp.tasfb2b.planner.PlanProgressSnapshot(
