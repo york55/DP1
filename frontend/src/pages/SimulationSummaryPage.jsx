@@ -9,17 +9,57 @@ import Button from '@mui/material/Button'
 import Grid from '@mui/material/Grid'
 import Divider from '@mui/material/Divider'
 import Chip from '@mui/material/Chip'
+import Accordion from '@mui/material/Accordion'
+import AccordionSummary from '@mui/material/AccordionSummary'
+import AccordionDetails from '@mui/material/AccordionDetails'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import HomeIcon from '@mui/icons-material/Home'
 import LuggageIcon from '@mui/icons-material/Luggage'
 import LocalShippingIcon from '@mui/icons-material/LocalShipping'
 import FlightIcon from '@mui/icons-material/Flight'
 import WarningIcon from '@mui/icons-material/Warning'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import DownloadIcon from '@mui/icons-material/Download'
+import DescriptionIcon from '@mui/icons-material/Description'
 import WorldMap from '../components/map/WorldMap'
 import DataTable from '../components/common/DataTable'
 import { useSimulationContext } from '../context/SimulationContext'
 import { formatUTCFull, formatElapsed } from '../utils/timeUtils'
 import { simulationApi } from '../api/simulationApi'
+import { buildSimulationMarkdownReport, buildAssignmentRows, downloadMarkdownReport } from '../utils/simulationReport'
+
+const STATUS_LABELS = {
+  IN_ORIGIN: 'En espera',
+  IN_TRANSIT: 'En tránsito',
+  DELIVERED: 'Entregado',
+  DELAYED: 'Retrasado',
+}
+
+const assignmentTableColumns = [
+  { field: 'shipmentId', headerName: 'Envío ID', width: 100 },
+  { field: 'origin', headerName: 'Origen', width: 90 },
+  { field: 'destination', headerName: 'Destino', width: 90 },
+  { field: 'bags', headerName: 'Maletas', width: 90 },
+  {
+    field: 'status',
+    headerName: 'Estado',
+    width: 130,
+    renderCell: (params) => (
+      <Chip label={STATUS_LABELS[params.value] || params.value} size="small" sx={{ fontSize: '0.68rem' }} />
+    ),
+  },
+  {
+    field: 'flightId',
+    headerName: 'Vuelo Asignado',
+    flex: 1,
+    renderCell: (params) => (
+      params.value != null
+        ? `${params.value} (${params.row.flightOrigin} → ${params.row.flightDestination})`
+        : 'Sin asignar'
+    ),
+  },
+  { field: 'flightAirline', headerName: 'Aerolínea', width: 130 },
+]
 
 function SummaryStatCard({ icon, label, value, color, bgColor }) {
   return (
@@ -121,6 +161,23 @@ export default function SimulationSummaryPage() {
   // (status 'done') antes de que terminara la simulación del periodo.
   const stableBlocks = blockHistory.filter(b => b.status === 'done')
   const lastStableBlock = stableBlocks.length > 0 ? stableBlocks[stableBlocks.length - 1] : null
+
+  // Tabla completa de asignaciones envío -> vuelo de la última planificación
+  // estable (no solo el conteo agregado del bloque).
+  const assignmentRows = React.useMemo(
+    () => buildAssignmentRows(shipments, flights),
+    [shipments, flights]
+  )
+
+  const markdownReport = React.useMemo(
+    () => buildSimulationMarkdownReport({ simulationState, kpis, shipments, flights, blockHistory }),
+    [simulationState, kpis, shipments, flights, blockHistory]
+  )
+
+  const handleDownloadReport = () => {
+    const filename = `reporte-simulacion-${simulationState?.simulationId || 'periodo'}.md`
+    downloadMarkdownReport(markdownReport, filename)
+  }
 
   const kpiRows = [
     {
@@ -284,12 +341,13 @@ export default function SimulationSummaryPage() {
         </Box>
 
         {/* Reporte: última planificación estable del periodo */}
-        {lastStableBlock && (
-          <Paper elevation={2} sx={{ p: 2.5, borderRadius: 2, mb: 3 }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1F3864', mb: 1.5 }}>
-              Última Planificación Estable
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+        <Paper elevation={2} sx={{ p: 2.5, borderRadius: 2, mb: 3 }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1F3864', mb: 1.5 }}>
+            Última Planificación Estable
+          </Typography>
+
+          {lastStableBlock && (
+            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 2 }}>
               <Box>
                 <Typography variant="body2" color="text.secondary">Bloque</Typography>
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -315,8 +373,69 @@ export default function SimulationSummaryPage() {
                 <Chip label="Estable" size="small" sx={{ backgroundColor: '#E8F5E9', color: '#2E7D32', fontWeight: 600, border: '1px solid #2E7D32' }} />
               </Box>
             </Box>
-          </Paper>
-        )}
+          )}
+
+          <Divider sx={{ my: 1.5 }} />
+
+          <Typography variant="body2" sx={{ fontWeight: 600, color: '#1F3864', mb: 1 }}>
+            Detalle de Asignaciones Envío → Vuelo ({assignmentRows.length})
+          </Typography>
+          <Box sx={{ height: 340 }}>
+            <DataTable
+              rows={assignmentRows}
+              columns={assignmentTableColumns}
+              sx={{ '& .MuiDataGrid-root': { border: 'none' } }}
+            />
+          </Box>
+        </Paper>
+
+        {/* Reporte detallado (Markdown), referencial y descargable */}
+        <Paper elevation={2} sx={{ p: 2.5, borderRadius: 2, mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <DescriptionIcon sx={{ color: '#1F3864' }} />
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1F3864' }}>
+                Reporte Detallado de Operaciones y Flujo de Equipaje
+              </Typography>
+            </Box>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<DownloadIcon />}
+              onClick={handleDownloadReport}
+              sx={{ borderColor: '#1F3864', color: '#1F3864', fontSize: '0.75rem' }}
+            >
+              Descargar (.md)
+            </Button>
+          </Box>
+          <Typography variant="caption" sx={{ color: '#6B7280', display: 'block', mb: 1.5 }}>
+            Documento operativo de trazabilidad de la última planificación estable, generado a partir de los datos finales de la corrida.
+          </Typography>
+          <Accordion elevation={0} sx={{ border: '1px solid #E0E0E0', borderRadius: 1, '&:before': { display: 'none' } }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>Ver contenido del reporte</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Box
+                component="pre"
+                sx={{
+                  m: 0,
+                  p: 1.5,
+                  backgroundColor: '#F7F8FA',
+                  borderRadius: 1,
+                  fontSize: '0.75rem',
+                  fontFamily: 'monospace',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  maxHeight: 420,
+                  overflow: 'auto',
+                }}
+              >
+                {markdownReport}
+              </Box>
+            </AccordionDetails>
+          </Accordion>
+        </Paper>
 
         {/* Call to action */}
         <Box sx={{ textAlign: 'center', mt: 2 }}>

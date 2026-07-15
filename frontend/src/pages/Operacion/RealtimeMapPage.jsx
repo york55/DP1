@@ -475,6 +475,11 @@ export default function RealtimeMapPage() {
         ).addTo(flightLayer.current)
       }
 
+      // El ícono del avión solo se dibuja para vuelos realmente "en vuelo".
+      // Vuelos SCHEDULED (aún no despegan) y CANCELLED (no vuelan) conservan
+      // su línea de ruta arriba, pero no deben mostrar un avión volando.
+      if (!isInFlight) return
+
       const angle = getBearing(
         f.originLat,
         f.originLng,

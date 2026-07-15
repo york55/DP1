@@ -73,6 +73,7 @@ export default function OpsPanel({
       <Box sx={{ flex: 1, overflow: 'auto' }}>
         {tab === 0 && <OpsShipmentsTab
           shipments={shipments}
+          flights={flights}
           selectedShipmentId={selectedShipmentId}
           onShipmentFocus={onShipmentFocus}
         />}

@@ -73,9 +73,25 @@ function StatusChip({ status }) {
 
 export default function OpsShipmentsTab({
   shipments = [],
+  flights = [],
   selectedShipmentId,
   onShipmentFocus,
 }) {
+
+  const flightById = useMemo(
+    () => new Map(flights.map(f => [String(f.flightId ?? f.id), f])),
+    [flights]
+  )
+
+  // El primer flightId de un envío es su tramo actual/próximo (ver comentario
+  // en OpsMapService: PENDING legs, tramo actual + futuros de un multi-hop).
+  const getCurrentFlightLabel = (shipment) => {
+    const ids = shipment.flightIds || []
+    if (ids.length === 0) return 'Sin asignar'
+    const flight = flightById.get(String(ids[0]))
+    if (!flight) return `Vuelo #${ids[0]}`
+    return `${flight.originIata} → ${flight.destIata}`
+  }
 
   // La selección vive en RealtimeMapPage — así seleccionar un envío desde otro
   // lugar (o volver a esta pestaña) mantiene el mismo detalle abierto.
@@ -220,6 +236,13 @@ export default function OpsShipmentsTab({
     },
 
     {
+      field: 'flightIds',
+      headerName: 'Vuelo Actual',
+      width: 130,
+      renderCell: params => getCurrentFlightLabel(params.row),
+    },
+
+    {
       field: 'status',
       headerName: 'Estado',
       width: 120,
@@ -321,6 +344,12 @@ export default function OpsShipmentsTab({
             Maletas:
             {' '}
             {selectedShipment.bagCount}
+          </Typography>
+
+          <Typography>
+            Vuelo actual:
+            {' '}
+            <b>{getCurrentFlightLabel(selectedShipment)}</b>
           </Typography>
 
           <Typography>
