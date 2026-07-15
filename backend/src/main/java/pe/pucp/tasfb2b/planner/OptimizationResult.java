@@ -10,5 +10,11 @@ public record OptimizationResult(
         int assignedCount,
         int failedCount,
         Duration computeTime,
-        double objectiveValue
+        double objectiveValue,
+        // IDs of BaggageBatch that ended up in the ALNS "bank" (no feasible route found).
+        // These never produce a Route, so buildRoutes()/persistRoutes() would otherwise
+        // silently skip them — leaving stale legs from a previous plan (e.g. a cancelled
+        // flight's leg plus untouched future legs) in the database. Callers must use this
+        // list to clean up / flag those batches explicitly. Never null (empty list if none).
+        List<Long> bankedBatchIds
 ) {}

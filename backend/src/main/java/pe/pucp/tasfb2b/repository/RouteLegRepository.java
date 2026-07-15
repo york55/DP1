@@ -54,6 +54,16 @@ public interface RouteLegRepository extends JpaRepository<RouteLeg, Long> {
     List<RouteLeg> findPendingLegsByShipmentId(@Param("shipmentId") Long shipmentId);
 
     /**
+     * True if a shipment currently has any leg still "in play" — waiting to board
+     * (PENDING) or already airborne (IN_FLIGHT). Used to tell a DELAYED shipment that's
+     * actually following a route apart from one that's truly stuck with nothing
+     * scheduled and needs another ALNS attempt.
+     */
+    @Query("SELECT CASE WHEN COUNT(rl) > 0 THEN true ELSE false END FROM RouteLeg rl " +
+           "WHERE rl.route.shipment.id = :shipmentId AND rl.status IN ('PENDING', 'IN_FLIGHT')")
+    boolean existsActiveLegByShipmentId(@Param("shipmentId") Long shipmentId);
+
+    /**
      * Returns the first PENDING leg for each IN_TRANSIT batch that is NOT currently on a plane.
      * The flight's origin airport is where the batch is physically waiting.
      */

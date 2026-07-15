@@ -44,7 +44,7 @@ public class AlnsEngine implements RouteOptimizer {
 
         if (batches.isEmpty()) {
             return new OptimizationResult(Collections.emptyList(), 0, 0,
-                    Duration.ZERO, 0.0);
+                    Duration.ZERO, 0.0, Collections.emptyList());
         }
 
         Consumer<PlanProgressSnapshot> callback = context.getProgressCallback();
@@ -187,7 +187,8 @@ public class AlnsEngine implements RouteOptimizer {
         log.info("ALNS completado: asignados={}, fallidos={}, obj={}, tiempo={}ms",
                 assigned, failed, String.format("%.4f", bestObj), elapsed.toMillis());
 
-        return new OptimizationResult(routes, assigned, failed, elapsed, bestObj);
+        return new OptimizationResult(routes, assigned, failed, elapsed, bestObj,
+                new ArrayList<>(best.getBank()));
     }
 
     @Override
@@ -210,7 +211,8 @@ public class AlnsEngine implements RouteOptimizer {
         Duration elapsed = Duration.between(start, Instant.now());
 
         return new OptimizationResult(routes, solution.getAssignments().size(),
-                solution.getBankSize(), elapsed, evaluate(solution, p));
+                solution.getBankSize(), elapsed, evaluate(solution, p),
+                new ArrayList<>(solution.getBank()));
     }
 
     @Override

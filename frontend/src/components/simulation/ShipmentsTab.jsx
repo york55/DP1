@@ -70,9 +70,19 @@ export default function ShipmentsTab() {
     return Array.from(set).sort()
   }, [shipments])
 
-  // Resolve active flight for in-transit shipments
+  // The backend already resolves the real assigned flight per shipment
+  // (SimulationEngine/RouteLegRepository#findCurrentFlightIdByBatchId — the actual
+  // IN_FLIGHT leg on that shipment's own route), exposed as s.currentFlight. This used
+  // to be overwritten here with a same-origin/destination guess against ANY in-flight
+  // flight, which falsely "claimed" every in-transit shipment sharing an origin airport
+  // for whichever flight from that airport happened to be airborne (e.g. a hub with many
+  // shipments departing EBCI would all show the first EBCI→X flight in the air, even
+  // though only a handful were actually on it). Trust the backend value; only fall back
+  // to the guess for the brief window right after a WS tick flips a shipment to
+  // IN_TRANSIT before the next shipments REST poll has caught up with a real flight id.
   const shipmentsWithFlights = useMemo(() => {
     return shipments.map(s => {
+      if (s.currentFlight != null) return s
       let resolvedFlight = null
       if (s.status === 'IN_TRANSIT') {
         const matchingFlight = flights.find(f =>

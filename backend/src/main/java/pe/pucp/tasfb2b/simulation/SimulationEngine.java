@@ -375,10 +375,20 @@ public class SimulationEngine {
                                 .simulatedNow(replanNow)
                                 .alnsParams(alnsParams)
                                 .build();
-                        plannerService.replan(freshBatches, ctx, algorithm);
+                        var replanResult = plannerService.replan(freshBatches, ctx, algorithm);
                         log.info("[SIM-{}] replan for cancelled flight {} batches={} in {}ms",
                                 simulationId, fid, freshBatches.size(),
                                 System.currentTimeMillis() - replanStart);
+
+                        if (replanResult != null && !replanResult.bankedBatchIds().isEmpty()) {
+                            eventPublisher.publishAlert(simulationId,
+                                    new WebSocketEventPublisher.AlertEvent(
+                                            "UNROUTED", null, fid, null,
+                                            replanResult.bankedBatchIds().size()
+                                                    + " lote(s) no pudieron ser reubicados tras la cancelación y quedaron DELAYED.",
+                                            replanNow.format(TIME_FMT)
+                                    ));
+                        }
                     } catch (Exception e) {
                         log.error("Error en replanificación tras cancelación de vuelo {}: {}", fid, e.getMessage());
                     }
@@ -391,9 +401,32 @@ public class SimulationEngine {
         List<Shipment> overdue = shipmentRepo.findOverdueShipments(simNow);
         if (overdue.isEmpty()) return;
 
+        SimulationRuntimeState state = runtimeStates.get(simulationId);
+        Set<Long> alertedStuckIds = state != null ? state.alertedStuckBatchIds : null;
+
         List<BaggageBatch> batchesForReplan = new ArrayList<>();
+        List<BaggageBatch> newlyDelayed = new ArrayList<>();
+        Set<Long> stillStuckIds = new HashSet<>();
+
         for (Shipment shipment : overdue) {
-            if (shipment.getStatus() == ShipmentStatus.DELAYED) continue;
+            if (shipment.getStatus() == ShipmentStatus.DELAYED) {
+                // Deadlines are fixed at planning time (DeadlineUtil.computeDeadline), so
+                // once a shipment is overdue it keeps showing up here on every tick even
+                // after being flagged DELAYED — that's expected, not a bug. What used to be
+                // a bug is unconditionally skipping it: a batch that came out of the ALNS
+                // bank (see PlannerService#cleanUpUnroutedBatches) or that lost its flight
+                // to a cancellation has no PENDING/IN_FLIGHT leg left, so nothing was ever
+                // retrying it — it just sat DELAYED forever. Only skip here when it's
+                // actually still following an active leg (a replan already found it a seat
+                // and it's simply waiting to depart/arrive).
+                if (!routeLegRepo.existsActiveLegByShipmentId(shipment.getId())) {
+                    BaggageBatch batch = shipment.getBaggageBatch();
+                    batchesForReplan.add(batch);
+                    stillStuckIds.add(batch.getId());
+                }
+                continue;
+            }
+
             String oldStatus = shipment.getStatus().name();
             shipment.setStatus(ShipmentStatus.DELAYED);
             shipmentRepo.save(shipment);
@@ -406,35 +439,52 @@ public class SimulationEngine {
             log.warn("Envío {} marcado como DELAYED (deadline: {})", shipment.getId(), shipment.getDeadline());
 
             // Only the still-grounded portion of the trip can be redirected — a batch
-            // already on its final in-flight leg has no PENDING legs left to replan.
+            // already on its final in-flight leg has no PENDING legs to cancel. Either
+            // way it still goes to the ALNS: with legs to cancel it's a fresh attempt at
+            // a full route, and with none it's a batch that never had a route at all and
+            // needs to be picked up here rather than left DELAYED indefinitely.
             List<RouteLeg> pendingLegs = routeLegRepo.findPendingLegsByShipmentId(shipment.getId());
-            if (pendingLegs.isEmpty()) continue;
-
             for (RouteLeg leg : pendingLegs) {
                 leg.setStatus(RouteLegStatus.CANCELLED);
                 routeLegRepo.save(leg);
             }
             batchesForReplan.add(batch);
+            newlyDelayed.add(batch);
+            stillStuckIds.add(batch.getId());
         }
 
+        // A batch stops showing up here once it's DELIVERED or its DELAYED shipment gets
+        // an active leg again (i.e. a replan finally worked), so anything no longer in
+        // stillStuckIds has recovered — forget it, so a *future* delay on that same batch
+        // raises a fresh alert instead of staying muted forever.
+        if (alertedStuckIds != null) alertedStuckIds.retainAll(stillStuckIds);
+
         if (batchesForReplan.isEmpty()) return;
-        scheduleDelayReplan(sim, simNow, simulationId, batchesForReplan);
+        scheduleDelayReplan(sim, simNow, simulationId, batchesForReplan, newlyDelayed, alertedStuckIds);
     }
 
     private void scheduleDelayReplan(Simulation sim, LocalDateTime simNow, Long simulationId,
-                                      List<BaggageBatch> batchesForReplan) {
+                                      List<BaggageBatch> batchesForReplan, List<BaggageBatch> newlyDelayed,
+                                      Set<Long> alertedStuckIds) {
         final List<Long> batchIds = batchesForReplan.stream()
                 .map(BaggageBatch::getId).collect(Collectors.toList());
         final String algorithm = sim.getAlgorithm();
         final var alnsParams = plannerService.buildAlnsParams(sim);
         final LocalDateTime replanNow = simNow;
 
-        eventPublisher.publishAlert(simulationId,
-                new WebSocketEventPublisher.AlertEvent(
-                        "DELAY", null, null, null,
-                        "Detectados " + batchIds.size() + " lotes retrasados. Replanificando.",
-                        simNow.format(TIME_FMT)
-                ));
+        // Only alert about batches that JUST became delayed this tick — a batch that was
+        // already DELAYED and is simply being retried isn't "new" information, and without
+        // this guard the same stuck batch re-triggers this alert on every single tick until
+        // the ALNS finally finds it a seat (which for a truly saturated route can take a
+        // while). Retries still happen below regardless of whether we alert about them.
+        if (!newlyDelayed.isEmpty()) {
+            eventPublisher.publishAlert(simulationId,
+                    new WebSocketEventPublisher.AlertEvent(
+                            "DELAY", null, null, null,
+                            "Detectados " + newlyDelayed.size() + " lotes retrasados. Replanificando.",
+                            simNow.format(TIME_FMT)
+                    ));
+        }
 
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
@@ -456,9 +506,31 @@ public class SimulationEngine {
                                 .simulatedNow(replanNow)
                                 .alnsParams(alnsParams)
                                 .build();
-                        plannerService.replan(freshBatches, ctx, algorithm);
+                        var replanResult = plannerService.replan(freshBatches, ctx, algorithm);
                         log.info("[SIM-{}] replan for delayed batches={} in {}ms",
                                 simulationId, freshBatches.size(), System.currentTimeMillis() - replanStart);
+
+                        if (replanResult != null && !replanResult.bankedBatchIds().isEmpty()) {
+                            // Same throttle as above, but per-batch: only the ones that
+                            // weren't already flagged as stuck raise a new alert. The rest
+                            // keep retrying silently every tick until they land a route.
+                            List<Long> freshlyStuck = alertedStuckIds == null
+                                    ? replanResult.bankedBatchIds()
+                                    : replanResult.bankedBatchIds().stream()
+                                        .filter(id -> !alertedStuckIds.contains(id))
+                                        .collect(Collectors.toList());
+                            if (alertedStuckIds != null) alertedStuckIds.addAll(replanResult.bankedBatchIds());
+
+                            if (!freshlyStuck.isEmpty()) {
+                                eventPublisher.publishAlert(simulationId,
+                                        new WebSocketEventPublisher.AlertEvent(
+                                                "UNROUTED", null, null, null,
+                                                freshlyStuck.size()
+                                                        + " lote(s) retrasados no pudieron ser reubicados y quedaron DELAYED.",
+                                                replanNow.format(TIME_FMT)
+                                        ));
+                            }
+                        }
                     } catch (Exception e) {
                         log.error("Error en replanificación tras retraso: {}", e.getMessage());
                     }
@@ -639,6 +711,10 @@ public class SimulationEngine {
         final SimulationClock clock;
         final long startMillis;
         final Random rng;
+        // Batch ids that already raised a DELAY/UNROUTED alert while stuck without a
+        // route. Cleared per-batch as soon as it recovers (see checkSlaViolations), so a
+        // fresh delay on the same batch later still raises a new alert.
+        final Set<Long> alertedStuckBatchIds = ConcurrentHashMap.newKeySet();
 
 
         SimulationRuntimeState(SimulationClock clock, long startMillis, Random rng) {

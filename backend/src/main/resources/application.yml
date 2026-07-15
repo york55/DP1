@@ -52,6 +52,8 @@ tasf:
     default-q-pct: 0.35
     default-max-iterations: 80
     default-seg-len: 20
+    default-w4: 0.10   # nuevo — sube esto (ej. 0.12-0.15) para más consolidación
+    default-w5: 0.35   # nuevo — baja esto si notas que empieza a afectar el on-time
 
 
 management:
