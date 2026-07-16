@@ -84,8 +84,14 @@ public class ShipmentService {
     }
 
     public List<ShipmentDto> findAll() {
-        Map<Long, Long> currentFlightByBatchId = routeLegRepo.findCurrentFlightIdByBatchId().stream()
-                .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
+        // Vuelo "actual" de cada lote: si está embarcado gana el tramo IN_FLIGHT; si está
+        // en tierra (recién planificado o replanificado tras una cancelación) se reporta
+        // su siguiente tramo PENDING, para que la lista de envíos apunte al vuelo donde
+        // realmente aparece en el panel de detalle.
+        Map<Long, Long> currentFlightByBatchId = routeLegRepo.findNextFlightIdByBatchId().stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1], (a, b) -> a));
+        routeLegRepo.findCurrentFlightIdByBatchId()
+                .forEach(row -> currentFlightByBatchId.put((Long) row[0], (Long) row[1]));
 
         return batchRepo.findAll().stream()
                 .map(shipmentMapper::batchToDto)

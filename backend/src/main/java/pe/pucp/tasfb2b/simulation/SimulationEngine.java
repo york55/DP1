@@ -41,6 +41,13 @@ public class SimulationEngine {
     // replan fallido (2 horas simuladas con ticks de 30 min).
     private static final int STRANDED_RETRY_TICKS = 4;
 
+    // Antelación mínima (en minutos simulados) que debe tener la salida de un vuelo
+    // para recibir lotes replanificados. El replan corre en background mientras la
+    // simulación sigue avanzando: sin este margen el ALNS elige vuelos que despegan
+    // (o ya despegaron) antes de que el resultado se persista, dejando tramos PENDING
+    // sobre vuelos IN_FLIGHT que nunca embarcan.
+    private static final long REPLAN_MIN_LEAD_MINUTES = 60L;
+
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
 
     private final SimulationRepository simulationRepo;
@@ -414,13 +421,26 @@ public class SimulationEngine {
             List<Flight> availableFlights = flightRepo.findByStatusWithAirports(FlightStatus.SCHEDULED);
             List<Airport> airports = airportRepo.findAll();
 
+            // El replanNow capturado al encolar puede estar varios ticks en el pasado
+            // (este callback espera su turno en el executor). Se re-lee el tiempo
+            // simulado ACTUAL y solo se ofrecen al ALNS vuelos próximos a salir, con
+            // margen de REPLAN_MIN_LEAD_MINUTES — nunca vuelos ya en tránsito ni a
+            // punto de despegar mientras el replan se persiste.
+            LocalDateTime currentSimTime = simulationRepo.findById(simulationId)
+                    .map(Simulation::getSimulatedTime)
+                    .orElse(replanNow);
+            LocalDateTime effectiveNow = (currentSimTime != null && currentSimTime.isAfter(replanNow))
+                    ? currentSimTime : replanNow;
+            LocalDateTime earliestDeparture = effectiveNow.plusMinutes(REPLAN_MIN_LEAD_MINUTES);
+            availableFlights.removeIf(f -> f.getDepartureTime().isBefore(earliestDeparture));
+
             SimulationContext ctx = SimulationContext.builder()
                     .airports(airports)
                     .flights(availableFlights)
                     .pendingBatches(freshBatches)
-                    .simulatedNow(replanNow)
+                    .simulatedNow(effectiveNow)
                     .alnsParams(alnsParams)
-                    .replanOrigins(buildReplanOrigins(freshBatches, replanNow))
+                    .replanOrigins(buildReplanOrigins(freshBatches, earliestDeparture))
                     .flightBaseLoads(buildFlightBaseLoads())
                     .build();
 
@@ -438,12 +458,13 @@ public class SimulationEngine {
 
     /**
      * Posición física y hora mínima de embarque de cada lote: el destino de su último
-     * tramo COMPLETED (u origen si nunca voló). Se exige además un margen de un tick
-     * sobre el "ahora" simulado para no asignar vuelos que despegarían antes de que
-     * esta replanificación asíncrona alcance a persistirse.
+     * tramo COMPLETED (u origen si nunca voló). {@code earliestDeparture} ya incluye el
+     * margen de REPLAN_MIN_LEAD_MINUTES sobre el tiempo simulado actual (ver runReplan)
+     * para no asignar vuelos que despegarían antes de que esta replanificación
+     * asíncrona alcance a persistirse.
      */
     private Map<Long, SimulationContext.ReplanOrigin> buildReplanOrigins(
-            List<BaggageBatch> batches, LocalDateTime replanNow) {
+            List<BaggageBatch> batches, LocalDateTime earliestDeparture) {
         List<Long> ids = batches.stream().map(BaggageBatch::getId).collect(Collectors.toList());
         Map<Long, RouteLeg> lastCompletedByBatch = new HashMap<>();
         for (RouteLeg leg : routeLegRepo.findCompletedLegsByBatchIds(ids)) {
@@ -454,7 +475,6 @@ public class SimulationEngine {
             }
         }
 
-        LocalDateTime earliestDeparture = replanNow.plusMinutes(tickDurationMinutes);
         Map<Long, SimulationContext.ReplanOrigin> origins = new HashMap<>();
         for (BaggageBatch batch : batches) {
             RouteLeg last = lastCompletedByBatch.get(batch.getId());

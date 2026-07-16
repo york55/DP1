@@ -44,6 +44,18 @@ public interface RouteLegRepository extends JpaRepository<RouteLeg, Long> {
     List<Object[]> findCurrentFlightIdByBatchId();
 
     /**
+     * Next assigned flight for each grounded batch: the first PENDING leg of its route.
+     * Complements {@link #findCurrentFlightIdByBatchId} so the shipments list can show
+     * which flight a (re)planned batch is booked on before it departs — without this,
+     * a replanned shipment shows no flight (or the UI guesses one it isn't on).
+     */
+    @Query("SELECT rl.route.shipment.baggageBatch.id, rl.flight.id " +
+           "FROM RouteLeg rl WHERE rl.status = 'PENDING' " +
+           "AND rl.legOrder = (SELECT MIN(rl2.legOrder) FROM RouteLeg rl2 " +
+           "WHERE rl2.route = rl.route AND rl2.status = 'PENDING')")
+    List<Object[]> findNextFlightIdByBatchId();
+
+    /**
      * PENDING legs (not yet departed) of a shipment's route — the portion of an overdue
      * shipment's journey that can still be redirected. Empty if the batch is already
      * in flight or its remaining leg has no PENDING hops left.

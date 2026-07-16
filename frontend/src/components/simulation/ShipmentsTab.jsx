@@ -41,7 +41,6 @@ function StatusChip({ status }) {
 export default function ShipmentsTab() {
   const {
     shipments,
-    flights,
     simulationState,
     shipmentCounts = {},
     setSelectedShipmentId,
@@ -70,33 +69,14 @@ export default function ShipmentsTab() {
     return Array.from(set).sort()
   }, [shipments])
 
-  // The backend already resolves the real assigned flight per shipment
-  // (SimulationEngine/RouteLegRepository#findCurrentFlightIdByBatchId — the actual
-  // IN_FLIGHT leg on that shipment's own route), exposed as s.currentFlight. This used
-  // to be overwritten here with a same-origin/destination guess against ANY in-flight
-  // flight, which falsely "claimed" every in-transit shipment sharing an origin airport
-  // for whichever flight from that airport happened to be airborne (e.g. a hub with many
-  // shipments departing EBCI would all show the first EBCI→X flight in the air, even
-  // though only a handful were actually on it). Trust the backend value; only fall back
-  // to the guess for the brief window right after a WS tick flips a shipment to
-  // IN_TRANSIT before the next shipments REST poll has caught up with a real flight id.
-  const shipmentsWithFlights = useMemo(() => {
-    return shipments.map(s => {
-      if (s.currentFlight != null) return s
-      let resolvedFlight = null
-      if (s.status === 'IN_TRANSIT') {
-        const matchingFlight = flights.find(f =>
-          f.status === 'IN_FLIGHT' &&
-          (f.origin === s.origin || f.destination === s.destination)
-        )
-        if (matchingFlight) resolvedFlight = matchingFlight.id
-      }
-      return {
-        ...s,
-        currentFlight: resolvedFlight,
-      }
-    })
-  }, [shipments, flights])
+  // The backend resolves the real flight per shipment on its OWN route: the boarded
+  // IN_FLIGHT leg, or the next PENDING leg when the batch is grounded (just planned, or
+  // replanned after a cancellation) — see RouteLegRepository#findCurrentFlightIdByBatchId
+  // / #findNextFlightIdByBatchId, exposed as s.currentFlight. Never guess a flight here
+  // by matching origin/destination against airborne flights: that "claimed" replanned
+  // shipments for flights they were never on, so opening that flight showed no trace of
+  // the shipment in its list.
+  const shipmentsWithFlights = shipments
 
   // Filtered shipments
   const filteredShipments = useMemo(() => {
