@@ -384,7 +384,8 @@ export default function SimulationSummaryPage() {
             <DataTable
               rows={assignmentRows}
               columns={assignmentTableColumns}
-              sx={{ '& .MuiDataGrid-root': { border: 'none' } }}
+              autoHeight={false}
+              sx={{ height: '100%', '& .MuiDataGrid-root': { border: 'none' } }}
             />
           </Box>
         </Paper>
