@@ -92,9 +92,12 @@ public interface RouteLegRepository extends JpaRepository<RouteLeg, Long> {
     List<RouteLeg> findFirstPendingLegsOfTransitBagsAtIntermediateStops();
 
     /**
-     * Tramos COMPLETED de los lotes indicados, con vuelo/aeropuertos/lote fetcheados —
-     * se usa en el hilo de replanificación (sin sesión Hibernate activa) para derivar la
-     * posición física actual de cada lote: el destino de su último tramo completado.
+     * Tramos COMPLETED o IN_FLIGHT de los lotes indicados, con vuelo/aeropuertos/lote
+     * fetcheados — se usa en el hilo de replanificación (sin sesión Hibernate activa)
+     * para derivar la posición física actual (o comprometida) de cada lote: el destino
+     * de su último tramo COMPLETED, o si está en pleno vuelo, el destino de ese tramo
+     * IN_FLIGHT (va a aterrizar ahí solo, sin importar qué otro tramo posterior se haya
+     * cancelado).
      */
     @Query("SELECT rl FROM RouteLeg rl " +
            "JOIN FETCH rl.flight f " +
@@ -102,7 +105,7 @@ public interface RouteLegRepository extends JpaRepository<RouteLeg, Long> {
            "JOIN FETCH rl.route r " +
            "JOIN FETCH r.shipment s " +
            "JOIN FETCH s.baggageBatch b " +
-           "WHERE b.id IN :batchIds AND rl.status = 'COMPLETED' " +
+           "WHERE b.id IN :batchIds AND rl.status IN ('COMPLETED', 'IN_FLIGHT') " +
            "ORDER BY rl.legOrder")
     List<RouteLeg> findCompletedLegsByBatchIds(@Param("batchIds") List<Long> batchIds);
 

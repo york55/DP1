@@ -163,7 +163,6 @@ public class PlannerService {
             // is being re-routed from its current position onward.
             Route route = plannedRoute;
             int legOrderOffset = 0;
-            boolean batchAirborne = false;
             List<RouteLeg> pendingDeletes = new ArrayList<>();
             if (existingShipment.isPresent()) {
                 Optional<Route> existingRoute = routeRepo.findByShipmentId(existingShipment.get().getId());
@@ -171,23 +170,18 @@ public class PlannerService {
                     route = existingRoute.get();
                     List<RouteLeg> oldLegs = routeLegRepo.findByRouteIdOrderByLegOrder(route.getId());
                     for (RouteLeg oldLeg : oldLegs) {
-                        if (oldLeg.getStatus() == RouteLegStatus.COMPLETED) {
+                        if (oldLeg.getStatus() == RouteLegStatus.COMPLETED
+                                || oldLeg.getStatus() == RouteLegStatus.IN_FLIGHT) {
+                            // Un tramo COMPLETED es historial. Un tramo IN_FLIGHT (aunque no
+                            // sea el que se está reemplazando) es un compromiso ya en curso
+                            // que va a completarse solo — no invalida el replan del resto de
+                            // la ruta, solo cuenta como parte ya recorrida.
                             legOrderOffset++;
-                        } else if (oldLeg.getStatus() == RouteLegStatus.IN_FLIGHT) {
-                            // El lote despegó mientras se replanificaba: este resultado es
-                            // obsoleto. Se deja la ruta vigente intacta — el lote avanza solo.
-                            batchAirborne = true;
-                            break;
                         } else {
                             pendingDeletes.add(oldLeg);
                         }
                     }
                 }
-            }
-            if (batchAirborne) {
-                log.info("Replan de lote {} descartado: despegó durante la replanificación", batch.getId());
-                persistedBatchIds.add(batch.getId()); // en vuelo = ya no necesita replan
-                continue;
             }
             legsToDelete.addAll(pendingDeletes);
 

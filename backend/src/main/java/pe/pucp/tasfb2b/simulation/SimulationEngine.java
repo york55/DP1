@@ -206,8 +206,7 @@ public class SimulationEngine {
                 List<RouteLeg> allLegs = routeLegRepo.findByRouteIdOrderByLegOrder(route.getId());
 
                 boolean isLastLeg = allLegs.stream()
-                        .filter(l -> l.getLegOrder() > leg.getLegOrder())
-                        .noneMatch(l -> l.getStatus() != RouteLegStatus.CANCELLED);
+                        .noneMatch(l -> l.getLegOrder() > leg.getLegOrder());
 
                 Shipment shipment = route.getShipment();
                 BaggageBatch batch = shipment.getBaggageBatch();
@@ -463,28 +462,47 @@ public class SimulationEngine {
      * para no asignar vuelos que despegarían antes de que esta replanificación
      * asíncrona alcance a persistirse.
      */
+    /**
+     * Posición física (o comprometida) y hora mínima de embarque de cada lote: el
+     * destino de su último tramo COMPLETED o IN_FLIGHT (u origen si nunca voló). Un
+     * tramo IN_FLIGHT cuenta igual que uno COMPLETED para ubicar el lote — va a aterrizar
+     * ahí sin importar que un tramo posterior se haya cancelado — pero en ese caso
+     * {@code notBefore} no puede ser antes de que ese vuelo realmente aterrice.
+     * {@code earliestDeparture} ya incluye el margen de REPLAN_MIN_LEAD_MINUTES sobre el
+     * tiempo simulado actual (ver runReplan) para no asignar vuelos que despegarían
+     * antes de que esta replanificación asíncrona alcance a persistirse.
+     */
     private Map<Long, SimulationContext.ReplanOrigin> buildReplanOrigins(
             List<BaggageBatch> batches, LocalDateTime earliestDeparture) {
         List<Long> ids = batches.stream().map(BaggageBatch::getId).collect(Collectors.toList());
-        Map<Long, RouteLeg> lastCompletedByBatch = new HashMap<>();
+        Map<Long, RouteLeg> lastCommittedByBatch = new HashMap<>();
         for (RouteLeg leg : routeLegRepo.findCompletedLegsByBatchIds(ids)) {
             Long batchId = leg.getRoute().getShipment().getBaggageBatch().getId();
-            RouteLeg current = lastCompletedByBatch.get(batchId);
+            RouteLeg current = lastCommittedByBatch.get(batchId);
             if (current == null || leg.getLegOrder() > current.getLegOrder()) {
-                lastCompletedByBatch.put(batchId, leg);
+                lastCommittedByBatch.put(batchId, leg);
             }
         }
 
         Map<Long, SimulationContext.ReplanOrigin> origins = new HashMap<>();
         for (BaggageBatch batch : batches) {
-            RouteLeg last = lastCompletedByBatch.get(batch.getId());
+            RouteLeg last = lastCommittedByBatch.get(batch.getId());
             String currentIata = last != null
                     ? last.getFlight().getDestinationAirport().getIataCode()
                     : batch.getOriginAirport().getIataCode();
-            LocalDateTime notBefore = last != null
-                    ? earliestDeparture
-                    : (batch.getAvailableFrom().isAfter(earliestDeparture)
-                            ? batch.getAvailableFrom() : earliestDeparture);
+            LocalDateTime notBefore;
+            if (last == null) {
+                notBefore = batch.getAvailableFrom().isAfter(earliestDeparture)
+                        ? batch.getAvailableFrom() : earliestDeparture;
+            } else if (last.getStatus() == RouteLegStatus.IN_FLIGHT) {
+                // Todavía en el aire: no puede embarcar en el siguiente tramo antes de
+                // que este vuelo aterrice.
+                LocalDateTime arrival = last.getFlight().getArrivalTime();
+                notBefore = (arrival != null && arrival.isAfter(earliestDeparture))
+                        ? arrival : earliestDeparture;
+            } else {
+                notBefore = earliestDeparture;
+            }
             origins.put(batch.getId(), new SimulationContext.ReplanOrigin(currentIata, notBefore));
         }
         return origins;
