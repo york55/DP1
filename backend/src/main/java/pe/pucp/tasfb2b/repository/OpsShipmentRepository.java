@@ -26,15 +26,11 @@ public interface OpsShipmentRepository extends JpaRepository<OpsShipment, Long> 
            "WHERE r.flight.status = 'IN_FLIGHT' AND r.status = 'PENDING')")
     int markShipmentsInFlight(@Param("now") LocalDateTime now);
 
-    /**
-     * IN_FLIGHT → DELIVERED: envíos cuyo vuelo asignado ya aterrizó (LANDED).
-     * lastUpdated = now queda como el "momento de entrega", usado luego para
-     * calcular la ventana de 15 min de ocupación en el almacén de destino.
-     */
-    @Modifying
-    @Query("UPDATE OpsShipment s SET s.status = 'DELIVERED', s.lastUpdated = :now " +
-           "WHERE s.status = 'IN_FLIGHT' " +
-           "AND s.id IN (SELECT r.shipment.id FROM OpsShipmentRoute r " +
-           "WHERE r.flight.status = 'LANDED' AND r.status = 'PENDING')")
-    int markShipmentsDelivered(@Param("now") LocalDateTime now);
+    // NOTA (Problema 1 del diagnóstico): el antiguo markShipmentsDelivered()
+    // era una sola query UPDATE que marcaba DELIVERED cualquier envío IN_FLIGHT
+    // con el vuelo asignado en LANDED, sin distinguir si ese tramo era el
+    // último de la ruta o uno intermedio. Esa decisión (comparar contra el
+    // step_order máximo del envío) ya no se puede resolver en una sola query
+    // UPDATE, así que se bajó a Java: ver
+    // OpsFlightStatusService.processLandedRouteLegs().
 }

@@ -62,7 +62,11 @@ public class OpsPlannerService {
                 pending.size(), flights.size());
 
         // 3 ── Limpiar rutas previas de los envíos que se van a replanificar ────
-        pending.forEach(s -> routeRepo.deleteAllByShipmentId(s.getId()));
+        // Blindaje (2b del diagnóstico): excluye tramos ligados a un vuelo
+        // IN_FLIGHT. No debería llegar a pasar (Problema 1 + 2a ya evitan que
+        // un envío llegue a PENDING con un tramo real en vuelo), pero si pasa,
+        // borrar esa ruta la dejaría huérfana al aterrizar.
+        pending.forEach(s -> routeRepo.deleteAllByShipmentIdExceptInFlight(s.getId()));
 
         // 4 ── Ejecutar ALNS ────────────────────────────────────────────────────
         AlnsParams params = AlnsParams.defaults();

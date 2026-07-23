@@ -126,7 +126,10 @@ public class OpsAlnsEngine {
         shipments.stream()
                 .sorted(Comparator.comparing(OpsShipment::getRegisteredAt))
                 .forEach(s -> {
-                    String origin = s.getOriginIata();
+                    // Si el envío ya completó tramos (current_iata seteado tras un
+                    // aterrizaje o una cancelación con reubicación), parte desde ahí
+                    // en vez del origen original — ver Problema 2c del diagnóstico.
+                    String origin = s.getCurrentIata() != null ? s.getCurrentIata() : s.getOriginIata();
                     String dest   = s.getDestIata();
                     byOrigin.getOrDefault(origin, List.of()).stream()
                             .filter(f -> dest.equals(f.getDestIata()))
@@ -273,7 +276,10 @@ public class OpsAlnsEngine {
     private List<List<Long>> findCandidates(OpsShipment s,
                                               Map<String, List<OpsFlight>> byOrigin,
                                               OpsAlnsSolution sol) {
-        String origin = s.getOriginIata();
+        // Idem buildGreedyInit: parte de la ubicación física actual si el envío
+        // ya avanzó tramos; si nunca voló ninguno, current_iata es NULL y cae
+        // al comportamiento de siempre (originIata).
+        String origin = s.getCurrentIata() != null ? s.getCurrentIata() : s.getOriginIata();
         String dest   = s.getDestIata();
         int    qty    = s.getBagCount();
         List<List<Long>> candidates = new ArrayList<>();

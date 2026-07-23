@@ -28,6 +28,18 @@ public class OpsShipment {
     @Column(name = "dest_iata", length = 4)
     private String destIata;
 
+    /**
+     * Ubicación física actual del envío. NULL = todavía no voló ningún tramo
+     * (sigue en originIata). Se setea al aterrizar un tramo intermedio
+     * (ver OpsFlightStatusService) y la usa el ALNS al replanificar tras una
+     * cancelación (ver OpsAlnsEngine) en vez de originIata.
+     */
+    @Column(name = "current_iata", length = 4)
+    private String currentIata;
+
+    @Column(name = "current_since_utc")
+    private LocalDateTime currentSinceUtc;
+
     @Column(name = "bag_count", nullable = false)
     private Integer bagCount;
 

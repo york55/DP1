@@ -33,7 +33,10 @@ import java.util.stream.Collectors;
  * genera la siguiente instancia normalmente).
  *
  * Efecto colateral: los envíos PLANNED asignados al vuelo cancelado
- * regresan a PENDING para que el siguiente ciclo de 6h los replanifique.
+ * regresan a PENDING para que el siguiente ciclo de 6h los replanifique —
+ * salvo que el envío tenga otro tramo actualmente IN_FLIGHT (ej. se cancela
+ * un tramo futuro mientras un tramo anterior ya está volando), en cuyo caso
+ * se deja como está hasta que ese tramo aterrice.
  */
 @Service
 @RequiredArgsConstructor
@@ -159,15 +162,25 @@ public class OpsFlightCancelService {
         // Borrar las rutas del vuelo cancelado
         routeRepo.deleteAll(routes);
 
-        // Regresar los envíos a PENDING para el siguiente ciclo del planificador
+        // Regresar los envíos a PENDING para el siguiente ciclo del planificador —
+        // pero solo si no tienen OTRO tramo actualmente IN_FLIGHT. Si el envío
+        // tiene un tramo anterior volando (ej. cancelan el tramo 2 mientras el
+        // tramo 1 ya despegó), no lo tocamos: al aterrizar ese tramo,
+        // OpsFlightStatusService.processLandedRouteLegs() ya lo pasará a
+        // PLANNED con el current_iata correcto (Problema 1 del diagnóstico).
         List<OpsShipment> shipments = shipmentRepo.findAllById(shipmentIds);
-        shipments.forEach(s -> {
+        int released = 0;
+        for (OpsShipment s : shipments) {
+            if (routeRepo.existsInFlightLegForShipment(s.getId())) {
+                continue; // sigue en el aire en otro tramo, se resuelve al aterrizar
+            }
             s.setStatus("PENDING");
             s.setLastUpdated(now);
-        });
+            released++;
+        }
         shipmentRepo.saveAll(shipments);
 
-        return shipments.size();
+        return released;
     }
 
     // ── Crear instancia si el planificador aún no la generó ──────────────────
